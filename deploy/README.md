@@ -24,7 +24,8 @@ The script ends with `free -m` and `docker stats` so the memory picture is in fr
 ## Resources
 
 - Memory: measured on 2026-09-18 on the server itself, a grand-staff page (Gymnopédie no. 1) took 49 s
-  and the container peaked at 1.0 GB; the benchmark's worst case was 1.5 GB. The container is capped at 3 GB
+  and the container peaked at 1.0 GB; the benchmark's worst case was 1.5 GB. With the chord stage (ADR 0003) the
+  lead-sheet photo took 33 s and peaked at 1.1 GB. The container is capped at 3 GB
   (`mem_limit`, swap disabled) and runs one job at a time, so the worst case leaves 7 GB to the
   rest of the host. Check with `docker stats partition-player` during a recognition.
 - CPU: a recognition uses both cores for 15 s to a few minutes; `cpu_shares: 512` lets Caddy and
