@@ -197,3 +197,15 @@ def test_polish_keeps_structure_and_rejects_changed_counts(tmp_path):
     assert changed == 1 and placed[2].text == "Jo" and not warnings
     changed, warnings = polish(placed, {0: band}, "key", client=Client("Lorsque Johanna et moi"))
     assert changed == 0 and placed[2].text == "Jo" and "structure" in warnings[0]
+
+
+def test_rows_reject_the_next_systems_chord_line():
+    verse = [word("Lors", 100, 140, y=3.4), word("que", 300, 330, y=3.5), word("nous", 900, 940, y=3.4)]
+    chords = [word("Cm", 100, 130, y=6.2), word("G7", 600, 625, y=6.3), word("Fm", 900, 925, y=6.2)]
+    r, rejected = rows(verse + chords, (100, 940), chord_zone_from=None)
+    assert len(r) == 1 and rejected[0].reason == "reads as chord symbols"
+    r, rejected = rows(verse + chords, (100, 940), chord_zone_from=6.0)
+    assert len(r) == 1 and rejected[0].reason == "in the chord band of the next system"
+    # a first row of short words is still a verse
+    r, _ = rows([word("A", 100, 110, y=3.4), word("la", 300, 320, y=3.4), word("E", 900, 910, y=3.4)], (100, 910))
+    assert len(r) == 1

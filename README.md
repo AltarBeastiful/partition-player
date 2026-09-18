@@ -56,6 +56,7 @@ The image builds for amd64 and arm64. Recognition data lives in the `pp-data` vo
 All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_ENGINE` (`homr`),
 `PP_FALLBACK_ENGINE` (`none` or `audiveris`, which also needs `PP_AUDIVERIS_BIN`),
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
+`PP_ANTHROPIC_API_KEY` (optional lyrics spelling pass, off when unset),
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
 ## Chord symbols and accompaniment
@@ -69,6 +70,37 @@ accompaniment switches. Tokens that were seen but not accepted are listed under 
 The benchmark is `bench/chords/` (see `bench/RESULTS.md`).
 
 ## Score library
+## Lyrics
+
+The words printed under the staff are read and put under their notes (ADR 0004). The driver cuts a
+band below every staff from the **uploaded photo at full resolution** (homr works on a downscaled
+copy where the letters are too small), RapidOCR reads it with word boxes at two scales, and a small
+lyric grammar turns the words into syllables: hyphens split words (attached or detached, and the
+ones the OCR drops are found in the pixels), an extender line holds a syllable over the next notes,
+a lone comma belongs to the syllable before it, "1." is a verse number. Each verse row is then
+aligned to the score's notes by an ordered dynamic programme (a syllable may be dropped when it is
+doubtful, a note may be skipped for a melisma), so a missed word never shifts the rest of the line.
+The result is standard MusicXML `<lyric>`, drawn under the notes by OSMD. Rows that do not line up
+with the notes (the chord line of the next system, a verse paragraph, a footer) are listed under the
+sheet as "seen but not used", never written.
+
+Text mistakes are fixed in the **Lyrics** panel under the sheet: one text field per verse in the
+convention every notation program uses (`Lors-que nous é-tions`; `_` holds a syllable over the next
+note, `*` skips a note). Saving rewrites only the lyric elements of the score, keeps the chords, and
+re-renders the sheet. With `PP_ANTHROPIC_API_KEY` set, the recognized text of each line is also sent
+with its band image to Claude Haiku for a spelling pass; the answer is used only when it keeps the
+same syllables in the same places. The benchmark is `bench/lyrics/` (see `bench/RESULTS.md`).
+
+## Note names
+
+The score page has a **Note names** switch that writes the French name of every printed note
+(do, ré, mi, fa, sol, la, si, with `b` or `#` for the alteration: `mib`, `lab`) on one row above each
+system, clear of the chord symbols, so the space under the notes stays free for words. The names are
+computed from the pitches of the rendered score and drawn into OSMD's SVG (`frontend/src/noteNames.ts`):
+nothing is written into the MusicXML, the switch works while the piece plays, and transposing the
+playback does not rename them, since they name what is printed. The choice is remembered in the
+browser.
+
 
 Every finished job is a saved score with its own link, `/s/{id}`, listed on the home page with a
 thumbnail and an editable name. There is no login: anyone who can reach the app can add, rename

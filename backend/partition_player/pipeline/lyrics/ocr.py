@@ -55,7 +55,10 @@ def _pass(ocr, band: np.ndarray, scale: float) -> list[Word]:
     res = ocr(cv2.cvtColor(img, cv2.COLOR_GRAY2BGR), return_word_box=True, use_det=True, use_rec=True)
     words: list[Word] = []
     for line in res.word_results or ():
-        for text, conf, quad in line:
+        for item in line:
+            if len(item) != 3:   # RapidOCR gives an empty tuple for a line it could not split
+                continue
+            text, conf, quad = item
             q = np.asarray(quad, dtype=float)
             text = text.strip()
             if not text:

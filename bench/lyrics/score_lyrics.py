@@ -45,6 +45,16 @@ def edit_distance(a, b):
     return prev[-1]
 
 
+def lcs(a, b):
+    prev = [0] * (len(b) + 1)
+    for ca in a:
+        cur = [0]
+        for j, cb in enumerate(b, 1):
+            cur.append(prev[j - 1] + 1 if ca == cb else max(prev[j], cur[j - 1]))
+        prev = cur
+    return prev[-1]
+
+
 def score(gt_path, cand_path, dump=False):
     gt, gt_m = lyrics(gt_path)
     cand, cand_m = lyrics(cand_path)
@@ -53,8 +63,14 @@ def score(gt_path, cand_path, dump=False):
     cand_verses = {v for d in cand.values() for v in d}
     r["verses_gt"], r["verses_found"] = len(gt_verses), len(cand_verses)
     if gt_m != cand_m:
+        # measures cannot be paired by index: score the text by sequence alignment, leave placement unscored
         r["gt"] = sum(len(d) for d in gt.values())
-        r["false"] = sum(len(d) for d in cand.values())  # cannot be matched by position
+        r["placed"] = None
+        for verse in gt_verses:
+            a = [norm(d[verse][0]) for k, d in sorted(gt.items()) if verse in d]
+            b = [norm(d[verse][0]) for k, d in sorted(cand.items()) if verse in d]
+            r["text"] += lcs(a, b)
+        r["note"] = f"measures {gt_m} vs {cand_m}: placement not scored"
         return r
     gt_text, cand_text = [], []
     for key in sorted(set(gt) | set(cand)):

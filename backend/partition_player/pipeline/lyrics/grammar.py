@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from ..chords.grammar import parse_chord
+
 HYPHENS = "-‐‑‒–—"
 EXTENDERS = "_–—"
 ELISION = "‿"
@@ -21,6 +23,8 @@ VERSE_NUMBER = re.compile(r"^\d{1,2}[.)]?$")
 ROW_TOLERANCE = 0.6      # a word joins a row when its centre is within this fraction of the text height
 MAX_ROW_GAP = 2.2        # rows further apart than this many text heights end the verse block
 MIN_COVERAGE = 0.4       # a row must span at least this fraction of the staff's note range
+CHORD_ZONE_UNITS = 5.0   # rows this close above the next staff's top line are its chord symbols
+CHORD_LIKE = 0.6         # a later row whose tokens are mostly chord names is a chord line, not a verse
 
 
 @dataclass
@@ -69,8 +73,17 @@ def _is_extender(text: str) -> bool:
     return len(text) >= 1 and all(c in EXTENDERS for c in text) and (len(text) >= 2 or text == "_")
 
 
-def rows(words: list[dict], note_range: tuple[float, float] | None) -> tuple[list[Row], list[Rejected]]:
-    """Cluster words into rows by baseline; keep the rows that look like verses under this staff."""
+def chord_like(words: list[dict]) -> float:
+    """Fraction of a row's words that read as chord symbols."""
+    texts = [w["text"] for w in words if w["text"].strip() and not _is_hyphen(w["text"])]
+    if not texts:
+        return 0.0
+    return sum(1 for t in texts if parse_chord(t.strip(",.;:!?")) is not None) / len(texts)
+
+
+def rows(words: list[dict], note_range: tuple[float, float] | None, chord_zone_from: float | None = None) -> tuple[list[Row], list[Rejected]]:
+    """Cluster words into rows by baseline; keep the rows that look like verses under this staff.
+    `chord_zone_from`: y (units below the bottom line) from which rows belong to the next system's chord band."""
     if not words:
         return [], []
     words = sorted(words, key=lambda w: w["y_units"])
@@ -90,6 +103,13 @@ def rows(words: list[dict], note_range: tuple[float, float] | None) -> tuple[lis
         text = " ".join(w["text"] for w in cluster)
         if prev_y is not None and y - prev_y > MAX_ROW_GAP * height:
             rejected.append(Rejected(text, y, "too far below the verses"))
+            continue
+        if chord_zone_from is not None and y >= chord_zone_from:
+            rejected.append(Rejected(text, y, "in the chord band of the next system"))
+            continue
+        likeness = chord_like(cluster)
+        if likeness >= (0.9 if not out else CHORD_LIKE) and len(cluster) >= 3:
+            rejected.append(Rejected(text, y, "reads as chord symbols"))
             continue
         label = None
         if cluster and VERSE_NUMBER.match(cluster[0]["text"]):

@@ -54,18 +54,21 @@ def main():
         t = totals.setdefault(kind, {"pages": 0, "gt": 0, "placed": 0, "text": 0, "exact": 0, "syllabic": 0, "false": 0, "cer": [], "verses_gt": 0, "verses_found": 0})
         t["pages"] += 1
         for k in ("gt", "placed", "text", "exact", "syllabic", "false", "verses_gt", "verses_found"):
-            t[k] += res[k]
+            t[k] += res[k] or 0
         if res["cer"] is not None:
             t["cer"].append(res["cer"])
+        if res["placed"] is None:
+            t["unscored"] = t.get("unscored", 0) + 1
         seen = "; ".join(f"{s['text'][:20]} ({s['reason'][:22]})" for s in stats.get("lyrics_seen", [])[:2])
-        print(f"{name:28} {kind:9} {res['gt']:4} {res['placed']:6} {res['text']:5} {res['exact']:5} {res['syllabic']:5} {res['false']:5} "
+        print(f"{name:28} {kind:9} {res['gt']:4} {str(res['placed']):>6} {res['text']:5} {res['exact']:5} {res['syllabic']:5} {res['false']:5} "
               f"{res['verses_found']:2}/{res['verses_gt']:<3} {str(res['cer']):>5} {res['measures'][0]:3}/{res['measures'][1]:<3}  {seen[:60]}")
     print()
     for kind, t in totals.items():
         cer = round(sum(t["cer"]) / len(t["cer"]), 3) if t["cer"] else "-"
         pct = lambda k: f"{100 * t[k] / t['gt']:.1f}%" if t["gt"] else "-"
         print(f"{kind:9} pages={t['pages']} syllables={t['gt']} placed={t['placed']} ({pct('placed')}) text={t['text']} ({pct('text')}) "
-              f"exact={t['exact']} syllabic={t['syllabic']} false={t['false']} verses={t['verses_found']}/{t['verses_gt']} cer={cer}")
+              f"exact={t['exact']} syllabic={t['syllabic']} false={t['false']} verses={t['verses_found']}/{t['verses_gt']} cer={cer}"
+              + (f" unscored_pages={t['unscored']}" if t.get("unscored") else ""))
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 
 from ..chords.place import boundaries, measure_infos, system_runs
-from .grammar import Row, Syllable, link_systems, rows, syllables
+from .grammar import CHORD_ZONE_UNITS, Row, Syllable, link_systems, rows, syllables
 
 MAX_DIST = 3.0
 SKIP_COST = 1.5
@@ -175,7 +175,9 @@ def place_lyrics(tree: ET.ElementTree, geometry: dict) -> LyricsResult:
             continue
         heads_x = [x for x, _ in st["noteheads"]]
         note_range = (min(heads_x), max(heads_x)) if len(heads_x) >= 2 else None
-        rws, rejected = rows(st["words"], note_range)
+        bottom = st.get("band_bottom_units", 12.0)
+        chord_zone = bottom - CHORD_ZONE_UNITS if bottom < 11.9 else None   # a next staff cut the band short
+        rws, rejected = rows(st["words"], note_range, chord_zone)
         for r in rejected:
             result.seen.append({"staff": st["index"] + 1, "text": r.text, "reason": r.reason})
         for r in rws:
