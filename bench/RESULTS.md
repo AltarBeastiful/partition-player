@@ -126,3 +126,41 @@ uv pip install --python .venv-oemer/bin/python oemer "onnxruntime==1.22.1" "open
 .venv-oemer/bin/python bench/score.py bench/samples/anton_yvan_boris_ground_truth.musicxml <candidate.musicxml> [--dump]
 .venv-oemer/bin/python bench/render.py <musicxml> <png>
 ```
+
+## Chord symbols (ADR 0003), 2026-09-18
+
+Pipeline: homr driver geometry, RapidOCR detector on tiles (working size 192 px), recognizer
+probabilities decoded under the chord grammar, notehead-anchored placement, MusicXML `<harmony>`.
+Set: the real lead-sheet photo; 15 synthetic pages (10 Nottingham folk tunes, Berlin's Alexander's
+Ragtime Band, Foster's Jeanie, three jazz-vocabulary pages with sevenths, flats, dim, slash chords and
+a key change), each as a clean verovio render and as a photo-like degraded copy; 5 negative pages with
+no chord symbols (rehearsal letters, tempo text, lyrics, "Fine", and the Gymnopédie piano page).
+Scorer: `bench/chords/score_chords.py` (sequence by edit distance on root, kind, bass; placement by
+measure index and half beat).
+
+| set | pages | chords printed | found | right | false | placed right |
+|---|---|---|---|---|---|---|
+| real photo | 1 | 10 | 10 | 10 | 0 | 10 of 10 |
+| synthetic, clean | 15 | 389 | 365 | 365 | 0 | 317 of 357 scorable |
+| synthetic, degraded | 15 | 389 | 374 | 374 | 0 | 335 of 389 |
+| negatives | 5 | 0 | 0 | 0 | 0 | |
+
+- Every chord that was written is a chord that was printed: 0 false in 36 pages, and every found
+  chord had the right root, kind and bass.
+- Misses (24 clean, 15 degraded): names that the engraver staggered higher or lower than the chord
+  line, names run into the composer or title text above the first system, and one or two names per
+  page on the folk tunes where the detector found no box. The clean renders do slightly worse than
+  their blurred copies; the recognizer is run on a softened copy too and the surer reading kept.
+- Placement: on the folk tunes and the real photo nearly every found chord is on its measure and
+  beat. The three jazz pages lose about half their placements because verovio shifts wide names
+  sideways to avoid collisions, so the name no longer starts above its note; the chord sequence is
+  still right and a second name on the same beat is pushed to the next onset.
+- Time: about 1 s per page on this machine for detection plus recognition on 4 to 8 bands; the
+  server number is in `deploy/README.md`.
+
+Reproduce:
+
+```
+.venv-oemer/bin/python bench/chords/make_synthetic.py <nottingham-dataset clone>   # writes bench/out/chords/
+.venv-oemer/bin/python bench/chords/run_bench.py                                     # about 15 min
+```

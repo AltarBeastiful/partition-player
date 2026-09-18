@@ -1,5 +1,7 @@
 # Plan 0001: Chord symbols to accompaniment
 
+Status 2026-09-18: steps 1 to 6 done (`bench/RESULTS.md` has the numbers); step 7 in progress.
+
 Implements ADR 0003. Each step has its own check; nothing moves to the next step until the check
 passes. Work happens on `main` in small commits.
 
