@@ -11,7 +11,7 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 ## Chord symbols and lyrics
 - Chord symbols: done (ADR 0003, bench/chords). Follow-ups: accompaniment rhythm styles (arpeggio, waltz bass, swing), a
   count-in, an LLM or vision second opinion on tokens under the confidence floor, chord symbols under the staff (some
-  editions), and lyrics under the notes (same band idea, below the staff, no grammar).
+  editions), and lyrics under the notes: researched and designed in ADR 0004 (docs/adr/0004-lyrics.md), not implemented.
 - Audiveris OCR mixes verse text into lyrics on lead sheets (see bench/RESULTS.md); not used.
 
 ## Second-opinion engine
