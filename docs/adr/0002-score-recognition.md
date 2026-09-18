@@ -57,9 +57,9 @@ directory from the Ubuntu deb, which ships arm64 native jars for Tesseract and L
   stays, since phones and proxies still time out on long uploads and the fallback path is slow.
 - homr and Audiveris are both AGPL-3.0. The project must be released under an AGPL-compatible license
   and, as a network service, must offer its source to users. This needs a decision before publishing.
-- The benchmark covers one monophonic page. Grand-staff accuracy is unmeasured for both engines, so
-  the first piano sample added to `bench/samples` re-runs this comparison before the engine choice is
-  considered final.
+- A second sample, a clean grand-staff render of Satie's Gymnopédie No. 1 scored against an
+  independent MIDI reference, gave homr F1 0.991 and 37 of 39 measures exact after post-processing
+  (`bench/RESULTS.md`). A phone photo of a grand-staff page is still to be measured.
 - No chord symbols or lyrics from any engine (backlog).
 - The engine boundary is one function and one subprocess, so Audiveris, a second opinion, or an LLM
   fix-up pass can be added without changing the API or the frontend.

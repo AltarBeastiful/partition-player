@@ -20,6 +20,9 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 ## Piano grand-staff benchmark sample
 - Add a two-hand piano page (phone photo, clean PDF render, screenshot) to bench/samples with a ground truth, and re-run bench/score.py on homr and Audiveris.
 
+## Recognition fixes
+- Ties across bar lines: homr places the tied note a beat late and overfills the measure (Gymnopédie m26, m31). Detect overfull measures with a tie and shift the tied note.
+
 ## Rendering polish
 - homr writes no <beam> elements, so OSMD shows separate flags instead of beams. Add beaming in post-processing (group eighths and sixteenths within a beat) or via music21's beam maker.
 - homr's title OCR ends up as the score title ("Marie Lafor t"). Strip or clean it in post-processing.

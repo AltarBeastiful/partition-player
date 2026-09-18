@@ -104,15 +104,32 @@ export class Player {
     transport.position = 0;
     this.disposeParts();
     this.osmd.cursor.reset();
+    this.currentStep = 0;
     this.osmd.cursor.show();
     this.onState("stopped");
   }
 
+  private currentStep = 0;
+
+  /** Move the cursor to `step` incrementally (no rewind unless going backwards), then keep it in view. */
   private moveCursor(step: number): void {
     const cursor = this.osmd.cursor;
-    cursor.reset();
-    for (let i = 0; i < step && !cursor.iterator.EndReached; i++) cursor.next();
+    if (step < this.currentStep) {
+      cursor.reset();
+      this.currentStep = 0;
+    }
+    while (this.currentStep < step && !cursor.iterator.EndReached) {
+      cursor.next();
+      this.currentStep++;
+    }
     cursor.show();
+    const el = cursor.cursorElement;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      if (r.top < 80 || r.bottom > window.innerHeight - 40) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    }
   }
 
   private disposeParts(): void {

@@ -20,8 +20,8 @@ export function ScoreView({ job }: { job: Job }) {
         autoResize: true,
         drawTitle: true,
         drawPartNames: false,
-        followCursor: true,
-        cursorsOptions: [{ type: 0, color: "#0e7490", alpha: 0.35, follow: true }],
+        followCursor: false,
+        cursorsOptions: [{ type: 0, color: "#0e7490", alpha: 0.35, follow: false }],
       });
       try {
         await osmd.load(scoreUrl(job.id));

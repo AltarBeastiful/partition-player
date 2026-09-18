@@ -71,12 +71,41 @@ lines). The ground truth was corrected accordingly.
 - Audiveris batch options that matter: `-batch -export -sheets 1 -output <dir> -- <image>`. Output is
   a compressed `.mxl` plus a `.omr` project file.
 
+## Sample 2: Satie, Gymnopédie No. 1, page 1 (clean render, grand staff)
+
+`bench/samples/gymnopedie1/`: Mutopia Project edition (public domain, typeset in LilyPond), page 1
+rendered from the PDF at 300 dpi. 39 measures in 3/4, two staves, chords in both hands, two voices in
+the right hand, a repeat with a first ending. The reference is Mutopia's own MIDI, generated from the
+same LilyPond source, so it is independent of every engine and of any hand transcription.
+`bench/score_midi.py` buckets the MIDI onsets into measures and compares each measure as a set of
+(onset, pitch) events, which is chord-aware and immune to drift from a single wrong duration.
+
+homr through the full pipeline (`partition-player recognize`), 14 s, 1.3 GB:
+
+| Metric | homr, engine output | homr after post-processing |
+|---|---|---|
+| Measures | 39 of 39 | 39 of 39 |
+| Note events | 241 for 234 in the reference | 234 |
+| Precision / recall / F1 | 0.963 / 0.991 / 0.977 | 0.991 / 0.991 / 0.991 |
+| Measures exact (pitch and onset) | 30 of 39 | 37 of 39 |
+| Measures with the right pitch set | 32 of 39 | 39 of 39 |
+
+Two error kinds only:
+
+- In 7 measures the right hand has a quarter rest under the melody's first note; homr wrote the rest
+  followed by the melody note flagged `<chord/>`, so parsers saw a chord of rest plus note and music21
+  turned the rest into a C4. Now fixed in post-processing (`_fix_rest_chords`): the note is kept, the
+  rest and the chord flag dropped.
+- In measures 26 and 31 a D5 tied across the bar line is placed on beat 3 instead of beat 2, and the
+  measure is one beat overfull. Left as is for now; overfull measures are reported as warnings.
+
+Audiveris and oemer were not run on this sample.
+
 ## Limits of this benchmark
 
-One page, one monophonic staff, one photo. The v1 target is a piano grand staff with chords. homr
-documents grand-staff support and Audiveris handles it well on clean scans, but neither is measured
-here. Next samples to add: a two-hand piano page photographed with a phone, a clean PDF render of the
-same page, and a screenshot of a digital score.
+Two pages: one monophonic phone photo, one clean grand-staff render. Still missing: a phone photo of
+a grand-staff page, and a screenshot of a digital score. Both engines' behaviour on dense piano
+textures (fast runs, ornaments, cross-staff beaming) is unmeasured.
 
 ## Decision
 
@@ -87,6 +116,7 @@ homr is the v1 engine, Audiveris the fallback. See `docs/adr/0002-score-recognit
 ```
 uv venv --python 3.11 .venv-homr && uv pip install --python .venv-homr/bin/python homr
 .venv-homr/bin/homr --init && .venv-homr/bin/homr bench/out/homr/anton.jpg   # writes anton.musicxml next to the image
+.venv-oemer/bin/python bench/score_midi.py bench/samples/gymnopedie1/gymnopedie_1.mid <candidate.musicxml> [--dump]
 uv venv --python 3.11 .venv-oemer
 uv pip install --python .venv-oemer/bin/python oemer "onnxruntime==1.22.1" "opencv-python<5" verovio music21 cairosvg
 .venv-oemer/bin/oemer bench/samples/anton_yvan_boris_photo.jpg -o bench/out/oemer_cv4

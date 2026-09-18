@@ -46,6 +46,20 @@ def _measure_filled(measure: ET.Element, divisions: int) -> Fraction:
     return end
 
 
+def _fix_rest_chords(measure: ET.Element) -> int:
+    """homr sometimes emits a rest followed by a note flagged <chord/>, i.e. a "chord" of rest + note.
+
+    The note is the real event; drop the rest and the chord flag. Returns the number of fixes."""
+    fixes = 0
+    notes = [el for el in measure if el.tag == "note"]
+    for prev, cur in zip(notes, notes[1:]):
+        if prev.find("rest") is not None and cur.find("chord") is not None and cur.find("rest") is None:
+            cur.remove(cur.find("chord"))
+            measure.remove(prev)
+            fixes += 1
+    return fixes
+
+
 def postprocess(src: Path, dst: Path) -> ScoreStats:
     try:
         tree = ET.parse(src)
@@ -68,6 +82,9 @@ def postprocess(src: Path, dst: Path) -> ScoreStats:
                 if (t := attrs.find("time")) is not None:
                     beats = int(t.findtext("beats", "4").strip())
                     beat_type = int(t.findtext("beat-type", "4").strip())
+            fixed = _fix_rest_chords(measure)
+            if fixed:
+                stats.warnings.append(f"measure {measure.get('number')}: removed {fixed} rest(s) merged into a chord")
             for n in measure.findall("note"):
                 if n.find("rest") is not None:
                     stats.rests += 1
