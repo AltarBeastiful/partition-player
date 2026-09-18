@@ -11,6 +11,7 @@ export function ScoreView({ job }: { job: Job }) {
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState>("stopped");
   const [bpm, setBpm] = useState(90);
+  const [transpose, setTranspose] = useState(0);
   const [loop, setLoop] = useState(false);
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(1);
@@ -58,6 +59,7 @@ export function ScoreView({ job }: { job: Job }) {
   const stop = useCallback(() => playerRef.current?.stop(), []);
 
   useEffect(() => { playerRef.current?.setBpm(bpm); }, [bpm]);
+  useEffect(() => { playerRef.current?.setTranspose(transpose); }, [transpose]);
 
   const stats = job.result?.stats;
   return (
@@ -70,6 +72,13 @@ export function ScoreView({ job }: { job: Job }) {
         <label>
           Tempo <input id="tempo" type="range" min={40} max={180} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} />
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{bpm} bpm</span>
+        </label>
+        <label className="transpose" title="Shift every note by this many semitones during playback; the sheet stays as printed">
+          Transpose
+          <button id="transpose-down" onClick={() => setTranspose((t) => Math.max(-12, t - 1))} disabled={loading} aria-label="One semitone down">−</button>
+          <span style={{ fontVariantNumeric: "tabular-nums", minWidth: "3ch", textAlign: "center" }}>{transpose > 0 ? `+${transpose}` : transpose}</span>
+          <button id="transpose-up" onClick={() => setTranspose((t) => Math.min(12, t + 1))} disabled={loading} aria-label="One semitone up">+</button>
+          {transpose !== 0 && <button className="quiet" onClick={() => setTranspose(0)}>reset</button>}
         </label>
         <a href={scoreUrl(job.id)} download={`${(job.name || "score").replace(/[^\w.-]+/g, "_")}.musicxml`}>Download MusicXML</a>
       </div>

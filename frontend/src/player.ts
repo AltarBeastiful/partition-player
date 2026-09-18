@@ -116,6 +116,13 @@ export class Player {
     return this.ready;
   }
 
+  /** Semitones added to every note at playback time, so a song can sit in the singer's range. */
+  transpose = 0;
+
+  setTranspose(semitones: number): void {
+    this.transpose = Math.max(-24, Math.min(24, Math.round(semitones)));
+  }
+
   setBpm(bpm: number): void {
     if (this.state === "playing") {
       const now = Tone.now();
@@ -175,7 +182,7 @@ export class Player {
         if (when > horizon) return;
         this.nextEvent++;
         try {
-          this.sampler?.triggerAttackRelease(Tone.Frequency(ev.midi, "midi").toNote(), ev.length * this.secondsPerWhole() * 0.95, Math.max(when, now));
+          this.sampler?.triggerAttackRelease(Tone.Frequency(ev.midi + this.transpose, "midi").toNote(), ev.length * this.secondsPerWhole() * 0.95, Math.max(when, now));
         } catch (e) {
           console.warn("note skipped", ev.midi, e);
         }
