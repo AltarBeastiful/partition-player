@@ -30,30 +30,37 @@ def norm(name):  # music21 spells flats as "B-"; use "Bb"
     return name.replace("-", "b")
 
 
-def align(a, b):
+def align(a, b, pos_a=None, pos_b=None):
+    """Edit distance on chord keys; among equal keys, a tiny cost prefers pairs at the same position."""
     n, m = len(a), len(b)
-    D = [[0] * (m + 1) for _ in range(n + 1)]
-    for i in range(n + 1): D[i][0] = i
-    for j in range(m + 1): D[0][j] = j
+    def sub(i, j):
+        if a[i] != b[j]:
+            return 1.0
+        if pos_a and pos_b and pos_a[i] != pos_b[j]:
+            return 0.001
+        return 0.0
+    D = [[0.0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1): D[i][0] = float(i)
+    for j in range(m + 1): D[0][j] = float(j)
     for i in range(1, n + 1):
         for j in range(1, m + 1):
-            D[i][j] = min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + (0 if a[i - 1] == b[j - 1] else 1))
+            D[i][j] = min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + sub(i - 1, j - 1))
     i, j = n, m; pairs = []
     while i > 0 or j > 0:
-        if i > 0 and j > 0 and D[i][j] == D[i - 1][j - 1] + (0 if a[i - 1] == b[j - 1] else 1):
+        if i > 0 and j > 0 and abs(D[i][j] - (D[i - 1][j - 1] + sub(i - 1, j - 1))) < 1e-9:
             pairs.append((i - 1, j - 1)); i -= 1; j -= 1
-        elif i > 0 and D[i][j] == D[i - 1][j] + 1:
+        elif i > 0 and abs(D[i][j] - (D[i - 1][j] + 1)) < 1e-9:
             pairs.append((i - 1, None)); i -= 1
         else:
             pairs.append((None, j - 1)); j -= 1
-    return D[n][m], pairs[::-1]
+    return round(D[n][m]), pairs[::-1]
 
 
 def score(gt_path, cand_path, dump=False):
     gt, gt_m = chords(gt_path)
     cand, cand_m = chords(cand_path)
     key = lambda c: (c[2], c[3], c[4])
-    dist, pairs = align([key(c) for c in gt], [key(c) for c in cand])
+    dist, pairs = align([key(c) for c in gt], [key(c) for c in cand], [(c[0], c[1]) for c in gt], [(c[0], c[1]) for c in cand])
     right = sum(1 for i, j in pairs if i is not None and j is not None and key(gt[i]) == key(cand[j]))
     false = sum(1 for i, j in pairs if j is not None and (i is None or key(gt[i]) != key(cand[j])))
     placed = None

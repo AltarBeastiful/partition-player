@@ -18,7 +18,7 @@ from .grammar import Chord, parse_chord
 
 MIN_CONFIDENCE = 0.6
 CLEF_ZONE_UNITS = 3.0
-BAND_MIN_UNITS, BAND_MAX_UNITS = 0.8, 5.5
+BAND_MIN_UNITS, BAND_MAX_UNITS = 0.8, 4.5
 BASELINE_TOLERANCE_UNITS = 0.7
 
 
@@ -102,9 +102,15 @@ def boundaries(system: dict, n_measures: int, warnings: list[str], note_counts: 
     edges = [min_x] + bars
     if not bars or bars[-1] < max_x - 2 * unit:
         edges.append(max_x)
+    notes = system["notes"]
+    # a barline with no note before it (a repeat sign after the key signature) or an empty sliver is not a measure
+    while notes and len(edges) - 1 > n_measures:
+        empty = next((k for k in range(len(edges) - 1) if not any(edges[k] <= x < edges[k + 1] for x in notes)), None)
+        if empty is None:
+            break
+        del edges[empty + 1 if empty + 1 < len(edges) - 1 else empty]
     if len(edges) - 1 == n_measures:
         return edges
-    notes = system["notes"]
     if len(edges) - 1 == n_measures - 1 and n_measures >= 2:
         widths = [edges[i + 1] - edges[i] for i in range(len(edges) - 1)]
         i = max(range(len(widths)), key=lambda k: widths[k])
@@ -165,6 +171,8 @@ def place(tree: ET.ElementTree, geometry: dict) -> Result:
                 why = "above the clef"
             elif not (BAND_MIN_UNITS <= t["y_units_above"] <= BAND_MAX_UNITS):
                 why = "outside the chord band"
+            elif t.get("framed"):
+                why = "boxed text, a rehearsal mark"
             if why:
                 if t["raw"].strip() and (t["confidence"] >= 0.2 or len(t["raw"].strip()) >= 2):  # skip detector noise
                     result.seen.append({"system": system["index"] + 1, "text": t["raw"] or t["text"], "reading": t["text"], "confidence": t["confidence"], "reason": why})

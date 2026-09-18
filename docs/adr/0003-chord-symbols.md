@@ -1,7 +1,7 @@
 # ADR 0003: Chord symbol recognition and accompaniment
 
 Date: 2026-09-18
-Status: Proposed
+Status: Accepted (reviewed 2026-09-18; the review's changes are folded in below)
 
 ## Context
 
@@ -31,15 +31,18 @@ Findings from the feasibility probe on the benchmark photo (`bench/samples/anton
 
 Add a **chord stage** to the recognition pipeline, deterministic and benchmark-driven:
 
-1. **Geometry from homr.** Replace the `python -m homr.main` subprocess with a small driver script
-   that runs homr's own steps (`detect_staffs_in_image`, `parse_staffs`, `generate_xml`) and, in
-   addition, writes `geometry.json` (per staff: x extent, interline, barline x positions, system
-   index) and one straightened strip PNG per staff (from 6 interlines above the top line down to 0.4
-   interline above it). homr is pinned to `0.7.*`; the driver is the only place that touches its
-   internals.
-2. **OCR on the strips** with RapidOCR's detector on overlapping tiles scaled to a fixed interline
-   height (two passes offset by half a tile, boxes merged by overlap), then RapidOCR's recognizer on
-   each box. The recognizer's output is not its top guess but its per-character probabilities, and
+1. **Geometry from homr.** Replace the `python -m homr.main` subprocess with our own driver
+   subprocess (same isolation and timeout as before) that inlines homr's `detect_staffs_in_image` to
+   keep the barline boxes, loops over the staves like `parse_staffs`, writes homr's MusicXML, and in
+   addition writes `geometry.json` (per system: interline, x extent, barline and notehead x positions,
+   measure count) and one straightened band PNG per system (6 interlines above the top staff line
+   down to 0.4 above it). The chord OCR runs inside the same subprocess, after homr's title thread has
+   finished, so it shares the process and the timeout. homr is pinned to `0.7.*`; the driver is about
+   120 lines and the only place that touches its internals.
+2. **OCR on the bands** with RapidOCR's detector on tiles about 30 interlines wide, scaled so one
+   interline is 24 px, with the detector's working size lowered to 192 px (its default of 736 makes
+   the text far larger than it likes: on the benchmark photo recall went from 7 to 10 of 10 and the
+   detector time from 17 s to 0.4 s on a 16-core machine), then RapidOCR's recognizer on each box. The recognizer's output is not its top guess but its per-character probabilities, and
    these are decoded with a **grammar-constrained CTC beam search**: only strings of the chord grammar
    `root (accidental)? quality? extension? (/bass)?` can come out, and each grammar character accepts
    the glyphs the net may emit for it (`G` also `6` and `g`, `D` also `0` and `O`, flat also `♭`).
@@ -51,12 +54,17 @@ Add a **chord stage** to the recognition pipeline, deterministic and benchmark-d
    and position, never written to the score. If the benchmark later shows the general recognizer
    failing on music fonts, the fallback is a small recognizer trained on synthetic chord renders, not
    more rules; the synthetic generator already produces that training data.
-3. **Placement.** For each system, the measure count comes from the final MusicXML (`<print
-   new-system>` marks). If the detected barlines agree with it (count equal to measures minus one, or
-   to measures when the closing barline was detected), they give the measure boundaries; otherwise
-   measures are assumed equal-width across the staff and a warning is recorded. The beat inside the
-   measure is the token's fractional position times the beats of the time signature, snapped to the
-   nearest half beat, with the first 15 percent of a measure snapped to beat one.
+3. **Placement.** The driver loops over the staves itself, so the measure count per system is the
+   transformer's own barline count, not a guess from `<print new-system>`. Barlines closer than 1.5
+   interlines are merged. A chord name starts at, or a little left of, the notehead it belongs to, so
+   each token is anchored on the first detected notehead at or right of its left edge, and that
+   notehead's measure is the chord's measure. When one barline is missing, the merged range is split
+   where the score's note counts say the measure ends; when the counts disagree further, measures are
+   spread evenly from the first notehead and a warning is recorded. Inside a measure the token snaps
+   to a note onset when the noteheads match the score's note count, else to a half beat by position.
+   Only the top staff of a system is read (below it is the upper staff's lyrics), tokens must sit in
+   the band 0.8 to 5.5 interlines above the top line, and outliers off the common chord line are
+   dropped. A short first measure is a pickup: it is padded at the front and marked implicit.
 4. **Output** as standard MusicXML `<harmony>` elements (`root`, `kind`, `bass`, `degree`) inserted
    in the measure before the first note at or after the chosen beat. OpenSheetMusicDisplay renders
    these above the staff, so the sheet shows what was read and the user can compare with the paper.
@@ -93,9 +101,11 @@ Add a **chord stage** to the recognition pipeline, deterministic and benchmark-d
 
 ## Consequences
 
-- Recognition takes a few seconds longer per page (OCR on four to eight strips, two passes each).
-- The engine boundary changes from "run homr's CLI" to "run our driver in the same interpreter";
-  the driver is 60 lines that mirror `homr.main.process_image`, pinned to homr 0.7.
+- Recognition takes about a second longer per page on this machine (detector plus recognizer on
+  four to eight bands); the measured cost on the ARM server is recorded in `bench/RESULTS.md`.
+- The engine boundary changes from "run homr's CLI" to "run our driver as the subprocess"; the
+  driver mirrors two homr functions, imports every name it needs at module level, and is pinned to
+  homr 0.7.
 - Job results gain `chords` and chord warnings in the stats; the score view shows the count and any
   token that was seen but not accepted, so a wrong or missing chord can be spotted.
 - Chord symbols become part of the ground truth files in `bench/`, and the benchmark results table

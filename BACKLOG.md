@@ -9,7 +9,10 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Depends on: ground-truth test set from the OMR benchmark milestone.
 
 ## Chord symbols and lyrics
-- Audiveris OCR mixes verse text into lyrics on lead sheets (see bench/RESULTS.md). Options: mask non-staff text regions before OCR, or run Tesseract ourselves on the chord-symbol band above each staff.
+- Chord symbols: done (ADR 0003, bench/chords). Follow-ups: accompaniment rhythm styles (arpeggio, waltz bass, swing), a
+  count-in, an LLM or vision second opinion on tokens under the confidence floor, chord symbols under the staff (some
+  editions), and lyrics under the notes (same band idea, below the staff, no grammar).
+- Audiveris OCR mixes verse text into lyrics on lead sheets (see bench/RESULTS.md); not used.
 
 ## Second-opinion engine
 - Audiveris is kept as fallback behind the engine interface (ADR 0002). Once a correction workflow exists, disagreements between homr and Audiveris could flag measures to review.

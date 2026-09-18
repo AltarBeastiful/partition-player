@@ -58,6 +58,16 @@ All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_E
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
+## Chord symbols and accompaniment
+
+On a lead sheet the chord names printed above the staff (Cm, F#m7, G7/B) are read after recognition
+(ADR 0003): homr's staff geometry gives the band above each system, RapidOCR's detector finds the
+text, and the recognizer's character probabilities are decoded under a chord grammar, so only a legal
+chord can come out and nothing is written when the reading is not sure. Chords are stored as MusicXML
+`<harmony>`, drawn on the sheet, and played as a simple piano accompaniment with separate melody and
+accompaniment switches. Tokens that were seen but not accepted are listed under the sheet.
+The benchmark is `bench/chords/` (see `bench/RESULTS.md`).
+
 ## Score library
 
 Every finished job is a saved score with its own link, `/s/{id}`, listed on the home page with a

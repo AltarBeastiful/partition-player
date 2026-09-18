@@ -28,6 +28,7 @@ class Token:
     x_right: float
     y: float
     raw: str           # unconstrained greedy reading, for the warnings
+    framed: bool = False  # drawn inside a box: a rehearsal mark, not a chord
 
 
 def make_ocr():
@@ -77,20 +78,62 @@ def _detect(ocr, band: np.ndarray, unit: float) -> list[tuple[float, float, floa
     return merged
 
 
+def _ink(crop: np.ndarray) -> np.ndarray:
+    """Binary ink mask of a small crop (Otsu; crops are text on paper)."""
+    return cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1] > 0
+
+
+def _split_on_gaps(ink: np.ndarray, min_gap: int) -> list[tuple[int, int]]:
+    """Column ranges of ink separated by blank runs at least min_gap wide (the detector merges neighbours)."""
+    cols = ink.any(axis=0)
+    ranges, start, blank = [], None, 0
+    for x, on in enumerate(cols):
+        if on:
+            if start is None:
+                start = x
+            elif blank >= min_gap:
+                ranges.append((start, x - blank)); start = x
+            blank = 0
+        elif start is not None:
+            blank += 1
+    if start is not None:
+        ranges.append((start, len(cols) - blank))
+    return ranges
+
+
+def _framed(ink: np.ndarray) -> bool:
+    """A rectangle around the text: long ink runs along the top, bottom, left and right."""
+    h, w = ink.shape
+    if h < 8 or w < 8:
+        return False
+    rows = ink.mean(axis=1); cols = ink.mean(axis=0)
+    band_h, band_w = max(1, h // 3), max(1, w // 3)
+    return (rows[:band_h].max() > 0.6 and rows[-band_h:].max() > 0.6
+            and cols[:band_w].max() > 0.6 and cols[-band_w:].max() > 0.6)
+
+
 def read_band(ocr, band: np.ndarray, unit: float) -> list[Token]:
-    """OCR one band (grayscale, already straightened). Returns every detected box, decoded."""
+    """OCR one band (grayscale, already straightened). Returns every detected piece of text, decoded."""
     rec = ocr.text_rec
     chars = rec.postprocess_op.character
     tokens = []
     for x0, y0, x1, y1 in _detect(ocr, band, unit):
         pad = unit * 0.3
-        crop = band[max(0, int(y0 - pad)):int(y1 + pad), max(0, int(x0 - pad)):int(x1 + pad)]
+        bx0, by0 = max(0, int(x0 - pad)), max(0, int(y0 - pad))
+        crop = band[by0:int(y1 + pad), bx0:int(x1 + pad)]
         if crop.size == 0 or crop.shape[0] < 4 or crop.shape[1] < 4:
             continue
-        bgr = cv2.cvtColor(crop, cv2.COLOR_GRAY2BGR)
-        ratio = max(rec.rec_image_shape[2] / rec.rec_image_shape[1], bgr.shape[1] / bgr.shape[0])
-        norm = rec.resize_norm_img(bgr, ratio)
-        probs = rec.session(norm[np.newaxis].astype(np.float32))[0]
-        text, conf = constrained_decode(probs, chars)
-        tokens.append(Token(text, round(conf, 3), x0, x1, (y0 + y1) / 2, _greedy(probs, chars)))
+        ink = _ink(crop)
+        framed = _framed(ink)
+        pieces = _split_on_gaps(ink, int(0.5 * unit)) or [(0, crop.shape[1])]
+        for px0, px1 in pieces:
+            piece = crop[:, max(0, px0 - 2):min(crop.shape[1], px1 + 2)]
+            if piece.shape[1] < 4:
+                continue
+            bgr = cv2.cvtColor(piece, cv2.COLOR_GRAY2BGR)
+            ratio = max(rec.rec_image_shape[2] / rec.rec_image_shape[1], bgr.shape[1] / bgr.shape[0])
+            norm = rec.resize_norm_img(bgr, ratio)
+            probs = rec.session(norm[np.newaxis].astype(np.float32))[0]
+            text, conf = constrained_decode(probs, chars)
+            tokens.append(Token(text, round(conf, 3), bx0 + px0, bx0 + px1, (y0 + y1) / 2, _greedy(probs, chars), framed))
     return tokens

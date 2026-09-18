@@ -26,9 +26,11 @@ def render(xml: Path, png: Path) -> None:
     svg = tk.renderToSVG(1)
     # verovio sets accidentals in chord names and the metronome note in its SMuFL font, which the rasterizer
     # does not have; print them as the plain text most published sheets use ("F#", "Bb").
-    glyphs = {"\ue262": "#", "\ue260": "b", "\ue261": "", "\ue1d5": "\u2669", "\ue1d7": "\u266a"}
+    glyphs = {"\ue262": "#", "\ue260": "b", "\ue261": "", "\uea64": "b", "\uea65": "", "\uea66": "#",
+              "\ue1d5": "\u2669", "\ue1d7": "\u266a", "\ueca5": "\u2669", "\ueca3": "\u2669", "\ueca7": "\u266a"}
     svg = re.sub(r'<tspan font-family="Leipzig"([^>]*)>([^<]*)</tspan>',
-                 lambda m: '<tspan%s>%s</tspan>' % (m.group(1), "".join(glyphs.get(c, "?") for c in m.group(2))), svg)
+                 lambda m: '<tspan%s>%s</tspan>' % (re.sub(r'font-size="(\d+)px"', lambda f: 'font-size="%dpx"' % (int(f.group(1)) * 0.56), m.group(1)),
+                                                     "".join(glyphs.get(c, "?") for c in m.group(2))), svg)
     cairosvg.svg2png(bytestring=svg.encode(), write_to=str(png), background_color="white", scale=1.2)
 
 

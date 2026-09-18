@@ -14,7 +14,7 @@ import numpy as np
 
 ROOTS = "ABCDEFG"
 ACCIDENTALS = ("", "#", "b")
-QUALITIES = ("", "m", "min", "maj", "M", "dim", "aug", "sus2", "sus4", "+", "-")
+QUALITIES = ("", "m", "min", "Min", "maj", "Maj", "M", "dim", "aug", "sus2", "sus4", "+", "-")
 EXTENSIONS = ("", "5", "6", "7", "9", "11", "13", "69", "add9", "7b5", "7#5", "b9", "#9")
 # glyphs the recognizer may emit for a grammar character (the canonical one first)
 GLYPHS = {"A": "Aa", "B": "B8", "C": "Cc", "D": "D0Oo", "E": "Ee", "F": "Ff", "G": "G6g",
@@ -24,15 +24,15 @@ CANON = "canon"
 
 # (quality, extension) -> MusicXML kind, plus degree additions
 KINDS: dict[tuple[str, str], tuple[str, tuple[tuple[int, int, str], ...]]] = {
-    ("", ""): ("major", ()), ("maj", ""): ("major", ()), ("M", ""): ("major", ()),
-    ("m", ""): ("minor", ()), ("min", ""): ("minor", ()), ("-", ""): ("minor", ()),
-    ("", "7"): ("dominant", ()), ("maj", "7"): ("major-seventh", ()), ("M", "7"): ("major-seventh", ()),
-    ("m", "7"): ("minor-seventh", ()), ("min", "7"): ("minor-seventh", ()), ("-", "7"): ("minor-seventh", ()),
+    ("", ""): ("major", ()), ("maj", ""): ("major", ()), ("Maj", ""): ("major", ()), ("M", ""): ("major", ()),
+    ("m", ""): ("minor", ()), ("min", ""): ("minor", ()), ("Min", ""): ("minor", ()), ("-", ""): ("minor", ()),
+    ("", "7"): ("dominant", ()), ("maj", "7"): ("major-seventh", ()), ("Maj", "7"): ("major-seventh", ()), ("M", "7"): ("major-seventh", ()),
+    ("m", "7"): ("minor-seventh", ()), ("min", "7"): ("minor-seventh", ()), ("Min", "7"): ("minor-seventh", ()), ("-", "7"): ("minor-seventh", ()),
     ("dim", ""): ("diminished", ()), ("dim", "7"): ("diminished-seventh", ()),
     ("aug", ""): ("augmented", ()), ("+", ""): ("augmented", ()),
     ("aug", "7"): ("augmented-seventh", ()), ("+", "7"): ("augmented-seventh", ()),
     ("", "6"): ("major-sixth", ()), ("m", "6"): ("minor-sixth", ()), ("min", "6"): ("minor-sixth", ()),
-    ("", "9"): ("dominant-ninth", ()), ("maj", "9"): ("major-ninth", ()), ("M", "9"): ("major-ninth", ()),
+    ("", "9"): ("dominant-ninth", ()), ("maj", "9"): ("major-ninth", ()), ("Maj", "9"): ("major-ninth", ()), ("M", "9"): ("major-ninth", ()),
     ("m", "9"): ("minor-ninth", ()), ("", "11"): ("dominant-11th", ()), ("", "13"): ("dominant-13th", ()),
     ("sus4", ""): ("suspended-fourth", ()), ("sus2", ""): ("suspended-second", ()),
     ("sus4", "7"): ("suspended-fourth", ((7, -1, "add"),)), ("", "5"): ("power", ()),

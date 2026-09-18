@@ -11,7 +11,7 @@ dependencies = [
     "pillow>=10",
     "numpy>=1.26",
     "opencv-python-headless>=4.10",
-    "homr>=0.7",
+    "homr>=0.7,<0.8",
 ]
 
 [project.optional-dependencies]

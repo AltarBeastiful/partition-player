@@ -159,7 +159,7 @@ def main(image_path: str, out_dir: str) -> None:
                 "measures": measures_per_system[i] if i < len(measures_per_system) else 0,
                 "band": band_file.name, "band_x0": x0, "band_above_units": BAND_ABOVE_UNITS,
                 "tokens": [{"text": t.text, "confidence": float(t.confidence), "x_left": float(t.x_left + x0), "x_right": float(t.x_right + x0),
-                            "y_units_above": float((band.shape[0] - t.y) / unit - BAND_BELOW_UNITS), "raw": t.raw} for t in tokens],
+                            "y_units_above": float((band.shape[0] - t.y) / unit - BAND_BELOW_UNITS), "raw": t.raw, "framed": t.framed} for t in tokens],
             })
         (out / "geometry.json").write_text(json.dumps({"image": [int(gray.shape[1]), int(gray.shape[0])], "systems": systems}, indent=1))
         log("Result was written to", xml_file)
