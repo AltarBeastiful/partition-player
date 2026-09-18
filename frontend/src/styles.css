@@ -70,3 +70,10 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 @media (max-width: 480px) { .score-row { grid-template-columns: 44px 1fr auto; } .thumb { width: 44px; height: 58px; } }
 .transpose button { padding: 4px 10px; line-height: 1; }
 .stats.notes { display: grid; gap: 2px; }
+
+/* French note names drawn over the staff by noteNames.ts (the sheet is white in both themes). */
+.sheet g.note-names text { font: 600 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #0e7490; }
+
+/* Lyrics editor: one text field per verse, monospace so hyphens and holds line up with the eye. */
+.lyrics .verse { display: grid; gap: 4px; }
+.lyrics textarea { font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); resize: vertical; width: 100%; box-sizing: border-box; }

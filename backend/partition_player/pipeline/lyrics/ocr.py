@@ -135,19 +135,74 @@ def _extender_after(band: np.ndarray, w: Word, next_left: float, unit: float) ->
     return best >= unit and thick <= max(2, 0.2 * unit) and ink.any(axis=0)[: int(unit)].mean() > 0.5
 
 
+def _hyphen_between(band: np.ndarray, a: Word, b: Word, unit: float) -> bool:
+    """A printed hyphen the OCR dropped: a short thin horizontal ink run at mid x-height in the gap
+    between two words on the same row, with nothing else in the gap."""
+    gap = b.x_left - a.x_right
+    if gap < 0.3 * unit or gap > 9.0 * unit:   # syllables sit under their notes, so gaps are wide
+        return False
+    y0 = int(a.y_top + 0.3 * (a.y_bottom - a.y_top))
+    y1 = int(a.y_top + 0.8 * (a.y_bottom - a.y_top))
+    x0, x1 = int(a.x_right + 0.1 * unit), int(b.x_left - 0.1 * unit)
+    if x1 - x0 < 0.15 * unit or y1 <= y0:
+        return False
+    crop = band[max(0, y0):min(band.shape[0], y1), max(0, x0):x1]
+    if crop.size == 0:
+        return False
+    ink = cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1] > 0
+    if not (0.004 < ink.mean() < 0.5):
+        return False
+    cols = ink.any(axis=0)
+    runs, start = [], None
+    for x, on in enumerate(cols):
+        if on and start is None:
+            start = x
+        elif not on and start is not None:
+            runs.append((start, x)); start = None
+    if start is not None:
+        runs.append((start, len(cols)))
+    margin = 0.2 * unit   # serifs of the neighbouring letters poke into the crop's edges
+    runs = [(a, b) for a, b in runs if b - a >= 0.1 * unit and a >= margin and b <= len(cols) - margin]
+    if len(runs) != 1:
+        return False
+    length = runs[0][1] - runs[0][0]
+    rows = ink[:, runs[0][0]:runs[0][1]].sum(axis=1)
+    thick = int((rows > 0.5 * rows.max()).sum())
+    return 0.3 * unit <= length <= 1.0 * unit and thick <= max(2, 0.25 * unit) and length >= 3 * thick and rows.max() >= 0.8 * length
+
+
 def read_lyrics(ocr, band: np.ndarray, unit: float) -> list[Word]:
     """OCR one grayscale band (already straightened); coordinates in band pixels."""
     if band.size == 0 or band.shape[0] < 8 or band.shape[1] < 8:
         return []
     words = merge_passes([_pass(ocr, band, s) for s in PASSES])
-    rows: dict[int, list[Word]] = {}
-    for w in words:
-        rows.setdefault(round(w.y_center / max(1.0, 0.8 * unit)), []).append(w)
-    for row in rows.values():
+    found: list[Word] = []
+    for row in cluster_rows(words):
         row.sort(key=lambda w: w.x_left)
         for i, w in enumerate(row):
             if w.text and w.text[-1] in HYPHENS:
                 continue
             next_left = row[i + 1].x_left if i + 1 < len(row) else band.shape[1]
             w.extend = _extender_after(band, w, next_left, unit)
-    return words
+            if w.extend:
+                continue
+            # a hyphen the OCR dropped, between this word and the next (or after the row's last word)
+            nxt = row[i + 1] if i + 1 < len(row) else Word("", 1.0, min(band.shape[1], w.x_right + 3.0 * unit), band.shape[1], w.y_top, w.y_bottom)
+            if (not nxt.text or nxt.text[0] not in HYPHENS) and _hyphen_between(band, w, nxt, unit):
+                found.append(Word("-", 0.9, w.x_right + 0.1 * unit, nxt.x_left - 0.1 * unit, w.y_top, w.y_bottom))
+    words += found
+    return [w for row in cluster_rows(words) for w in sorted(row, key=lambda w: w.x_left)]
+
+
+def cluster_rows(words: list[Word]) -> list[list[Word]]:
+    """Words grouped into text rows by their vertical centre (rows are a text height apart)."""
+    rows: list[list[Word]] = []
+    for w in sorted(words, key=lambda w: w.y_center):
+        if rows:
+            centre = sum(x.y_center for x in rows[-1]) / len(rows[-1])
+            height = max(x.y_bottom - x.y_top for x in rows[-1])
+            if abs(w.y_center - centre) <= 0.6 * height:
+                rows[-1].append(w)
+                continue
+        rows.append([w])
+    return rows

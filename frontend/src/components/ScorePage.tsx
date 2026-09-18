@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, deleteJob, getJob, renameJob, type Job } from "../api";
 import { Progress } from "./Progress";
+import { LyricsPanel } from "./LyricsPanel";
 import { ScoreView } from "./ScoreView";
 import { navigate, onLinkClick } from "../router";
 
@@ -12,6 +13,7 @@ export function ScorePage({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [version, setVersion] = useState(0); // bumped when the lyrics are saved, so the sheet reloads
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -78,7 +80,8 @@ export function ScorePage({ id }: { id: string }) {
         {error && <div className="error">{error}</div>}
       </section>
       {job && job.status !== "done" && <Progress jobId={id} onDone={onDone} />}
-      {job && job.status === "done" && <ScoreView job={job} />}
+      {job && job.status === "done" && <ScoreView job={job} version={version} />}
+      {job && job.status === "done" && <LyricsPanel jobId={id} onSaved={() => setVersion((v) => v + 1)} />}
     </>
   );
 }

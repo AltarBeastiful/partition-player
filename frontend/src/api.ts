@@ -58,8 +58,25 @@ export async function deleteJob(id: string): Promise<void> {
   return check<void>(await fetch(`/api/jobs/${id}`, { method: "DELETE" }));
 }
 
-export function scoreUrl(id: string): string {
-  return `/api/jobs/${id}/score.musicxml`;
+export function scoreUrl(id: string, version = 0): string {
+  return version ? `/api/jobs/${id}/score.musicxml?v=${version}` : `/api/jobs/${id}/score.musicxml`;
+}
+
+export interface LyricsState {
+  verses: string[];      // one text per verse, in the editor convention
+  syllables: number[];   // per verse
+  notes: number;         // sounding notes in the score
+  measures: number[];    // sounding notes per measure
+}
+
+export async function getLyrics(id: string): Promise<LyricsState> {
+  return check<LyricsState>(await fetch(`/api/jobs/${id}/lyrics`));
+}
+
+export async function saveLyrics(id: string, verses: string[]): Promise<LyricsState> {
+  return check<LyricsState>(await fetch(`/api/jobs/${id}/lyrics`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verses }),
+  }));
 }
 
 export function thumbUrl(id: string): string {

@@ -3,7 +3,17 @@ import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { scoreUrl, type Job } from "../api";
 import { Player, type PlaybackState } from "../player";
 
-export function ScoreView({ job }: { job: Job }) {
+const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
+
+function readNoteNamesPref(): boolean {
+  try { return localStorage.getItem(NOTE_NAMES_PREF) === "1"; } catch { return false; }
+}
+
+function writeNoteNamesPref(on: boolean): void {
+  try { localStorage.setItem(NOTE_NAMES_PREF, on ? "1" : "0"); } catch { /* private browsing */ }
+}
+
+export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) {
   const host = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
   const playerRef = useRef<Player | null>(null);
@@ -32,7 +42,7 @@ export function ScoreView({ job }: { job: Job }) {
         cursorsOptions: [{ type: 0, color: "#0e7490", alpha: 0.35, follow: false }],
       });
       try {
-        await osmd.load(scoreUrl(job.id));
+        await osmd.load(scoreUrl(job.id, version));
         if (cancelled) return;
         osmd.render();
         osmd.cursor.show();
@@ -51,7 +61,7 @@ export function ScoreView({ job }: { job: Job }) {
     }
     load();
     return () => { cancelled = true; playerRef.current?.dispose(); };
-  }, [job.id]);
+  }, [job.id, version]);
 
   const toggle = useCallback(async () => {
     const p = playerRef.current;
@@ -120,7 +130,7 @@ export function ScoreView({ job }: { job: Job }) {
           <span>read by {job.result?.engine} in {job.result?.seconds}s</span>
         </div>
       )}
-      {stats && (stats.chord_warnings?.length || stats.chords_seen?.length) ? (
+      {stats && (stats.chord_warnings?.length || stats.chords_seen?.length || stats.lyrics_seen?.length) ? (
         <div className="stats notes">
           {stats.chord_warnings?.map((w, i) => <span key={"w" + i}>{w}</span>)}
           {stats.chords_seen && stats.chords_seen.length > 0 && (
@@ -134,3 +144,7 @@ export function ScoreView({ job }: { job: Job }) {
     </section>
   );
 }
+          {(stats.lyrics_syllables ?? 0) > 0 && <span>{stats.lyrics_syllables} syllables of lyrics</span>}
+          {stats.lyrics_seen && stats.lyrics_seen.length > 0 && (
+            <span>Text seen under the staves but not used as lyrics: {stats.lyrics_seen.map((s) => `"${s.text}" (line ${s.staff}, ${s.reason})`).join(", ")}</span>
+          )}

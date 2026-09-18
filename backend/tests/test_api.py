@@ -107,3 +107,21 @@ def test_cap_drops_oldest_scores(settings):
             ids.append(wait_done(client, r.json()["id"])["id"])
         listed = [j["id"] for j in client.get("/api/jobs").json()]
         assert listed == [ids[2], ids[1]]
+
+
+def test_lyrics_editor_round_trip(settings):
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("photo.jpg", PHOTO.read_bytes(), "image/jpeg")})
+        job = wait_done(client, r.json()["id"])
+        state = client.get(f"/api/jobs/{job['id']}/lyrics").json()
+        assert state["verses"] == [] and state["notes"] > 10 and len(state["measures"]) == 19
+        r = client.patch(f"/api/jobs/{job['id']}/lyrics", json={"verses": ["Lors-que nous_ é-tions", "* Deux"]})
+        assert r.status_code == 200, r.text
+        state = r.json()
+        assert state["verses"] == ["Lors-que nous_ é-tions", "* Deux"] and state["syllables"] == [5, 1]
+        score = client.get(f"/api/jobs/{job['id']}/score.musicxml")
+        assert score.content.count(b"<lyric") == 6 and score.headers["cache-control"] == "no-cache"
+        assert "lyrics.json" in [p.name for p in (settings.jobs_dir / job["id"]).iterdir()]
+        assert client.patch(f"/api/jobs/{job['id']}/lyrics", json={"verses": []}).json()["verses"] == []

@@ -15,12 +15,18 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
+from .pipeline.lyrics import edit as lyrics_edit
+from .pipeline.lyrics import inject as lyrics_inject
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp"}
 
 
 class Rename(BaseModel):
     name: str = Field(max_length=MAX_NAME)
+
+
+class Verses(BaseModel):
+    verses: list[str] = Field(max_length=12)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -86,7 +92,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         job = load(job_id)
         if job.status != "done":
             raise HTTPException(409, f"job is {job.status}")
-        return FileResponse(store.dir(job_id) / "score.musicxml", media_type="application/vnd.recordare.musicxml+xml")
+        return FileResponse(store.dir(job_id) / "score.musicxml", media_type="application/vnd.recordare.musicxml+xml",
+                            headers={"Cache-Control": "no-cache"})  # the lyrics editor rewrites it in place
+
+    def lyrics_state(job_id: str) -> dict:
+        score = store.dir(job_id) / "score.musicxml"
+        lyrics_file = store.dir(job_id) / "lyrics.json"
+        placed = lyrics_inject.load(lyrics_file) if lyrics_file.exists() else []
+        counts = lyrics_inject.onset_counts(score)
+        order = [(m, o) for m, n in enumerate(counts) for o in range(n)]
+        verses = [lyrics_edit.verse_text(placed, v, order) for v in range(1, max([p.verse for p in placed], default=0) + 1)]
+        return {"verses": verses, "notes": len(order), "measures": counts,
+                "syllables": [sum(1 for p in placed if p.verse == v) for v in range(1, len(verses) + 1)]}
+
+    @app.get("/api/jobs/{job_id}/lyrics")
+    def get_lyrics(job_id: str) -> dict:
+        job = load(job_id)
+        if job.status != "done":
+            raise HTTPException(409, f"job is {job.status}")
+        return lyrics_state(job_id)
+
+    @app.patch("/api/jobs/{job_id}/lyrics")
+    def save_lyrics(job_id: str, body: Verses) -> dict:
+        """Replace the lyrics from verse texts (ADR 0004): the score's <lyric> elements are rewritten in
+        place, chords and everything else stay, lyrics.json records the new placements."""
+        job = load(job_id)
+        if job.status != "done":
+            raise HTTPException(409, f"job is {job.status}")
+        score = store.dir(job_id) / "score.musicxml"
+        lyrics_file = store.dir(job_id) / "lyrics.json"
+        with store.lock:
+            old = lyrics_inject.load(lyrics_file) if lyrics_file.exists() else []
+            counts = lyrics_inject.onset_counts(score)
+            order = [(m, o) for m, n in enumerate(counts) for o in range(n)]
+            verses = [v for v in body.verses if v.strip()]
+            placed = lyrics_edit.deal(verses, order, old)
+            lyrics_inject.rewrite(score, placed)
+            lyrics_inject.save(lyrics_file, placed, [], [])
+        return lyrics_state(job_id)
 
     @app.get("/api/jobs/{job_id}/input")
     def get_input(job_id: str) -> FileResponse:

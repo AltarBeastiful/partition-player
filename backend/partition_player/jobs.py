@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 TERMINAL = {"done", "failed"}
 MAX_NAME = 120
-KEEP_DONE = {"status.json", "result.json", "score.musicxml", "thumb.jpg"}
+KEEP_DONE = {"status.json", "result.json", "score.musicxml", "thumb.jpg", "lyrics.json"}
 KEEP_FAILED_SUFFIXES = (".error.log",)
 
 
@@ -62,6 +62,11 @@ class JobStore:
 
     def dir(self, job_id: str) -> Path:
         return self.root / job_id
+
+    @property
+    def lock(self) -> threading.Lock:
+        """Guards status.json writes and, for the lyrics editor, the score rewrite."""
+        return self._lock
 
     def create(self, input_name: str, data: bytes) -> Job:
         job_id = uuid.uuid4().hex[:12]

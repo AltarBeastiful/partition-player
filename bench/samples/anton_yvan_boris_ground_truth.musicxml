@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE score-partwise  PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<?xml version='1.0' encoding='UTF-8'?>
 <score-partwise version="4.0">
   <work>
     <work-title>Anton, Yvan, Boris et moi</work-title>
@@ -26,9 +25,9 @@
       <part-name>Voice</part-name>
     </score-part>
   </part-list>
-  <!--=========================== Part 1 ===========================-->
+  
   <part id="P869afa96feb9cd561ad3895966b7e7ce">
-    <!--========================= Measure 1 ==========================-->
+    
     <measure implicit="no" number="1">
       <attributes>
         <divisions>10080</divisions>
@@ -62,7 +61,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>Lors</text>
         </lyric>
       </note>
@@ -77,7 +76,7 @@
         <beam number="1">end</beam>
         <beam number="2">backward hook</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>que</text>
         </lyric>
       </note>
@@ -105,12 +104,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>é</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 2 ==========================-->
+    
     <measure implicit="no" number="2">
       <note>
         <pitch>
@@ -122,7 +121,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>tions</text>
         </lyric>
       </note>
@@ -137,7 +136,7 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>en</text>
         </lyric>
       </note>
@@ -152,7 +151,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>core</text>
         </lyric>
       </note>
@@ -166,12 +165,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>en</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 3 ==========================-->
+    
     <measure implicit="no" number="3">
       <note>
         <pitch>
@@ -181,7 +180,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>fants</text>
         </lyric>
       </note>
@@ -217,7 +216,7 @@
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 4 ==========================-->
+    
     <measure implicit="no" number="4">
       <note>
         <pitch>
@@ -229,7 +228,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>che</text>
         </lyric>
       </note>
@@ -243,7 +242,7 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>min</text>
         </lyric>
       </note>
@@ -272,12 +271,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>bru</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 5 ==========================-->
+    
     <measure implicit="no" number="5">
       <harmony>
         <root>
@@ -293,7 +292,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>yère,</text>
         </lyric>
       </note>
@@ -329,7 +328,7 @@
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 6 ==========================-->
+    
     <measure implicit="no" number="6">
       <note>
         <pitch>
@@ -383,12 +382,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>ri</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 7 ==========================-->
+    
     <measure implicit="no" number="7">
       <harmony>
         <root>
@@ -405,7 +404,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>vière</text>
         </lyric>
       </note>
@@ -435,12 +434,12 @@
         <beam number="1">end</beam>
         <beam number="2">backward hook</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>cueil</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 8 ==========================-->
+    
     <measure implicit="no" number="8">
       <harmony>
         <root>
@@ -459,7 +458,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>lait</text>
         </lyric>
       </note>
@@ -488,7 +487,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>mi</text>
         </lyric>
       </note>
@@ -502,12 +501,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>middle</syllabic>
           <text>ra</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 9 ==========================-->
+    
     <measure implicit="no" number="9">
       <harmony>
         <root>
@@ -523,7 +522,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>belle.</text>
         </lyric>
       </note>
@@ -560,7 +559,7 @@
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 10 =========================-->
+    
     <measure implicit="no" number="10">
       <note>
         <pitch>
@@ -601,7 +600,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>tour</text>
         </lyric>
       </note>
@@ -617,12 +616,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>middle</syllabic>
           <text>te</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 11 =========================-->
+    
     <measure implicit="no" number="11">
       <harmony>
         <root>
@@ -638,7 +637,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>relles.</text>
         </lyric>
       </note>
@@ -650,7 +649,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>An</text>
         </lyric>
       </note>
@@ -660,7 +659,7 @@
         <type>eighth</type>
       </note>
     </measure>
-    <!--========================= Measure 12 =========================-->
+    
     <measure implicit="no" number="12">
       <note>
         <pitch>
@@ -670,7 +669,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>ton,</text>
         </lyric>
       </note>
@@ -687,7 +686,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>Y</text>
         </lyric>
       </note>
@@ -697,7 +696,7 @@
         <type>eighth</type>
       </note>
     </measure>
-    <!--========================= Measure 13 =========================-->
+    
     <measure implicit="no" number="13">
       <harmony>
         <root>
@@ -713,7 +712,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>van,</text>
         </lyric>
       </note>
@@ -730,7 +729,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>Bo</text>
         </lyric>
       </note>
@@ -740,7 +739,7 @@
         <type>eighth</type>
       </note>
     </measure>
-    <!--========================= Measure 14 =========================-->
+    
     <measure implicit="no" number="14">
       <note>
         <pitch>
@@ -750,7 +749,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>ris</text>
         </lyric>
       </note>
@@ -777,7 +776,7 @@
         <type>eighth</type>
       </note>
     </measure>
-    <!--========================= Measure 15 =========================-->
+    
     <measure implicit="no" number="15">
       <harmony>
         <root>
@@ -812,7 +811,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>Re</text>
         </lyric>
       </note>
@@ -826,12 +825,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>middle</syllabic>
           <text>bec</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 16 =========================-->
+    
     <measure implicit="no" number="16">
       <note>
         <pitch>
@@ -841,7 +840,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>ca,</text>
         </lyric>
       </note>
@@ -858,7 +857,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>Pau</text>
         </lyric>
       </note>
@@ -868,7 +867,7 @@
         <type>eighth</type>
       </note>
     </measure>
-    <!--========================= Measure 17 =========================-->
+    
     <measure implicit="no" number="17">
       <harmony>
         <root>
@@ -884,7 +883,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>la,</text>
         </lyric>
       </note>
@@ -903,7 +902,7 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>Jo</text>
         </lyric>
       </note>
@@ -917,12 +916,12 @@
         <stem>up</stem>
         <beam number="1">end</beam>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>middle</syllabic>
           <text>han</text>
         </lyric>
       </note>
     </measure>
-    <!--========================= Measure 18 =========================-->
+    
     <measure implicit="no" number="18">
       <note>
         <pitch>
@@ -932,7 +931,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <lyric name="1" number="1">
-          <syllabic>single</syllabic>
+          <syllabic>end</syllabic>
           <text>na</text>
         </lyric>
       </note>
@@ -959,7 +958,7 @@
         <type>eighth</type>
       </note>
     </measure>
-    <!--========================= Measure 19 =========================-->
+    
     <measure implicit="no" number="19">
       <harmony>
         <root>

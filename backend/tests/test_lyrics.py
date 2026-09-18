@@ -144,3 +144,30 @@ def test_inject_after_notations_and_rewrite_keeps_harmony(tmp_path):
     assert inj.rewrite(score, placed[:1]) == 1
     assert sum(1 for _ in ET.parse(score).getroot().iter("lyric")) == 1
     assert inj.onset_counts(score) == [2]
+
+
+# ---- the editor's text convention -------------------------------------------------------------------
+
+def test_verse_text_round_trip_with_holds_and_skips():
+    from partition_player.pipeline.lyrics.edit import deal, parse_verse, verse_text
+
+    order = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2), (2, 0)]
+    placed = [Placement(1, 0, 1, "Lors", "begin", False, 1.0), Placement(1, 0, 2, "que", "end", False, 1.0),
+              Placement(1, 1, 0, "nous", "single", True, 1.0), Placement(1, 1, 2, "é", "begin", False, 1.0),
+              Placement(1, 2, 0, "tions", "end", False, 1.0)]
+    text = verse_text(placed, 1, order)
+    assert text == "* Lors-que nous_ é-tions"
+    again = deal([text], order, [])
+    assert [(p.measure, p.onset, p.text, p.syllabic) for p in again] == [(p.measure, p.onset, p.text, p.syllabic) for p in placed]
+    assert [it.text for it in parse_verse("a-b-c d_ e") if not it.skip] == ["a", "b", "c", "d", "e"]
+
+
+def test_deal_keeps_positions_when_counts_match_and_deals_otherwise():
+    from partition_player.pipeline.lyrics.edit import deal
+
+    order = [(0, 0), (0, 1), (0, 2), (1, 0)]
+    old = [Placement(1, 0, 1, "la", "single", False, 0.9), Placement(1, 1, 0, "mi", "single", False, 0.9)]
+    fixed = deal(["Pau-la,"], order, old)   # same count: texts replaced, positions kept
+    assert [(p.measure, p.onset, p.text, p.syllabic) for p in fixed] == [(0, 1, "Pau", "begin"), (1, 0, "la,", "end")]
+    dealt = deal(["a b c", "x"], order, old)  # different count: from the first note, in order
+    assert [(p.verse, p.measure, p.onset, p.text) for p in dealt] == [(1, 0, 0, "a"), (1, 0, 1, "b"), (1, 0, 2, "c"), (2, 0, 0, "x")]
