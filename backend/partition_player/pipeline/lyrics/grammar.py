@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 
 from ..chords.grammar import parse_chord
 
-HYPHENS = "-‐‑‒–—"
-EXTENDERS = "_–—"
+HYPHENS = "-‐‑"          # what splits syllables
+EXTENDERS = "_‒–—"   # what holds a syllable over the next notes (dashes and underscores)
 ELISION = "‿"
 PUNCT = ",.;:!?…"
 VERSE_NUMBER = re.compile(r"^\d{1,2}[.)]?$")
@@ -23,7 +23,7 @@ VERSE_NUMBER = re.compile(r"^\d{1,2}[.)]?$")
 ROW_TOLERANCE = 0.6      # a word joins a row when its centre is within this fraction of the text height
 MAX_ROW_GAP = 2.2        # rows further apart than this many text heights end the verse block
 MIN_COVERAGE = 0.4       # a row must span at least this fraction of the staff's note range
-CHORD_ZONE_UNITS = 5.0   # rows this close above the next staff's top line are its chord symbols
+CHORD_ZONE_UNITS = 3.5   # rows this close above the next staff's top line, and chord-shaped, are its chord symbols
 CHORD_LIKE = 0.6         # a later row whose tokens are mostly chord names is a chord line, not a verse
 
 
@@ -65,6 +65,11 @@ class Rejected:
     reason: str
 
 
+def _latin(text: str) -> bool:
+    """Lyrics here are Latin script: a token with CJK or other scripts is an ink blob the recognizer named."""
+    return all(c < "\u0370" or c in ELISION + EXTENDERS + HYPHENS + PUNCT for c in text)
+
+
 def _is_hyphen(text: str) -> bool:
     return 0 < len(text) <= 2 and all(c in HYPHENS for c in text)
 
@@ -86,7 +91,9 @@ def rows(words: list[dict], note_range: tuple[float, float] | None, chord_zone_f
     `chord_zone_from`: y (units below the bottom line) from which rows belong to the next system's chord band."""
     if not words:
         return [], []
-    words = sorted(words, key=lambda w: w["y_units"])
+    words = sorted((w for w in words if _latin(w["text"])), key=lambda w: w["y_units"])
+    if not words:
+        return [], []
     height = sorted(w["height_units"] for w in words)[len(words) // 2]
     clusters: list[list[dict]] = []
     for w in words:
@@ -104,12 +111,22 @@ def rows(words: list[dict], note_range: tuple[float, float] | None, chord_zone_f
         if prev_y is not None and y - prev_y > MAX_ROW_GAP * height:
             rejected.append(Rejected(text, y, "too far below the verses"))
             continue
-        if chord_zone_from is not None and y >= chord_zone_from:
+        likeness = chord_like(cluster)
+        if chord_zone_from is not None and y >= chord_zone_from and likeness >= 0.3 and len(cluster) >= 2:
             rejected.append(Rejected(text, y, "in the chord band of the next system"))
             continue
-        likeness = chord_like(cluster)
         if likeness >= (0.9 if not out else CHORD_LIKE) and len(cluster) >= 3:
             rejected.append(Rejected(text, y, "reads as chord symbols"))
+            continue
+        digits = sum(1 for w in cluster[1:] if any(c.isdigit() for c in w["text"])) / max(1, len(cluster) - 1)
+        if digits >= 0.3 and len(cluster) >= 3:
+            rejected.append(Rejected(text, y, "reads as numbers, not words"))
+            continue
+        # engraved lyrics hyphenate every word of more than one syllable: a row of long unhyphenated words is prose
+        hyphenated = any(_is_hyphen(w["text"]) or re.search(f"[^\\W\\d][{re.escape(HYPHENS)}][^\\W\\d]", w["text"]) for w in cluster)
+        long_words = sum(1 for w in cluster if len(w["text"].strip(PUNCT)) >= 7 and not any(c.isdigit() for c in w["text"]))
+        if not hyphenated and long_words >= 3:
+            rejected.append(Rejected(text, y, "reads as prose"))
             continue
         label = None
         if cluster and VERSE_NUMBER.match(cluster[0]["text"]):
@@ -139,7 +156,7 @@ def syllables(row: Row) -> list[Syllable]:
     pending_join = False   # a detached hyphen was seen: the next syllable continues the word
     for w in row.words:
         text = w["text"].strip()
-        if not text:
+        if not text or not _latin(text):
             continue
         if _is_hyphen(text):
             if out:

@@ -209,3 +209,17 @@ def test_rows_reject_the_next_systems_chord_line():
     # a first row of short words is still a verse
     r, _ = rows([word("A", 100, 110, y=3.4), word("la", 300, 320, y=3.4), word("E", 900, 910, y=3.4)], (100, 910))
     assert len(r) == 1
+
+
+def test_non_latin_tokens_are_ink_not_words():
+    r, _ = rows([word("一", 100, 110, y=3.4), word("la", 120, 140, y=3.4), word("一", 300, 310, y=3.4), word("mi", 500, 520, y=3.4)], (100, 520))
+    assert [w["text"] for w in r[0].words] == ["la", "mi"]
+
+
+def test_rows_reject_prose_and_numbers():
+    footer = [word(t, 100 + 90 * i, 180 + 90 * i, y=3.4) for i, t in enumerate("Mutopia Typeset using LilyPond by Evin Robertson".split())]
+    r, rejected = rows(footer, (100, 800))
+    assert not r and rejected[0].reason == "reads as prose"
+    numbers = [word(t, 100 + 90 * i, 180 + 90 * i, y=3.4) for i, t in enumerate("1 2014/12/14 37 p".split())]
+    r, rejected = rows(numbers, (100, 500))
+    assert not r and rejected[0].reason == "reads as numbers, not words"

@@ -56,7 +56,7 @@ def _pass(ocr, band: np.ndarray, scale: float) -> list[Word]:
     words: list[Word] = []
     for line in res.word_results or ():
         for item in line:
-            if len(item) != 3:   # RapidOCR gives an empty tuple for a line it could not split
+            if not isinstance(item, (tuple, list)) or len(item) != 3:   # RapidOCR gives an empty tuple, or a bare score, for a line it could not split
                 continue
             text, conf, quad = item
             q = np.asarray(quad, dtype=float)

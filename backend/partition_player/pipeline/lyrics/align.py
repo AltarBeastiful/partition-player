@@ -26,6 +26,7 @@ DROP_BASE, DROP_PER_CONFIDENCE = 2.0, 3.0
 ANCHOR_OFFSET = 0.25       # interlines to the right of the syllable's left edge
 MAX_MEAN_COST = 2.0        # per syllable, else the row is not lyrics
 MIN_MATCHED = 0.6          # fraction of a row's syllables that must find a note
+MIN_NOTE_COVER = 0.35      # fraction of the notes under the row's extent that must get a syllable (prose is sparser)
 CHORD_TONE_UNITS = 0.5     # noteheads closer than this in x are one chord
 
 
@@ -207,9 +208,17 @@ def place_lyrics(tree: ET.ElementTree, geometry: dict) -> LyricsResult:
             cost, assign = align_row(syls, onsets, unit)
             matched = sum(1 for a in assign if a is not None)
             text = " ".join(s.text for s in syls)
-            if matched == 0 or cost / len(syls) > MAX_MEAN_COST or matched < MIN_MATCHED * len(syls):
+            hit = [onsets[j] for j in assign if j is not None]
+            under = [o for o in onsets if hit and hit[0].x - unit <= o.x <= hit[-1].x + unit] if hit else onsets
+            sparse = bool(under) and matched < MIN_NOTE_COVER * len(under)
+            if matched == 0 or cost / len(syls) > MAX_MEAN_COST or matched < MIN_MATCHED * len(syls) or sparse:
                 result.seen.append({"staff": st["index"] + 1, "text": text, "reason": f"does not line up with the notes (verse {row.verse})"})
-                continue
+                # verses form one block: whatever follows a row that is not a verse (a footer, a
+                # paragraph) is not a verse either
+                for later in rws[rws.index(row) + 1:]:
+                    if later.syllables:
+                        result.seen.append({"staff": st["index"] + 1, "text": " ".join(x.text for x in later.syllables), "reason": "below a row that is not lyrics"})
+                break
             result.read += len(syls)
             result.verses = max(result.verses, row.verse)
             for s, j in zip(syls, assign):

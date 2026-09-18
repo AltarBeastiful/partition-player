@@ -164,3 +164,45 @@ Reproduce:
 .venv-oemer/bin/python bench/chords/make_synthetic.py <nottingham-dataset clone>   # writes bench/out/chords/
 .venv-oemer/bin/python bench/chords/run_bench.py                                     # about 15 min
 ```
+
+## Lyrics (ADR 0004)
+
+Date: 2026-09-18. Pages: the real photo; 19 rendered pages (four French songs typed with two or
+three verses on generated melodies, ten Nottingham lead sheets with synthetic French and English
+verses of one to three verses with melismas and punctuation, Berlin's and Foster's lead sheets and
+Luca's Gloria with their engraved lyrics), each clean and photo-degraded; two "paragraph" pages with
+a verse paragraph pasted right under the last system, clean and degraded; the Gymnopédie piano page
+as the negative. Scorer: `bench/lyrics/score_lyrics.py` (per note and verse: syllable placed on the
+right note, text right up to case and punctuation, syllabic type right, false syllables; character
+error rate of verse 1 in note order). A page whose measure count homr gets wrong (one of 17, a
+24-measure page read as 23) cannot be scored by position and is scored by sequence for text only.
+
+| set | pages | syllables | placed on the right note | text right | syllabic right | false | verses found |
+|---|---|---|---|---|---|---|---|
+| real photo | 1 | 55 | 55 (100 %) | 54 | 54 | 0 | 1 of 1 |
+| rendered, clean | 16 scorable | 2180 | 2148 (98.5 %) | 96.2 % (of 2561) | 2066 | 2 | 32 of 32 |
+| rendered, degraded | 16 scorable | 2180 | 2161 (99.1 %) | 96.9 % (of 2561) | 2076 | 1 | 32 of 32 |
+| paragraph under the last system | 4 | 168 | 166 (98.8 %) | 154 | 164 | 0 | 4 of 4 |
+| Gymnopédie (no words) | 1 | 0 | | | | 0 | 0 |
+
+- Every verse row is found and no page gains a verse it does not have: the chord line of the next
+  system, which sits inside the band of tight layouts, is rejected by its shape (it reads as chord
+  symbols) or its place (the next staff's chord zone); the verse paragraphs are rejected by the row
+  gap; the Gymnopédie's typesetting credits under its last system are rejected as prose (long words,
+  no hyphenation) and as numbers. The ADR's "false lyrics = 0" is met for rows and verses; three
+  single syllables in 5,100 (an OCR fragment matched to a free note) remain and are listed below.
+- Placement misses are the two doubtful-token drops per page and the melisma notes of the Gloria
+  (a Latin choral part with long melismas and no extender lines); text errors are OCR spelling
+  (accents in tiny renders, "Jo" read as "To" on the photo), which the editor is for.
+- The photo's dropped hyphens ("é - tions", "An - ton") were the main syllabic-type loss; they are
+  recovered from the pixels between words, 54 of 55 syllabic types now.
+- Time: recognition plus lyrics about 12 s per page on this machine; the server number is in
+  `deploy/README.md`.
+
+Reproduce:
+
+```
+.venv-oemer/bin/python bench/lyrics/make_pages.py       # writes bench/out/lyrics/ (needs bench/out/chords/nott_*.musicxml)
+.venv-oemer/bin/python bench/lyrics/run_bench.py        # about 15 min
+backend/.venv/bin/python bench/lyrics/replace.py        # re-place only, seconds, for tuning
+```
