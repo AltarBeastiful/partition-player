@@ -171,3 +171,29 @@ def test_deal_keeps_positions_when_counts_match_and_deals_otherwise():
     assert [(p.measure, p.onset, p.text, p.syllabic) for p in fixed] == [(0, 1, "Pau", "begin"), (1, 0, "la,", "end")]
     dealt = deal(["a b c", "x"], order, old)  # different count: from the first note, in order
     assert [(p.verse, p.measure, p.onset, p.text) for p in dealt] == [(1, 0, 0, "a"), (1, 0, 1, "b"), (1, 0, 2, "c"), (2, 0, 0, "x")]
+
+
+# ---- the optional language-model polish ---------------------------------------------------------
+
+def test_polish_keeps_structure_and_rejects_changed_counts(tmp_path):
+    from partition_player.pipeline.lyrics.polish import polish, verse_string
+
+    band = tmp_path / "lyrics_0.png"
+    band.write_bytes(b"\x89PNG fake")
+    placed = [Placement(1, 0, 0, "Lors", "begin", False, 1.0, 0), Placement(1, 0, 1, "que", "end", False, 1.0, 0),
+              Placement(1, 0, 2, "To", "begin", False, 0.7, 0), Placement(1, 1, 0, "han", "middle", False, 1.0, 0), Placement(1, 1, 1, "na", "end", False, 1.0, 0)]
+    assert verse_string(placed) == "Lors-que To-han-na"
+
+    class Reply:
+        def __init__(self, text): self._t = text
+        def raise_for_status(self): pass
+        def json(self): return {"content": [{"type": "text", "text": self._t}]}
+
+    class Client:
+        def __init__(self, text): self.text, self.calls = text, 0
+        def post(self, *a, **k): self.calls += 1; return Reply(self.text)
+
+    changed, warnings = polish(placed, {0: band}, "key", client=Client("Lors-que Jo-han-na"))
+    assert changed == 1 and placed[2].text == "Jo" and not warnings
+    changed, warnings = polish(placed, {0: band}, "key", client=Client("Lorsque Johanna et moi"))
+    assert changed == 0 and placed[2].text == "Jo" and "structure" in warnings[0]

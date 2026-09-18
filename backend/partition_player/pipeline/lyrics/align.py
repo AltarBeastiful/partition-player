@@ -46,6 +46,7 @@ class Placement:
     syllabic: str
     extend: bool
     confidence: float
+    staff: int = -1   # index of the staff whose band it was read from (for the polish step)
 
 
 @dataclass
@@ -214,6 +215,6 @@ def place_lyrics(tree: ET.ElementTree, geometry: dict) -> LyricsResult:
                     result.seen.append({"staff": st["index"] + 1, "text": s.text, "reason": f"no note for it (verse {row.verse})"})
                     continue
                 o = onsets[j]
-                result.placed.append(Placement(row.verse, o.measure, o.index, s.text, s.syllabic, s.extend, round(s.confidence, 3)))
+                result.placed.append(Placement(row.verse, o.measure, o.index, s.text, s.syllabic, s.extend, round(s.confidence, 3), st["index"]))
     result.placed.sort(key=lambda p: (p.verse, p.measure, p.onset))
     return result

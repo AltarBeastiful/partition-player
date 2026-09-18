@@ -22,6 +22,7 @@ class Settings:
     max_upload_mb: int = field(default_factory=lambda: _env_int("PP_MAX_UPLOAD_MB", 25))
     max_side_px: int = field(default_factory=lambda: _env_int("PP_MAX_SIDE_PX", 2500))
     frontend_dir: Path = field(default_factory=lambda: Path(os.environ.get("PP_FRONTEND_DIR", "../frontend/dist")))
+    anthropic_api_key: str = field(default_factory=lambda: os.environ.get("PP_ANTHROPIC_API_KEY", ""))  # lyrics text polish (ADR 0004), off when empty
 
     @property
     def jobs_dir(self) -> Path:
