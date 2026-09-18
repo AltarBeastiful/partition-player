@@ -28,3 +28,12 @@ def preprocess(src: Path, dst: Path, max_side_px: int = 2500) -> dict:
     dst.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(dst), gray)
     return {"width": int(gray.shape[1]), "height": int(gray.shape[0]), "scale": round(scale, 4)}
+
+
+def thumbnail(src: Path, dst: Path, max_side_px: int = 480) -> None:
+    """Small colour JPEG of the upload for the score library list."""
+    with Image.open(src) as im:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((max_side_px, max_side_px), Image.LANCZOS)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        im.save(dst, "JPEG", quality=80, optimize=True)

@@ -22,7 +22,7 @@ export function ScoreView({ job }: { job: Job }) {
       if (!host.current) return;
       const osmd = new OpenSheetMusicDisplay(host.current, {
         autoResize: true,
-        drawTitle: true,
+        drawTitle: false,  // homr's OCR of the title is unreliable; the page shows the editable name instead
         drawPartNames: false,
         followCursor: false,
         cursorsOptions: [{ type: 0, color: "#0e7490", alpha: 0.35, follow: false }],
@@ -71,7 +71,7 @@ export function ScoreView({ job }: { job: Job }) {
           Tempo <input id="tempo" type="range" min={40} max={180} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} />
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{bpm} bpm</span>
         </label>
-        <a href={scoreUrl(job.id)} download={`score-${job.id}.musicxml`}>Download MusicXML</a>
+        <a href={scoreUrl(job.id)} download={`${(job.name || "score").replace(/[^\w.-]+/g, "_")}.musicxml`}>Download MusicXML</a>
       </div>
       <div className="controls loop">
         <label>

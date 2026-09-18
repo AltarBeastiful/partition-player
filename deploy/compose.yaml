@@ -1,0 +1,47 @@
+# Production compose for the "main" server, behind philou's Caddy (see deploy/README.md).
+#
+#   docker compose -f deploy/compose.yaml up -d --build
+#
+# No `ports:` on purpose: 8000 is reachable only on the shared `deploy_default`
+# network, where the Caddy container (philou-web) proxies partition-player.caddy to it.
+name: partition-player
+
+services:
+  app:
+    build:
+      context: ..
+    image: partition-player:main
+    container_name: partition-player
+    restart: unless-stopped
+    environment:
+      PP_JOB_TIMEOUT_S: "600"   # 2 ARM cores: a dense page can take a few minutes
+      PP_JOB_TTL_DAYS: "7"      # failed jobs (input photo + logs) are dropped after a week
+      PP_MAX_SCORES: "500"      # finished scores are ~50 KB each, so this is ~25 MB at most
+      PP_MAX_UPLOAD_MB: "25"
+    volumes:
+      - data:/data
+    # homr peaks around 1.5 GB per page on the benchmark; one job runs at a time.
+    # The host has 10 GB; this cap keeps a runaway recognition from starving Caddy and PocketBase.
+    mem_limit: 3g
+    memswap_limit: 3g
+    cpu_shares: 512            # yield to the other containers when a recognition pins both cores
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - deploy_default
+
+networks:
+  deploy_default:
+    external: true
+
+volumes:
+  data:

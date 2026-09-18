@@ -49,13 +49,22 @@ docker compose up --build
 ```
 
 The image builds for amd64 and arm64. Recognition data lives in the `pp-data` volume under
-`/data/jobs/<id>/`.
+`/data/jobs/<id>/`. Production deployment on the main server: `deploy/README.md`.
 
 ## Configuration
 
 All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_ENGINE` (`homr`),
 `PP_FALLBACK_ENGINE` (`none` or `audiveris`, which also needs `PP_AUDIVERIS_BIN`),
-`PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS`, `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
+`PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
+scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
+
+## Score library
+
+Every finished job is a saved score with its own link, `/s/{id}`, listed on the home page with a
+thumbnail and an editable name. There is no login: anyone who can reach the app can add, rename
+and delete. To keep the disk flat, a finished job keeps only the MusicXML, a small thumbnail and its
+metadata (about 50 KB); the uploaded photo and the engine's intermediate files are deleted when the
+job ends.
 
 ## API
 
@@ -63,6 +72,8 @@ All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_E
 - `GET /api/jobs/{id}`: status is `queued`, `preprocessing`, `recognizing`, `postprocessing`,
   `done` or `failed`, with a `message`, and `result` or `error`.
 - `GET /api/jobs/{id}/score.musicxml`: the result once `done`.
+- `GET /api/jobs?limit=50`: the library, newest first. `PATCH /api/jobs/{id}` with `{"name": ...}`
+  renames; `DELETE /api/jobs/{id}` removes; `GET /api/jobs/{id}/thumb.jpg` is the list thumbnail.
 
 ## License
 

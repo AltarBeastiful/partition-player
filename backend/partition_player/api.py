@@ -1,18 +1,26 @@
-"""HTTP API (ADR 0001): POST /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/score.musicxml."""
+"""HTTP API (ADR 0001).
+
+Jobs double as the score library: a finished job is a saved score with a name, reachable at /s/{id}.
+"""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from . import __version__
 from .config import Settings, load_settings
-from .jobs import JobStore, Worker
+from .jobs import MAX_NAME, JobStore, Worker
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp"}
+
+
+class Rename(BaseModel):
+    name: str = Field(max_length=MAX_NAME)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,7 +30,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        store.clean_all()
         store.prune(settings.job_ttl_days)
+        store.cap(settings.max_scores)
         worker.start()
         yield
         worker.stop()
@@ -30,9 +40,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="partition-player", version=__version__, lifespan=lifespan)
     app.state.settings, app.state.store, app.state.worker = settings, store, worker
 
+    def load(job_id: str):
+        job = store.get(job_id)
+        if job is None:
+            raise HTTPException(404, "no such score")
+        return job
+
     @app.get("/api/health")
     def health() -> dict:
         return {"ok": True, "version": __version__, "engine": settings.engine, "fallback": settings.fallback_engine}
+
+    @app.get("/api/jobs")
+    def list_jobs(limit: int = Query(50, ge=1, le=500)) -> list[dict]:
+        return [j.to_dict() for j in store.list(limit)]
 
     @app.post("/api/jobs", status_code=202)
     async def create_job(file: UploadFile) -> dict:
@@ -49,16 +69,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str) -> dict:
-        job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "no such job")
-        return job.to_dict()
+        return load(job_id).to_dict()
+
+    @app.patch("/api/jobs/{job_id}")
+    def rename_job(job_id: str, body: Rename) -> dict:
+        load(job_id)
+        return store.rename(job_id, body.name).to_dict()
+
+    @app.delete("/api/jobs/{job_id}", status_code=204)
+    def delete_job(job_id: str) -> None:
+        if not store.delete(job_id):
+            raise HTTPException(404, "no such score")
 
     @app.get("/api/jobs/{job_id}/score.musicxml")
     def get_score(job_id: str) -> FileResponse:
-        job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "no such job")
+        job = load(job_id)
         if job.status != "done":
             raise HTTPException(409, f"job is {job.status}")
         return FileResponse(store.dir(job_id) / "score.musicxml", media_type="application/vnd.recordare.musicxml+xml")
@@ -67,16 +92,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_input(job_id: str) -> FileResponse:
         p = store.input_path(job_id)
         if p is None:
-            raise HTTPException(404, "no such job")
+            raise HTTPException(404, "no such score")
         return FileResponse(p)
+
+    @app.get("/api/jobs/{job_id}/thumb.jpg")
+    def get_thumb(job_id: str) -> FileResponse:
+        p = store.thumb_path(job_id)
+        if p is None:
+            raise HTTPException(404, "no thumbnail")
+        return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
     @app.exception_handler(HTTPException)
     async def http_error(_: Request, exc: HTTPException) -> JSONResponse:
         return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
     frontend = Path(settings.frontend_dir)
-    if (frontend / "index.html").exists():
-        app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
+    index = frontend / "index.html"
+    if index.exists():
+        if (frontend / "assets").is_dir():
+            app.mount("/assets", StaticFiles(directory=frontend / "assets"), name="assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        def spa(path: str) -> FileResponse:
+            """Serve a real file if there is one, else index.html so /s/{id} deep links work."""
+            if path.startswith("api/"):
+                raise HTTPException(404, "not found")
+            candidate = (frontend / path).resolve() if path else index
+            if path and candidate.is_file() and frontend.resolve() in candidate.parents:
+                return FileResponse(candidate)
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
     return app
 
 

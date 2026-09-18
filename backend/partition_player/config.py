@@ -17,7 +17,8 @@ class Settings:
     fallback_engine: str = field(default_factory=lambda: os.environ.get("PP_FALLBACK_ENGINE", "none"))
     audiveris_bin: str = field(default_factory=lambda: os.environ.get("PP_AUDIVERIS_BIN", "Audiveris"))
     job_timeout_s: int = field(default_factory=lambda: _env_int("PP_JOB_TIMEOUT_S", 300))
-    job_ttl_days: int = field(default_factory=lambda: _env_int("PP_JOB_TTL_DAYS", 30))
+    job_ttl_days: int = field(default_factory=lambda: _env_int("PP_JOB_TTL_DAYS", 7))  # failed jobs only
+    max_scores: int = field(default_factory=lambda: _env_int("PP_MAX_SCORES", 500))  # oldest scores beyond this are dropped
     max_upload_mb: int = field(default_factory=lambda: _env_int("PP_MAX_UPLOAD_MB", 25))
     max_side_px: int = field(default_factory=lambda: _env_int("PP_MAX_SIDE_PX", 2500))
     frontend_dir: Path = field(default_factory=lambda: Path(os.environ.get("PP_FRONTEND_DIR", "../frontend/dist")))

@@ -1,0 +1,40 @@
+# partition-player, behind philou's Caddy on the "main" server.
+#
+# Installed as /home/ubuntu/caddy-sites/partition-player.caddy by deploy/deploy.sh; philou's
+# Caddyfile imports /etc/caddy-sites/*.caddy from that bind-mounted directory.
+#
+# Reload after editing:
+#   docker exec philou-web caddy reload --config /etc/caddy/Caddyfile
+#
+# `partition-player` is the container name, resolved on the shared `deploy_default` network.
+
+partition-player.92.5.91.253.sslip.io {
+	encode zstd gzip
+
+	# Uploads are capped at PP_MAX_UPLOAD_MB (25) by the app; stop bigger bodies at the edge.
+	request_body {
+		max_size 30MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	reverse_proxy partition-player:8000 {
+		# recognition is async (POST returns 202 at once), so no long timeouts are needed
+		transport http {
+			read_timeout 60s
+		}
+	}
+
+	log {
+		output file /data/partition-player-access.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}

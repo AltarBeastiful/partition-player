@@ -1,6 +1,8 @@
 """Filesystem-backed job store and a single worker thread (ADR 0001).
 
-Layout: <data>/jobs/<id>/{input.<ext>, status.json, preprocessed.png, <engine>/..., score.musicxml}
+Layout while running: <data>/jobs/<id>/{input.<ext>, status.json, preprocessed.png, <engine>/..., score.musicxml}
+After success only {status.json, result.json, score.musicxml, thumb.jpg} are kept (about 50 KB instead of 20 MB);
+after failure the input and the engine error logs stay until `prune` drops the job.
 """
 from __future__ import annotations
 
@@ -21,6 +23,18 @@ from .pipeline.run import recognize
 log = logging.getLogger(__name__)
 
 TERMINAL = {"done", "failed"}
+MAX_NAME = 120
+KEEP_DONE = {"status.json", "result.json", "score.musicxml", "thumb.jpg"}
+KEEP_FAILED_SUFFIXES = (".error.log",)
+
+
+def default_name(input_name: str) -> str:
+    stem = Path(input_name).stem.replace("_", " ").replace("-", " ").strip()
+    return clean_name(stem) or "Untitled score"
+
+
+def clean_name(name: str) -> str:
+    return " ".join(name.split())[:MAX_NAME]
 
 
 @dataclass
@@ -31,6 +45,7 @@ class Job:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     input_name: str = ""
+    name: str = ""  # user-facing title, editable; defaults to the upload's file name
     error: str | None = None
     result: dict | None = None
 
@@ -54,9 +69,34 @@ class JobStore:
         d.mkdir(parents=True)
         ext = Path(input_name).suffix.lower() or ".bin"
         (d / f"input{ext}").write_bytes(data)
-        job = Job(id=job_id, input_name=input_name)
+        job = Job(id=job_id, input_name=input_name, name=default_name(input_name))
         self.save(job)
         return job
+
+    def list(self, limit: int = 50) -> list[Job]:
+        """Newest first. Every job is listed, so an in-progress or failed one shows up in the library too."""
+        jobs = [j for d in self.root.iterdir() if (j := self.get(d.name)) is not None]
+        jobs.sort(key=lambda j: j.created_at, reverse=True)
+        return jobs[:limit]
+
+    def rename(self, job_id: str, name: str) -> Job | None:
+        job = self.get(job_id)
+        if job is None:
+            return None
+        job.name = clean_name(name) or default_name(job.input_name)
+        self.save(job)
+        return job
+
+    def delete(self, job_id: str) -> bool:
+        d = self.dir(job_id)
+        if not (d / "status.json").exists():
+            return False
+        shutil.rmtree(d, ignore_errors=True)
+        return True
+
+    def thumb_path(self, job_id: str) -> Path | None:
+        p = self.dir(job_id) / "thumb.jpg"
+        return p if p.exists() else None
 
     def input_path(self, job_id: str) -> Path | None:
         for p in self.dir(job_id).glob("input.*"):
@@ -74,7 +114,10 @@ class JobStore:
         p = self.dir(job_id) / "status.json"
         if not p.exists():
             return None
-        return Job(**json.loads(p.read_text()))
+        job = Job(**json.loads(p.read_text()))
+        if not job.name:  # jobs written before names existed
+            job.name = default_name(job.input_name)
+        return job
 
     def unfinished(self) -> list[Job]:
         jobs = []
@@ -84,12 +127,39 @@ class JobStore:
                 jobs.append(job)
         return jobs
 
+    def clean(self, job: Job) -> None:
+        """Delete what a finished job no longer needs, so the library costs kilobytes per score, not megabytes."""
+        d = self.dir(job.id)
+        for p in list(d.iterdir()):
+            if job.status == "done":
+                keep = p.name in KEEP_DONE
+            else:
+                keep = p.name == "status.json" or p.name.startswith("input.") or p.name.endswith(KEEP_FAILED_SUFFIXES)
+            if keep:
+                continue
+            shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+
+    def clean_all(self) -> None:
+        for job in self.list(limit=10**6):
+            if job.status in TERMINAL:
+                self.clean(job)
+
+    def cap(self, max_scores: int) -> int:
+        """Keep at most `max_scores` finished scores; the oldest go first."""
+        done = [j for j in self.list(limit=10**6) if j.status == "done"]
+        removed = 0
+        for job in done[max_scores:]:
+            log.info("dropping old score %s (%s) to stay under PP_MAX_SCORES=%d", job.id, job.name, max_scores)
+            removed += int(self.delete(job.id))
+        return removed
+
     def prune(self, ttl_days: int) -> int:
+        """Drop failed jobs older than the TTL. Finished scores are the user's library and stay until deleted."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
         removed = 0
         for d in self.root.iterdir():
             job = self.get(d.name)
-            if job and datetime.fromisoformat(job.created_at) < cutoff:
+            if job and job.status == "failed" and datetime.fromisoformat(job.created_at) < cutoff:
                 shutil.rmtree(d, ignore_errors=True)
                 removed += 1
         return removed
@@ -146,3 +216,6 @@ class Worker:
             log.exception("job %s failed", job_id)
             job.status, job.message, job.error = "failed", "Recognition failed", str(e)
         self.store.save(job)
+        self.store.clean(job)
+        self.store.prune(self.settings.job_ttl_days)
+        self.store.cap(self.settings.max_scores)

@@ -9,7 +9,7 @@ from pathlib import Path
 from ..config import Settings
 from .engines import EngineError, get_engine
 from .postprocess import PostprocessError, postprocess
-from .preprocess import preprocess
+from .preprocess import preprocess, thumbnail
 
 Progress = Callable[[str, str], None]  # (stage, message)
 
@@ -29,6 +29,10 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
     notify("preprocessing", "Preparing the image")
     pre = out_dir / "preprocessed.png"
     info = preprocess(image, pre, settings.max_side_px)
+    try:
+        thumbnail(image, out_dir / "thumb.jpg")
+    except Exception:  # noqa: BLE001  (a missing thumbnail must not fail the job)
+        pass
 
     engines = [settings.engine] + ([settings.fallback_engine] if settings.fallback_engine != "none" else [])
     engine_xml: Path | None = None
