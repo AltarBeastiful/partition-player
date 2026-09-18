@@ -85,3 +85,27 @@ def test_rest_merged_into_chord_is_dropped(tmp_path: Path):
     assert "<rest" not in out and "<chord" not in out
     assert stats.notes == 3 and stats.rests == 0 and stats.padded_measures == 0
     assert any("merged into a chord" in w for w in stats.warnings)
+
+
+REPEATS = """<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>2</beats><beat-type>4</beat-type></time></attributes>
+      <barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note>
+      <barline location="right"><bar-style>light-heavy</bar-style><ending number="1" type="stop"/><repeat direction="backward"/></barline>
+    </measure>
+  </part>
+</score-partwise>
+"""
+
+
+def test_repeats_are_stripped(tmp_path: Path):
+    src = tmp_path / "in.musicxml"; src.write_text(REPEATS)
+    dst = tmp_path / "out.musicxml"
+    stats = postprocess(src, dst)
+    out = dst.read_text()
+    assert stats.repeats_removed == 3
+    assert "<repeat" not in out and "<ending" not in out and "bar-style" in out

@@ -34,6 +34,7 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Multi-page PDF input, split server-side
 - Falling-notes / piano-roll view
 - Web MIDI output to a connected digital piano, MIDI file download
-- Practice tools: section loop, tempo scaling, mute one hand
+- Practice tools: mute one hand (loop and tempo done)
+- Repeats and endings: post-processing strips repeat signs and volta brackets so the page plays straight through; honour them in playback later
 - Handwritten score support
 - User accounts and saved score library

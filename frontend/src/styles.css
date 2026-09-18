@@ -39,3 +39,6 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 2px sol
 .sheet { background: #fff; border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; padding: 8px; }
 .sheet svg { max-width: 100%; height: auto; }
 .stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.controls.loop { font-size: 14px; }
+.controls.loop input[type="number"] { width: 64px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.controls.loop input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }

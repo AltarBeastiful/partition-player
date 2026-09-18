@@ -22,6 +22,7 @@ class ScoreStats:
     notes: int = 0
     rests: int = 0
     padded_measures: int = 0
+    repeats_removed: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -60,6 +61,17 @@ def _fix_rest_chords(measure: ET.Element) -> int:
     return fixes
 
 
+def _strip_repeats(measure: ET.Element) -> int:
+    """Remove repeat signs and volta brackets. v1 plays the page straight through (BACKLOG: repeats)."""
+    removed = 0
+    for barline in measure.findall("barline"):
+        for tag in ("repeat", "ending"):
+            for el in barline.findall(tag):
+                barline.remove(el)
+                removed += 1
+    return removed
+
+
 def postprocess(src: Path, dst: Path) -> ScoreStats:
     try:
         tree = ET.parse(src)
@@ -82,6 +94,7 @@ def postprocess(src: Path, dst: Path) -> ScoreStats:
                 if (t := attrs.find("time")) is not None:
                     beats = int(t.findtext("beats", "4").strip())
                     beat_type = int(t.findtext("beat-type", "4").strip())
+            stats.repeats_removed += _strip_repeats(measure)
             fixed = _fix_rest_chords(measure)
             if fixed:
                 stats.warnings.append(f"measure {measure.get('number')}: removed {fixed} rest(s) merged into a chord")

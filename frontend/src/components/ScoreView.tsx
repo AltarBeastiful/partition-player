@@ -11,6 +11,10 @@ export function ScoreView({ job }: { job: Job }) {
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState>("stopped");
   const [bpm, setBpm] = useState(90);
+  const [loop, setLoop] = useState(false);
+  const [from, setFrom] = useState(1);
+  const [to, setTo] = useState(1);
+  const [measureCount, setMeasureCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,7 +33,11 @@ export function ScoreView({ job }: { job: Job }) {
         osmd.render();
         osmd.cursor.show();
         osmdRef.current = osmd;
-        playerRef.current = new Player(osmd, setState);
+        const player = new Player(osmd, setState);
+        playerRef.current = player;
+        (window as unknown as { __player?: Player }).__player = player; // debugging aid
+        setMeasureCount(player.measureCount);
+        setTo(player.measureCount);
         setLoading(false);
       } catch (e) {
         setError("Could not render the score: " + (e as Error).message);
@@ -44,8 +52,8 @@ export function ScoreView({ job }: { job: Job }) {
     const p = playerRef.current;
     if (!p) return;
     if (state === "playing") p.pause();
-    else await p.play(bpm);
-  }, [state, bpm]);
+    else await p.play(bpm, loop, { from, to });
+  }, [state, bpm, loop, from, to]);
 
   const stop = useCallback(() => playerRef.current?.stop(), []);
 
@@ -64,6 +72,21 @@ export function ScoreView({ job }: { job: Job }) {
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{bpm} bpm</span>
         </label>
         <a href={scoreUrl(job.id)} download={`score-${job.id}.musicxml`}>Download MusicXML</a>
+      </div>
+      <div className="controls loop">
+        <label>
+          <input id="loop" type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} disabled={loading} />
+          Loop
+        </label>
+        <label>
+          measures <input id="loop-from" type="number" min={1} max={measureCount || 1} value={from} disabled={loading}
+            onChange={(e) => { const v = Number(e.target.value); setFrom(v); if (v > to) setTo(v); }} />
+        </label>
+        <label>
+          to <input id="loop-to" type="number" min={1} max={measureCount || 1} value={to} disabled={loading}
+            onChange={(e) => { const v = Number(e.target.value); setTo(v); if (v < from) setFrom(v); }} />
+        </label>
+        <span className="muted">of {measureCount}. Range applies with or without loop; changes take effect on the next Play.</span>
       </div>
       {stats && (
         <div className="stats">

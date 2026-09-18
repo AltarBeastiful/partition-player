@@ -10,7 +10,8 @@ Decisions are recorded in `docs/adr/`. The engine benchmark that picked homr is 
 - `backend/` Python package `partition_player`: FastAPI API, a one-thread job runner, and the
   pipeline (preprocess, OMR engine, postprocess). CLI entry point `partition-player`.
 - `frontend/` React + Vite + TypeScript: upload or camera capture, progress, score view with
-  OpenSheetMusicDisplay rendering and Tone.js piano playback.
+  OpenSheetMusicDisplay rendering and piano playback (Tone.js sampler, own look-ahead scheduler)
+  with tempo control and a loop over a measure range.
 - `bench/` benchmark samples, ground truth, scorer and audio rendering.
 - `docs/adr/` architecture decision records.
 

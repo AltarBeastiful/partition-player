@@ -5,3 +5,4 @@ node_modules/
 dist/
 data/
 *.out/
+data-server.log
