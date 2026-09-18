@@ -29,12 +29,17 @@ passes. Work happens on `main` in small commits.
 
 ## Step 3: Chord OCR
 
+- `backend/partition_player/pipeline/chords/grammar.py`: the chord grammar as a trie of canonical
+  strings with per-character glyph variants; `parse_chord(text) -> Chord(root, alter, kind, degrees,
+  bass)`; `constrained_decode(probs) -> (text, confidence)`, a CTC prefix beam search over the trie.
 - `backend/partition_player/pipeline/chords/ocr.py`: `read_strip(strip_png, unit) ->
-  list[Token(text, score, x_center, width)]` with tiling, two offsets, merge. `parse_chord(text) ->
-  Chord(root, alter, kind, degrees, bass) | None` with the grammar and confusion map.
-- Unit tests: grammar table (`Cm`, `F#m7`, `Bb`, `G7/B`, `Cdim`, `Dsus4`, `6`→`G`, `A` rejected
-  when in the clef zone by the caller, `Marie` rejected), and `read_strip` on four strip PNGs saved
-  from the benchmark photo under `backend/tests/data/` (about 100 KB) expecting the 10 names.
+  list[Token(text, confidence, x_center, width)]`: tiled detection, two offsets, box merge, recognizer
+  probabilities through RapidOCR's session, constrained decode.
+- Unit tests: grammar table (`Cm`, `F#m7`, `Bb`, `G7/B`, `Cdim`, `Dsus4`, `D/F#`; `Marie` and `6`
+  alone are not chords; a synthetic probability matrix where `6` beats `G` decodes to `G`), and
+  `read_strip` on the four strip PNGs saved from the benchmark photo under `backend/tests/data/`
+  (about 100 KB) expecting the 10 names with confidence at least 0.8 and nothing else at or above 0.6
+  outside the clef zone.
 - Check: tests pass; `read_strip` takes under 3 s per strip on this machine.
 
 ## Step 4: Placement and MusicXML output

@@ -37,12 +37,20 @@ Add a **chord stage** to the recognition pipeline, deterministic and benchmark-d
    index) and one straightened strip PNG per staff (from 6 interlines above the top line down to 0.4
    interline above it). homr is pinned to `0.7.*`; the driver is the only place that touches its
    internals.
-2. **OCR on the strips** with RapidOCR, detection plus recognition, on overlapping tiles scaled to a
-   fixed interline height, two passes offset by half a tile, results merged by position. Tokens are
-   kept only if, after a small confusion map (`6`→`G`, `0`→`D`, `l`→`1`, `rn`→`m`), they match the
-   chord grammar `root (accidental)? quality? extension? (/bass)?`, lie to the right of the clef zone
-   (3 interlines past the staff start), and score at least 0.6. Anything else is reported in the job's
-   warnings with its text and position, never written to the score.
+2. **OCR on the strips** with RapidOCR's detector on overlapping tiles scaled to a fixed interline
+   height (two passes offset by half a tile, boxes merged by overlap), then RapidOCR's recognizer on
+   each box. The recognizer's output is not its top guess but its per-character probabilities, and
+   these are decoded with a **grammar-constrained CTC beam search**: only strings of the chord grammar
+   `root (accidental)? quality? extension? (/bass)?` can come out, and each grammar character accepts
+   the glyphs the net may emit for it (`G` also `6` and `g`, `D` also `0` and `O`, flat also `♭`).
+   The probability of the winning string is its confidence. This replaces any hand-written confusion
+   table: a `6` never appears, because `G` is the best legal reading, and the same mechanism covers
+   confusions not yet seen. On the benchmark photo the 10 chord names decode with confidence 0.88 to
+   1.0 and the false detections (beams, clef top) with 0.37 or less; tokens under 0.6, or inside the
+   clef zone (3 interlines past the staff start), are reported in the job's warnings with their text
+   and position, never written to the score. If the benchmark later shows the general recognizer
+   failing on music fonts, the fallback is a small recognizer trained on synthetic chord renders, not
+   more rules; the synthetic generator already produces that training data.
 3. **Placement.** For each system, the measure count comes from the final MusicXML (`<print
    new-system>` marks). If the detected barlines agree with it (count equal to measures minus one, or
    to measures when the closing barline was detected), they give the measure boundaries; otherwise
