@@ -36,6 +36,8 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     async function load() {
       if (!host.current) return;
       const osmd = new OpenSheetMusicDisplay(host.current, {
@@ -65,7 +67,17 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
       }
     }
     load();
-    return () => { cancelled = true; playerRef.current?.dispose(); };
+    // A saved edit bumps `version` and this runs again with a new OSMD on the same container. OSMD
+    // leaves its SVG and cursor behind when it is dropped, so the old sheet has to be taken down
+    // here or the page ends up showing both.
+    return () => {
+      cancelled = true;
+      playerRef.current?.dispose();
+      playerRef.current = null;
+      osmdRef.current?.clear();
+      osmdRef.current = null;
+      host.current?.replaceChildren();
+    };
   }, [job.id, version]);
 
   const toggle = useCallback(async () => {
