@@ -15,7 +15,7 @@ class HomrEngine(Engine):
 
     def recognize(self, image: Path, out_dir: Path) -> Path:
         out_dir.mkdir(parents=True, exist_ok=True)
-        work_image = out_dir / f"homr_input{image.suffix}"
+        work_image = (out_dir / f"homr_input{image.suffix}").resolve()  # homr runs with cwd=out_dir
         shutil.copyfile(image, work_image)
         # Run through the current interpreter so the venv that has homr is the one used.
         log = self._run([sys.executable, "-m", "homr.main", str(work_image)], cwd=out_dir)

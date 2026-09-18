@@ -11,7 +11,7 @@ import random, sys
 from pathlib import Path
 
 import cairosvg, cv2, numpy as np, verovio
-from music21 import converter, corpus, harmony
+from music21 import clef, converter, corpus, harmony
 
 OUT = Path(__file__).resolve().parents[2] / "bench" / "out" / "chords"
 PICK = ["jigs.abc:2", "jigs.abc:5", "reelsa-c.abc:3", "reelsd-g.abc:7", "waltzes.abc:4", "hpps.abc:6",
@@ -20,9 +20,10 @@ PICK = ["jigs.abc:2", "jigs.abc:5", "reelsa-c.abc:3", "reelsd-g.abc:7", "waltzes
 
 def render(xml: Path, png: Path) -> None:
     tk = verovio.toolkit()
-    tk.setOptions({"pageWidth": 2100, "pageHeight": 2970, "scale": 40, "adjustPageHeight": True, "harmSpacing": 4})
+    # A4 at 100% is 2100x2970 verovio units (0.1 mm); rendered at 2.5x the interline is about 22 px, like a phone photo.
+    tk.setOptions({"pageWidth": 2100, "pageHeight": 2970, "scale": 100, "adjustPageHeight": True})
     tk.loadFile(str(xml))
-    cairosvg.svg2png(bytestring=tk.renderToSVG(1).encode(), write_to=str(png), background_color="white", dpi=150)
+    cairosvg.svg2png(bytestring=tk.renderToSVG(1).encode(), write_to=str(png), background_color="white", scale=1.2)
 
 
 def photo(clean: Path, out: Path, seed: int) -> None:
@@ -70,6 +71,10 @@ def main() -> None:
             part.remove(m)
         for p in sc.parts[1:]:
             sc.remove(p)
+        # lead sheets are treble; the ABC importer picks a bass clef for some tunes
+        for c in part.recurse().getElementsByClass(clef.Clef):
+            c.activeSite.remove(c)
+        ms[0].insert(0, clef.TrebleClef())
         sc.metadata.title = sc.metadata.title or name
         xml = OUT / f"{name}.musicxml"
         sc.write("musicxml", fp=str(xml))
