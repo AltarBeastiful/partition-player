@@ -9,6 +9,7 @@ the chord band, or off the common baseline are reported, never written.
 """
 from __future__ import annotations
 
+import re
 import statistics
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -19,7 +20,7 @@ from .grammar import Chord, parse_chord
 MIN_CONFIDENCE = 0.6
 CLEF_ZONE_UNITS = 3.0
 BAND_MIN_UNITS, BAND_MAX_UNITS = 0.8, 4.5
-BASELINE_TOLERANCE_UNITS = 0.7
+BASELINE_TOLERANCE_UNITS = 1.5  # engravers stagger wide names by up to an interline or so
 
 
 @dataclass
@@ -147,6 +148,32 @@ def beat_in_measure(x_left: float, edges: tuple[float, float], notes_in_measure:
 
 # ---- placement ------------------------------------------------------------------------------------
 
+SUFFIX_ONLY = re.compile(r"^(m|min|Min|maj|Maj|M|dim|aug|sus2|sus4|\+|-)?(5|6|7|9|11|13|69|add9|7b5|7#5|b9|#9|7sus4|7sus2)?$")
+
+
+def merge_suffixes(tokens: list[dict], unit: float) -> list[dict]:
+    """Superscript extensions (C⁷, Gsus4) come out as their own box right after the root; glue them back.
+    Also drops a box that lies inside another (the detector sometimes boxes a part of a name twice)."""
+    tokens = sorted(tokens, key=lambda t: t["x_left"])
+    out: list[dict] = []
+    for t in tokens:
+        if out:
+            prev = out[-1]
+            if t["x_right"] <= prev["x_right"] + 0.2 * unit and t["x_left"] >= prev["x_left"] - 0.2 * unit:
+                if t["confidence"] > prev["confidence"] and t["x_right"] - t["x_left"] > 0.8 * (prev["x_right"] - prev["x_left"]):
+                    out[-1] = t
+                continue
+            raw = t["raw"].strip()
+            if prev["text"] and raw and SUFFIX_ONLY.match(raw) and t["x_left"] - prev["x_right"] < 0.8 * unit \
+                    and parse_chord(prev["text"] + raw) is not None:
+                merged = dict(prev)
+                merged.update(text=prev["text"] + raw, x_right=t["x_right"], raw=prev["raw"] + raw,
+                              confidence=min(prev["confidence"], max(t["confidence"], 0.6)))
+                out[-1] = merged
+                continue
+        out.append(t)
+    return out
+
 def place(tree: ET.ElementTree, geometry: dict) -> Result:
     result = Result()
     part = tree.getroot().find("part")
@@ -160,7 +187,7 @@ def place(tree: ET.ElementTree, geometry: dict) -> Result:
     for system, (start, end) in zip(systems, runs):
         unit = system["unit"]
         accepted = []
-        for t in system["tokens"]:
+        for t in merge_suffixes(system["tokens"], unit):
             chord = parse_chord(t["text"]) if t["text"] else None
             why = None
             if chord is None:
@@ -191,6 +218,7 @@ def place(tree: ET.ElementTree, geometry: dict) -> Result:
         if n <= 0 or not accepted:
             continue
         edges = boundaries(system, n, result.warnings, [len(infos[start + k].onsets) for k in range(n)])
+        taken: set[tuple[int, Fraction]] = set()
         for t, chord in sorted(accepted, key=lambda a: a[0]["x_left"]):
             # a chord name starts at (or a little left of) the notehead it belongs to
             anchor = next((x for x in system["notes"] if x >= t["x_left"] - 1.0 * unit), t["x_left"] + 0.3 * unit)
@@ -198,6 +226,14 @@ def place(tree: ET.ElementTree, geometry: dict) -> Result:
             info = infos[start + i]
             notes_in = [x for x in system["notes"] if edges[i] <= x < edges[i + 1]]
             offset = beat_in_measure(t["x_left"], (edges[i], edges[i + 1]), notes_in, info, unit)
+            if (start + i, offset) in taken:
+                # two names printed close together (an engraver's shift): the later one belongs to a later beat
+                later = [o for o in info.onsets if o > offset] or [o for o in (offset + Fraction(k, 2) for k in range(1, 8)) if o < info.length]
+                if not later:
+                    result.warnings.append(f"measure {start + i + 1}: no room left for {chord.text}; dropped")
+                    continue
+                offset = later[0]
+            taken.add((start + i, offset))
             result.placed.append(Placed(start + i, offset, chord, t["confidence"], t["x_left"]))
     # two readings of the same chord at the same spot (overlapping boxes) collapse to one
     dedup: dict[tuple[int, Fraction], Placed] = {}

@@ -118,7 +118,7 @@ def main() -> None:
         scores.append((Path(name).stem, corpus.parse(name)))
     scores.append(("jazz_sevenths", jazz_page("jazz_sevenths", ["Cmaj7", "Am7", "Dm7", "G7", "Em7", "A7", "Dm7", "G7", "Cmaj7", "F7", "E7", "Am7"], 101)))
     scores.append(("jazz_flats_keychange", jazz_page("jazz_flats_keychange", ["B-", "E-7", "A-maj7", "D-", "G-7", "C7", "F7", "B-7", "E-", "F", "B-", "Fsus4"], 102)))
-    scores.append(("jazz_dim_slash", jazz_page("jazz_dim_slash", ["C", "C/E", "F", "F#dim", "C/G", "G7", "Am", "Am/G", "D7/F#", "G7sus4", "C6", "Bdim7"], 103, ks=0, ts="3/4")))
+    scores.append(("jazz_dim_slash", jazz_page("jazz_dim_slash", ["C", "C/E", "F", "F#dim", "C/G", "G7", "Am", "Am/G", "D7/F#", "Gsus4", "C6", "Bdim7"], 103, ks=0, ts="3/4")))
     scores.append(("neg_text", negative_page("neg_text", 201)))
     scores.append(("neg_letters", negative_page("neg_letters", 202)))
     for i, (name, sc) in enumerate(scores):

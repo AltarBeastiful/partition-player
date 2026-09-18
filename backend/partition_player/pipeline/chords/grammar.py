@@ -15,7 +15,7 @@ import numpy as np
 ROOTS = "ABCDEFG"
 ACCIDENTALS = ("", "#", "b")
 QUALITIES = ("", "m", "min", "Min", "maj", "Maj", "M", "dim", "aug", "sus2", "sus4", "+", "-")
-EXTENSIONS = ("", "5", "6", "7", "9", "11", "13", "69", "add9", "7b5", "7#5", "b9", "#9")
+EXTENSIONS = ("", "5", "6", "7", "9", "11", "13", "69", "add9", "7b5", "7#5", "b9", "#9", "7sus4", "7sus2")
 # glyphs the recognizer may emit for a grammar character (the canonical one first)
 GLYPHS = {"A": "Aa", "B": "B8", "C": "Cc", "D": "D0Oo", "E": "Ee", "F": "Ff", "G": "G6g",
           "b": "b♭", "#": "#♯", "0": "0O", "1": "1l|", "/": "/\\", "+": "+", "-": "-"}
@@ -35,7 +35,8 @@ KINDS: dict[tuple[str, str], tuple[str, tuple[tuple[int, int, str], ...]]] = {
     ("", "9"): ("dominant-ninth", ()), ("maj", "9"): ("major-ninth", ()), ("Maj", "9"): ("major-ninth", ()), ("M", "9"): ("major-ninth", ()),
     ("m", "9"): ("minor-ninth", ()), ("", "11"): ("dominant-11th", ()), ("", "13"): ("dominant-13th", ()),
     ("sus4", ""): ("suspended-fourth", ()), ("sus2", ""): ("suspended-second", ()),
-    ("sus4", "7"): ("suspended-fourth", ((7, -1, "add"),)), ("", "5"): ("power", ()),
+    ("sus4", "7"): ("suspended-fourth", ((7, -1, "add"),)), ("", "7sus4"): ("suspended-fourth", ((7, -1, "add"),)),
+    ("", "7sus2"): ("suspended-second", ((7, -1, "add"),)), ("", "5"): ("power", ()),
     ("", "69"): ("major-sixth", ((9, 0, "add"),)), ("", "add9"): ("major", ((9, 0, "add"),)),
     ("m", "add9"): ("minor", ((9, 0, "add"),)),
     ("", "7b5"): ("dominant", ((5, -1, "alter"),)), ("", "7#5"): ("dominant", ((5, 1, "alter"),)),

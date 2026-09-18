@@ -1,4 +1,5 @@
 """Chord stage (ADR 0003): grammar, constrained decoding, OCR on real bands, placement, injection."""
+import dataclasses
 import json
 import xml.etree.ElementTree as ET
 from fractions import Fraction
@@ -74,7 +75,8 @@ def test_read_bands_from_photo():
     for system, want in zip(geometry["systems"], expected):
         band = cv2.imread(str(DATA / f"anton_band_{system['index']}.png"), cv2.IMREAD_GRAYSCALE)
         tokens = read_band(ocr, band, system["unit"])
-        good = [t.text for t in sorted(tokens, key=lambda t: t.x_left) if t.confidence >= 0.6]
+        json.dumps([dataclasses.asdict(t) for t in tokens])  # the driver writes them to geometry.json
+        good = [t.text for t in sorted(tokens, key=lambda t: t.x_left) if t.confidence >= 0.6 and not t.framed]
         assert good == want, [(t.text, t.confidence, t.raw) for t in tokens]
 
 

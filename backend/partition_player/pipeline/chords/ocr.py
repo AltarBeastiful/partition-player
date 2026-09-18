@@ -101,15 +101,27 @@ def _split_on_gaps(ink: np.ndarray, min_gap: int) -> list[tuple[int, int]]:
     return ranges
 
 
-def _framed(ink: np.ndarray) -> bool:
-    """A rectangle around the text: long ink runs along the top, bottom, left and right."""
-    h, w = ink.shape
-    if h < 8 or w < 8:
+def _framed(band: np.ndarray, box: tuple[float, float, float, float], unit: float) -> bool:
+    """A rectangle drawn around the text (a rehearsal mark): one hollow connected component about as
+    wide and tall as the detector's box (letters are narrower, and filled)."""
+    x0, y0, x1, y1 = (int(v) for v in box)
+    m = int(unit * 0.6)
+    ys, ye = max(0, y0 - m), min(band.shape[0], y1 + m)
+    xs, xe = max(0, x0 - m), min(band.shape[1], x1 + m)
+    crop = band[ys:ye, xs:xe]
+    if crop.shape[0] < 8 or crop.shape[1] < 8:
         return False
-    rows = ink.mean(axis=1); cols = ink.mean(axis=0)
-    band_h, band_w = max(1, h // 3), max(1, w // 3)
-    return (rows[:band_h].max() > 0.6 and rows[-band_h:].max() > 0.6
-            and cols[:band_w].max() > 0.6 and cols[-band_w:].max() > 0.6)
+    ink = _ink(crop).astype(np.uint8)
+    n, _, stats, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
+    comps = [tuple(int(v) for v in stats[i]) for i in range(1, n) if stats[i][4] >= 0.02 * unit * unit]
+    for x, y, w, h, area in comps:
+        hollow = area < 0.45 * w * h and w >= 1.2 * unit and h >= 1.2 * unit
+        if not hollow:
+            continue
+        for ix, iy, iw, ih, _ in comps:
+            if ix > x and iy > y and ix + iw < x + w and iy + ih < y + h:
+                return True  # something drawn inside a hollow shape: a boxed mark
+    return False
 
 
 def read_band(ocr, band: np.ndarray, unit: float) -> list[Token]:
@@ -124,16 +136,22 @@ def read_band(ocr, band: np.ndarray, unit: float) -> list[Token]:
         if crop.size == 0 or crop.shape[0] < 4 or crop.shape[1] < 4:
             continue
         ink = _ink(crop)
-        framed = _framed(ink)
+        framed = _framed(band, (x0, y0, x1, y1), unit)
         pieces = _split_on_gaps(ink, int(0.5 * unit)) or [(0, crop.shape[1])]
         for px0, px1 in pieces:
             piece = crop[:, max(0, px0 - 2):min(crop.shape[1], px1 + 2)]
             if piece.shape[1] < 4:
                 continue
-            bgr = cv2.cvtColor(piece, cv2.COLOR_GRAY2BGR)
-            ratio = max(rec.rec_image_shape[2] / rec.rec_image_shape[1], bgr.shape[1] / bgr.shape[0])
-            norm = rec.resize_norm_img(bgr, ratio)
-            probs = rec.session(norm[np.newaxis].astype(np.float32))[0]
-            text, conf = constrained_decode(probs, chars)
-            tokens.append(Token(text, round(conf, 3), bx0 + px0, bx0 + px1, (y0 + y1) / 2, _greedy(probs, chars), framed))
+            # crisp renders read worse than slightly soft ones; keep the surer of the two readings
+            best = None
+            for variant in (piece, cv2.GaussianBlur(piece, (0, 0), 0.7)):
+                bgr = cv2.cvtColor(variant, cv2.COLOR_GRAY2BGR)
+                ratio = max(rec.rec_image_shape[2] / rec.rec_image_shape[1], bgr.shape[1] / bgr.shape[0])
+                norm = rec.resize_norm_img(bgr, ratio)
+                probs = rec.session(norm[np.newaxis].astype(np.float32))[0]
+                text, conf = constrained_decode(probs, chars)
+                if best is None or conf > best[1]:
+                    best = (text, conf, probs)
+            text, conf, probs = best
+            tokens.append(Token(text, round(float(conf), 3), float(bx0 + px0), float(bx0 + px1), float((y0 + y1) / 2), _greedy(probs, chars), framed))
     return tokens
