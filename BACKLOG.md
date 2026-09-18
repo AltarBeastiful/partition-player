@@ -32,6 +32,26 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - homr's title OCR ends up as the score title ("Marie Lafor t"). Strip or clean it in post-processing.
 - Frontend bundle is 1.6 MB minified (OSMD + Tone.js). Lazy-load the score view.
 
+## Click on the sheet to play from there
+- Goal: click (or tap) a note or a measure on the rendered score and the cursor moves there; Play then starts from that
+  point, and a click while playing jumps without stopping the sound.
+- Implementation: the player already keeps `steps` (cursor step -> time in whole notes) and `stepMeasure`; OSMD's
+  graphical model gives every staff entry its page position, the same walk `frontend/src/noteNames.ts` does for the note
+  names. Map the click's SVG coordinates to the nearest staff entry of the nearest staff line, then to its cursor step,
+  and re-anchor the playback position on it (`anchorPos`/`anchorCtx`) so tempo, loop and transpose keep working.
+- Decide what a click does to the loop range: leave it alone, or set the loop start. Probably leave it, with the range
+  fields staying the way to set a loop.
+- Give the cursor a visible hover state so it is clear the sheet is clickable, and keep the tap target usable on a phone.
+
+## Restart from the start, and a redesign of the score page
+- Restarting means Stop then Play today, and Play after a pause resumes where it stopped: add a "back to the start"
+  control that rewinds the cursor without stopping, plus keyboard shortcuts (space to play or pause, Home to rewind).
+- The controls have grown into five rows (transport, loop range, note names, melody/accompaniment, stats and warnings)
+  with the lyrics panel under them. Redesign the page around one compact transport bar and a separate practice panel for
+  what is set rarely (loop, note names, tracks), so the sheet is higher on the screen.
+- Make it work on a phone: the photo is taken there, so the score is read there too. The control rows wrap badly at that
+  width and the sheet needs the vertical space.
+
 ## Other deferred features
 - In-app note editor (pitch / duration fixes on the rendered score)
 - Multi-page pieces: several photos merged into one MusicXML
