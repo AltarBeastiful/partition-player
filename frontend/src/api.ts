@@ -16,6 +16,8 @@ export interface Stats {
   measures: number; notes: number; rests: number; padded_measures: number; warnings: string[];
   chords?: number; chord_warnings?: string[];
   chords_seen?: { system: number; text: string; reading: string; confidence: number; reason: string }[];
+  lyrics_verses?: number; lyrics_syllables?: number; lyrics_read?: number; lyric_warnings?: string[];
+  lyrics_seen?: { staff: number; text: string; reason: string }[];
 }
 
 export class ApiError extends Error {

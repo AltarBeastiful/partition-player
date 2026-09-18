@@ -28,6 +28,11 @@ class ScoreStats:
     chords: int = 0
     chord_warnings: list[str] = field(default_factory=list)
     chords_seen: list[dict] = field(default_factory=list)  # tokens read but not accepted
+    lyrics_verses: int = 0
+    lyrics_syllables: int = 0   # written under notes
+    lyrics_read: int = 0        # read in accepted verse rows
+    lyric_warnings: list[str] = field(default_factory=list)
+    lyrics_seen: list[dict] = field(default_factory=list)   # rows and syllables read but not used
 
 
 def _measure_filled(measure: ET.Element, divisions: int) -> Fraction:

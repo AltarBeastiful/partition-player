@@ -10,6 +10,8 @@ import xml.etree.ElementTree as ET
 
 from ..config import Settings
 from .chords.place import inject, place
+from .lyrics import inject as lyrics_inject
+from .lyrics.align import place_lyrics
 from .engines import EngineError, get_engine
 from .postprocess import PostprocessError, postprocess
 from .preprocess import preprocess, thumbnail
@@ -43,7 +45,11 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
     for name in engines:
         notify("recognizing", f"Reading the score with {name}")
         try:
-            engine_xml = get_engine(name, **_engine_kwargs(settings, name)).recognize(pre, out_dir / name)
+            engine = get_engine(name, **_engine_kwargs(settings, name))
+            if name == "homr":  # the upload and its scale let the driver cut full-resolution lyric bands
+                engine_xml = engine.recognize(pre, out_dir / name, original=image, scale=info["scale"])
+            else:
+                engine_xml = engine.recognize(pre, out_dir / name)
             info["engine"] = name
             break
         except EngineError as e:
@@ -67,6 +73,15 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
         stats.chords = chord_info["chords"]
         stats.chord_warnings = chord_info["warnings"]
         stats.chords_seen = chord_info["seen"]
+
+    notify("postprocessing", "Placing lyrics")
+    lyrics_info = add_lyrics(final, out_dir / info["engine"] / "geometry.json", out_dir / "lyrics.json")
+    if lyrics_info is not None:
+        stats.lyrics_verses = lyrics_info["verses"]
+        stats.lyrics_syllables = lyrics_info["syllables"]
+        stats.lyrics_read = lyrics_info["read"]
+        stats.lyric_warnings = lyrics_info["warnings"]
+        stats.lyrics_seen = lyrics_info["seen"]
     info["stats"] = dataclasses.asdict(stats)
     (out_dir / "result.json").write_text(json.dumps(info, indent=2))
     return final
@@ -82,3 +97,18 @@ def add_chords(engine_xml: Path, geometry_file: Path, dst: Path) -> dict | None:
     written = inject(tree, result.placed)
     tree.write(dst, encoding="unicode", xml_declaration=True)
     return {"chords": written, "warnings": result.warnings, "seen": result.seen}
+
+
+def add_lyrics(score: Path, geometry_file: Path, lyrics_file: Path) -> dict | None:
+    """Lyrics stage (ADR 0004): geometry.json (staves with words) + the final score -> <lyric> elements
+    written into the score in place, and lyrics.json for the editor."""
+    if not geometry_file.exists():
+        return None
+    geometry = json.loads(geometry_file.read_text())
+    if not geometry.get("staves"):
+        return None
+    tree = ET.parse(score)
+    result = place_lyrics(tree, geometry)
+    written = lyrics_inject.rewrite(score, result.placed)
+    lyrics_inject.save(lyrics_file, result.placed, result.warnings, result.seen)
+    return {"verses": result.verses, "syllables": written, "read": result.read, "warnings": result.warnings, "seen": result.seen}
