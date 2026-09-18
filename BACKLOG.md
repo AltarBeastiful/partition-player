@@ -20,6 +20,11 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 ## Piano grand-staff benchmark sample
 - Add a two-hand piano page (phone photo, clean PDF render, screenshot) to bench/samples with a ground truth, and re-run bench/score.py on homr and Audiveris.
 
+## Rendering polish
+- homr writes no <beam> elements, so OSMD shows separate flags instead of beams. Add beaming in post-processing (group eighths and sixteenths within a beat) or via music21's beam maker.
+- homr's title OCR ends up as the score title ("Marie Lafor t"). Strip or clean it in post-processing.
+- Frontend bundle is 1.6 MB minified (OSMD + Tone.js). Lazy-load the score view.
+
 ## Other deferred features
 - In-app note editor (pitch / duration fixes on the rendered score)
 - Multi-page pieces: several photos merged into one MusicXML

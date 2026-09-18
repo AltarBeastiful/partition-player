@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    image: partition-player:local
+    ports: ["8000:8000"]
+    volumes: ["pp-data:/data"]
+    environment:
+      PP_JOB_TIMEOUT_S: "300"
+      PP_JOB_TTL_DAYS: "30"
+    mem_limit: 3g
+    restart: unless-stopped
+volumes:
+  pp-data: {}
