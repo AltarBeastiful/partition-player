@@ -9,7 +9,13 @@ export interface Job {
   input_name: string;
   name: string;
   error: string | null;
-  result: { engine: string; seconds: number; stats: { measures: number; notes: number; rests: number; padded_measures: number; warnings: string[] } } | null;
+  result: { engine: string; seconds: number; stats: Stats } | null;
+}
+
+export interface Stats {
+  measures: number; notes: number; rests: number; padded_measures: number; warnings: string[];
+  chords?: number; chord_warnings?: string[];
+  chords_seen?: { system: number; text: string; reading: string; confidence: number; reason: string }[];
 }
 
 export class ApiError extends Error {

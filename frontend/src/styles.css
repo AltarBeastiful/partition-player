@@ -69,3 +69,4 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .name-form input { flex: 1 1 240px; font: inherit; font-size: 18px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 @media (max-width: 480px) { .score-row { grid-template-columns: 44px 1fr auto; } .thumb { width: 44px; height: 58px; } }
 .transpose button { padding: 4px 10px; line-height: 1; }
+.stats.notes { display: grid; gap: 2px; }

@@ -17,12 +17,12 @@ def chords(path):
     p = s.parts[0]
     out = []
     measures = list(p.getElementsByClass("Measure"))
-    for m in measures:
+    for index, m in enumerate(measures):  # by index: a pickup is measure 0 in one file and 1 in the other
         for cs in m.getElementsByClass(harmony.ChordSymbol):
             root = cs.root().name if cs.root() else "?"
             bass = cs.bass().name if cs.bass() and cs.root() and cs.bass().name != cs.root().name else ""
             kind = cs.chordKind or "major"
-            out.append((m.number, round(float(cs.offset) * 2) / 2, norm(root), kind, norm(bass)))
+            out.append((index, round(float(cs.offset) * 2) / 2, norm(root), kind, norm(bass)))
     return out, len(measures)
 
 

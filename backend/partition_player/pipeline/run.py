@@ -6,7 +6,10 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+import xml.etree.ElementTree as ET
+
 from ..config import Settings
+from .chords.place import inject, place
 from .engines import EngineError, get_engine
 from .postprocess import PostprocessError, postprocess
 from .preprocess import preprocess, thumbnail
@@ -49,12 +52,33 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
     if engine_xml is None:
         raise EngineError("recognition failed: " + "; ".join(errors))
 
+    notify("postprocessing", "Placing chord symbols")
+    chord_info = add_chords(engine_xml, engine_xml.parent / "geometry.json", out_dir / "with_chords.musicxml")
+    if chord_info is not None:
+        engine_xml = out_dir / "with_chords.musicxml"
+
     notify("postprocessing", "Checking measures")
     final = out_dir / "score.musicxml"
     try:
         stats = postprocess(engine_xml, final)
     except PostprocessError as e:
         raise EngineError(f"{info.get('engine')} produced unusable output: {e}") from e
+    if chord_info is not None:
+        stats.chords = chord_info["chords"]
+        stats.chord_warnings = chord_info["warnings"]
+        stats.chords_seen = chord_info["seen"]
     info["stats"] = dataclasses.asdict(stats)
     (out_dir / "result.json").write_text(json.dumps(info, indent=2))
     return final
+
+
+def add_chords(engine_xml: Path, geometry_file: Path, dst: Path) -> dict | None:
+    """Chord stage (ADR 0003): geometry.json from the driver + engine MusicXML -> MusicXML with <harmony>."""
+    if not geometry_file.exists():
+        return None
+    geometry = json.loads(geometry_file.read_text())
+    tree = ET.parse(engine_xml)
+    result = place(tree, geometry)
+    written = inject(tree, result.placed)
+    tree.write(dst, encoding="unicode", xml_declaration=True)
+    return {"chords": written, "warnings": result.warnings, "seen": result.seen}

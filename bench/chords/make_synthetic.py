@@ -7,11 +7,11 @@ blurred, shaded, noisy, like a phone photo). Deterministic (seeded), so the set 
 
 Usage: .venv-oemer/bin/python bench/chords/make_synthetic.py <nottingham-dataset dir> [n_tunes]
 """
-import random, sys
+import random, re, sys
 from pathlib import Path
 
 import cairosvg, cv2, numpy as np, verovio
-from music21 import clef, converter, corpus, harmony
+from music21 import clef, converter, corpus, expressions, harmony, key, meter, note, stream, tempo
 
 OUT = Path(__file__).resolve().parents[2] / "bench" / "out" / "chords"
 PICK = ["jigs.abc:2", "jigs.abc:5", "reelsa-c.abc:3", "reelsd-g.abc:7", "waltzes.abc:4", "hpps.abc:6",
@@ -23,7 +23,13 @@ def render(xml: Path, png: Path) -> None:
     # A4 at 100% is 2100x2970 verovio units (0.1 mm); rendered at 2.5x the interline is about 22 px, like a phone photo.
     tk.setOptions({"pageWidth": 2100, "pageHeight": 2970, "scale": 100, "adjustPageHeight": True})
     tk.loadFile(str(xml))
-    cairosvg.svg2png(bytestring=tk.renderToSVG(1).encode(), write_to=str(png), background_color="white", scale=1.2)
+    svg = tk.renderToSVG(1)
+    # verovio sets accidentals in chord names and the metronome note in its SMuFL font, which the rasterizer
+    # does not have; print them as the plain text most published sheets use ("F#", "Bb").
+    glyphs = {"\ue262": "#", "\ue260": "b", "\ue261": "", "\ue1d5": "\u2669", "\ue1d7": "\u266a"}
+    svg = re.sub(r'<tspan font-family="Leipzig"([^>]*)>([^<]*)</tspan>',
+                 lambda m: '<tspan%s>%s</tspan>' % (m.group(1), "".join(glyphs.get(c, "?") for c in m.group(2))), svg)
+    cairosvg.svg2png(bytestring=svg.encode(), write_to=str(png), background_color="white", scale=1.2)
 
 
 def photo(clean: Path, out: Path, seed: int) -> None:
@@ -48,6 +54,54 @@ def photo(clean: Path, out: Path, seed: int) -> None:
     cv2.imwrite(str(out), img.clip(0, 255).astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
+def jazz_page(name: str, chords: list[str], seed: int, ks: int = -2, ts: str = "4/4") -> stream.Score:
+    """A synthetic tune whose chord vocabulary the folk set lacks: sevenths, dim, sus, slash, flats."""
+    rng = random.Random(seed)
+    sc = stream.Score(); p = stream.Part(); p.partName = "Voice"
+    sc.metadata = __import__("music21").metadata.Metadata(title=name)
+    beats = int(ts.split("/")[0])
+    for i in range(16):
+        m = stream.Measure(number=i + 1)
+        if i == 0:
+            m.append(clef.TrebleClef()); m.append(key.KeySignature(ks)); m.append(meter.TimeSignature(ts))
+        if i == 8 and name.endswith("keychange"):
+            m.append(key.KeySignature(ks + 3))
+        m.insert(0, harmony.ChordSymbol(chords[i % len(chords)]))
+        if beats >= 4:
+            m.insert(2, harmony.ChordSymbol(chords[(i + 7) % len(chords)]))
+        for b in range(beats):
+            n = note.Note(rng.choice(["C4", "D4", "E4", "F4", "G4", "A4", "B-4", "C5"]), quarterLength=1)
+            m.append(n)
+        p.append(m)
+    sc.append(p)
+    return sc
+
+
+def negative_page(name: str, seed: int) -> stream.Score:
+    """No chord symbols, but the text that must not be mistaken for them: rehearsal letters, tempo, lyrics, Fine."""
+    rng = random.Random(seed)
+    sc = stream.Score(); p = stream.Part(); p.partName = "Voice"
+    sc.metadata = __import__("music21").metadata.Metadata(title=name)
+    for i in range(16):
+        m = stream.Measure(number=i + 1)
+        if i == 0:
+            m.append(clef.TrebleClef()); m.append(key.KeySignature(1)); m.append(meter.TimeSignature("4/4"))
+            m.insert(0, tempo.MetronomeMark(number=96, text="Allegro"))
+        if i % 4 == 0:
+            m.insert(0, expressions.RehearsalMark("ABCD"[i // 4]))
+        if i == 7:
+            m.insert(0, expressions.TextExpression("D.C. al Fine"))
+        if i == 15:
+            m.insert(3, expressions.TextExpression("Fine"))
+        for b in range(4):
+            n = note.Note(rng.choice(["D4", "E4", "F#4", "G4", "A4", "B4"]), quarterLength=1)
+            n.lyric = rng.choice(["A", "la", "E", "sing", "Am", "the", "G", "day"])
+            m.append(n)
+        p.append(m)
+    sc.append(p)
+    return sc
+
+
 def main() -> None:
     nott = Path(sys.argv[1]) / "ABC_cleaned"
     n = int(sys.argv[2]) if len(sys.argv) > 2 else len(PICK)
@@ -60,9 +114,14 @@ def main() -> None:
         scores.append((f"nott_{fname[:-4]}_{idx}", sc))
     for name in ("leadSheet/berlinAlexandersRagtime.mxl", "leadSheet/fosterBrownHair.mxl"):
         scores.append((Path(name).stem, corpus.parse(name)))
+    scores.append(("jazz_sevenths", jazz_page("jazz_sevenths", ["Cmaj7", "Am7", "Dm7", "G7", "Em7", "A7", "Dm7", "G7", "Cmaj7", "F7", "E7", "Am7"], 101)))
+    scores.append(("jazz_flats_keychange", jazz_page("jazz_flats_keychange", ["B-", "E-7", "A-maj7", "D-", "G-7", "C7", "F7", "B-7", "E-", "F", "B-", "Fsus4"], 102)))
+    scores.append(("jazz_dim_slash", jazz_page("jazz_dim_slash", ["C", "C/E", "F", "F#dim", "C/G", "G7", "Am", "Am/G", "D7/F#", "G7sus4", "C6", "Bdim7"], 103, ks=0, ts="3/4")))
+    scores.append(("neg_text", negative_page("neg_text", 201)))
+    scores.append(("neg_letters", negative_page("neg_letters", 202)))
     for i, (name, sc) in enumerate(scores):
         chords = [c.figure for c in sc.recurse().getElementsByClass(harmony.ChordSymbol)]
-        if not chords:
+        if not chords and not name.startswith("neg_"):
             continue
         # one page: keep the first 24 measures
         part = sc.parts[0]

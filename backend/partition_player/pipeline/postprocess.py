@@ -22,8 +22,12 @@ class ScoreStats:
     notes: int = 0
     rests: int = 0
     padded_measures: int = 0
+    pickup: bool = False  # short first measure, padded at the front
     repeats_removed: int = 0
     warnings: list[str] = field(default_factory=list)
+    chords: int = 0
+    chord_warnings: list[str] = field(default_factory=list)
+    chords_seen: list[dict] = field(default_factory=list)  # tokens read but not accepted
 
 
 def _measure_filled(measure: ET.Element, divisions: int) -> Fraction:
@@ -109,10 +113,18 @@ def postprocess(src: Path, dst: Path) -> ScoreStats:
                 continue  # empty measure, leave it (OSMD renders it as a whole rest)
             if filled < expected:
                 gap = expected - filled
-                rest = ET.SubElement(measure, "note")
+                rest = ET.Element("note")
                 ET.SubElement(rest, "rest")
                 ET.SubElement(rest, "duration").text = str(int(gap))
                 ET.SubElement(rest, "voice").text = "1"
+                if measure is part.find("measure"):
+                    # a short first measure is a pickup: the notes belong at its end, before the first full bar
+                    first_note = next((i for i, el in enumerate(list(measure)) if el.tag in ("note", "harmony")), len(list(measure)))
+                    measure.insert(first_note, rest)
+                    measure.set("implicit", "yes")
+                    stats.pickup = True
+                else:
+                    measure.append(rest)
                 stats.padded_measures += 1
             elif filled > expected:
                 stats.warnings.append(

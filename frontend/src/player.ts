@@ -8,12 +8,14 @@
  * pausing and tempo changes are all done by re-anchoring the position to the clock.
  */
 import * as Tone from "tone";
+import { accompaniment, collectChords, type ChordSymbol } from "./chords";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 
 export type PlaybackState = "stopped" | "playing" | "paused";
 export interface LoopRange { from: number; to: number } // 1-based measure numbers, inclusive
 
-interface NoteEvent { time: number; midi: number; length: number } // whole notes
+export type Track = "melody" | "accompaniment";
+interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number } // whole notes
 
 const SAMPLES: Record<string, string> = {
   A1: "A1.mp3", C2: "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3", A2: "A2.mp3", C3: "C3.mp3", "D#3": "Ds3.mp3",
@@ -25,6 +27,8 @@ const LOOKAHEAD_S = 0.12;
 
 export class Player {
   measureCount = 0;
+  chords: ChordSymbol[] = [];
+  readonly tracks: Record<Track, boolean> = { melody: true, accompaniment: true };
 
   private events: NoteEvent[] = [];
   private steps: number[] = []; // cursor step -> time in whole notes
@@ -70,11 +74,17 @@ export class Player {
           if (note.isRest() || !note.Pitch) continue;
           if (note.NoteTie && note.NoteTie.StartNote !== note) continue; // tied continuation
           const length = note.NoteTie ? note.NoteTie.Duration.RealValue : note.Length.RealValue;
-          this.events.push({ time: t, midi: note.halfTone + 12, length });
+          this.events.push({ time: t, midi: note.halfTone + 12, length, track: "melody", velocity: 0.9 });
           last = Math.max(last, t + length);
         }
       }
       cursor.next();
+    }
+    const { chords, measures } = collectChords(this.osmd);
+    this.chords = chords;
+    for (const e of accompaniment(chords, measures)) {
+      this.events.push({ ...e, track: "accompaniment" });
+      last = Math.max(last, e.time + e.length);
     }
     this.events.sort((a, b) => a.time - b.time);
     this.totalWholeNotes = last;
@@ -114,6 +124,10 @@ export class Player {
       })().catch((e) => { this.ready = null; throw e; });
     }
     return this.ready;
+  }
+
+  setTrack(track: Track, on: boolean): void {
+    this.tracks[track] = on;
   }
 
   /** Semitones added to every note at playback time, so a song can sit in the singer's range. */
@@ -182,7 +196,9 @@ export class Player {
         if (when > horizon) return;
         this.nextEvent++;
         try {
-          this.sampler?.triggerAttackRelease(Tone.Frequency(ev.midi + this.transpose, "midi").toNote(), ev.length * this.secondsPerWhole() * 0.95, Math.max(when, now));
+          if (this.tracks[ev.track]) {
+            this.sampler?.triggerAttackRelease(Tone.Frequency(ev.midi + this.transpose, "midi").toNote(), ev.length * this.secondsPerWhole() * 0.95, Math.max(when, now), ev.velocity);
+          }
         } catch (e) {
           console.warn("note skipped", ev.midi, e);
         }

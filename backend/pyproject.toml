@@ -28,4 +28,6 @@ build-backend = "hatchling.build"
 packages = ["partition_player"]
 
 [tool.pytest.ini_options]
+markers = ["slow: needs the OCR models (about 10 s)"]
 testpaths = ["tests"]
+

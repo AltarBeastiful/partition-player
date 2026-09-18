@@ -12,6 +12,9 @@ export function ScoreView({ job }: { job: Job }) {
   const [state, setState] = useState<PlaybackState>("stopped");
   const [bpm, setBpm] = useState(90);
   const [transpose, setTranspose] = useState(0);
+  const [chordCount, setChordCount] = useState(0);
+  const [melodyOn, setMelodyOn] = useState(true);
+  const [accompOn, setAccompOn] = useState(true);
   const [loop, setLoop] = useState(false);
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(1);
@@ -38,6 +41,7 @@ export function ScoreView({ job }: { job: Job }) {
         playerRef.current = player;
         (window as unknown as { __player?: Player }).__player = player; // debugging aid
         setMeasureCount(player.measureCount);
+        setChordCount(player.chords.length);
         setTo(player.measureCount);
         setLoading(false);
       } catch (e) {
@@ -60,6 +64,8 @@ export function ScoreView({ job }: { job: Job }) {
 
   useEffect(() => { playerRef.current?.setBpm(bpm); }, [bpm]);
   useEffect(() => { playerRef.current?.setTranspose(transpose); }, [transpose]);
+  useEffect(() => { playerRef.current?.setTrack("melody", melodyOn); }, [melodyOn]);
+  useEffect(() => { playerRef.current?.setTrack("accompaniment", accompOn); }, [accompOn]);
 
   const stats = job.result?.stats;
   return (
@@ -97,15 +103,31 @@ export function ScoreView({ job }: { job: Job }) {
         </label>
         <span className="muted">of {measureCount}. Range applies with or without loop; changes take effect on the next Play.</span>
       </div>
+      {chordCount > 0 && (
+        <div className="controls loop">
+          <label><input id="melody" type="checkbox" checked={melodyOn} onChange={(e) => setMelodyOn(e.target.checked)} /> Melody</label>
+          <label><input id="accompaniment" type="checkbox" checked={accompOn} onChange={(e) => setAccompOn(e.target.checked)} /> Accompaniment</label>
+          <span className="muted">Piano chords from the {chordCount} chord symbols on the page. Turn the melody off to sing it yourself.</span>
+        </div>
+      )}
       {stats && (
         <div className="stats">
           <span>{stats.measures} measures</span>
           <span>{stats.notes} notes</span>
           <span>{stats.rests} rests</span>
           {stats.padded_measures > 0 && <span>{stats.padded_measures} measures padded with rests</span>}
+          {(stats.chords ?? 0) > 0 && <span>{stats.chords} chord symbols</span>}
           <span>read by {job.result?.engine} in {job.result?.seconds}s</span>
         </div>
       )}
+      {stats && (stats.chord_warnings?.length || stats.chords_seen?.length) ? (
+        <div className="stats notes">
+          {stats.chord_warnings?.map((w, i) => <span key={"w" + i}>{w}</span>)}
+          {stats.chords_seen && stats.chords_seen.length > 0 && (
+            <span>Seen above the staves but not used: {stats.chords_seen.map((s) => `"${s.text}" (line ${s.system}, ${s.reason})`).join(", ")}</span>
+          )}
+        </div>
+      ) : null}
       {loading && <p className="muted">Rendering the score…</p>}
       {error && <div className="error">{error}</div>}
       <div className="sheet" ref={host} />

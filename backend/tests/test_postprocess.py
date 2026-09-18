@@ -109,3 +109,15 @@ def test_repeats_are_stripped(tmp_path: Path):
     out = dst.read_text()
     assert stats.repeats_removed == 3
     assert "<repeat" not in out and "<ending" not in out and "bar-style" in out
+
+
+def test_short_first_measure_is_a_pickup(tmp_path):
+    src = tmp_path / "in.musicxml"; dst = tmp_path / "out.musicxml"
+    src.write_text(SHORT_MEASURE)
+    stats = postprocess(src, dst)
+    assert stats.pickup and stats.padded_measures == 1
+    import xml.etree.ElementTree as ET
+    m1 = ET.parse(dst).getroot().find("part").find("measure")
+    assert m1.get("implicit") == "yes"
+    tags = [el.tag for el in m1]
+    assert tags[:2] == ["attributes", "note"] and m1.findall("note")[0].find("rest") is not None
