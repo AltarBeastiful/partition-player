@@ -1,6 +1,6 @@
 # Plan 0002: Lyrics under the notes
 
-Status 2026-09-18: steps 1, 2, 4 and 5 done; step 3 (benchmark) running, numbers to be recorded in `bench/RESULTS.md`; step 6 (deploy) pending.
+Status 2026-09-18: steps 1 to 5 done (`bench/RESULTS.md` has the numbers); step 6 deployed, server timing in `deploy/README.md`.
 
 Implements ADR 0004. Each step has its own check; nothing moves to the next step until the check
 passes. Work happens on `main` in small commits.

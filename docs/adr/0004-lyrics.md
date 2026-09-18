@@ -2,7 +2,7 @@
 
 Date: 2026-09-18
 Status: Accepted (reviewed 2026-09-18 by an independent agent against the code; its changes are folded in
-below, see Validation). Implementation not started.
+below, see Validation). Implemented 2026-09-18 (plan 0002); results in `bench/RESULTS.md`.
 
 Appendices: [A. research notes on OMR lyrics, OCR engines and alignment](0004-lyrics-research.md),
 [B. survey of datasets, tools and papers](0004-lyrics-survey.md).
