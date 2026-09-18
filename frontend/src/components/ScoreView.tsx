@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { scoreUrl, type Job } from "../api";
+import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
 
 const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
@@ -26,6 +27,9 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
   const [melodyOn, setMelodyOn] = useState(true);
   const [accompOn, setAccompOn] = useState(true);
   const [loop, setLoop] = useState(false);
+  const [noteNames, setNoteNames] = useState(readNoteNamesPref);
+  const noteNamesRef = useRef(noteNames); // read inside load(), which must not re-run on a toggle
+  noteNamesRef.current = noteNames;
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(1);
   const [measureCount, setMeasureCount] = useState(0);
@@ -44,6 +48,7 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
       try {
         await osmd.load(scoreUrl(job.id, version));
         if (cancelled) return;
+        reserveNoteNamesSpace(osmd, noteNamesRef.current); // before the first render, so nothing jumps
         osmd.render();
         osmd.cursor.show();
         osmdRef.current = osmd;
@@ -76,6 +81,25 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
   useEffect(() => { playerRef.current?.setTranspose(transpose); }, [transpose]);
   useEffect(() => { playerRef.current?.setTrack("melody", melodyOn); }, [melodyOn]);
   useEffect(() => { playerRef.current?.setTrack("accompaniment", accompOn); }, [accompOn]);
+
+  // Turning the names on widens the gaps over the staves, which needs a new layout; the names
+  // themselves are then drawn into the SVG that layout produced.
+  useEffect(() => {
+    const osmd = osmdRef.current;
+    if (!osmd || loading) return;
+    if (reserveNoteNamesSpace(osmd, noteNames)) {
+      osmd.render(); // the wider gaps only take effect on a new layout
+      osmd.cursor.show();
+    }
+    if (noteNames) drawNoteNames(osmd); else clearNoteNames(osmd);
+  }, [noteNames, loading]);
+
+  // OSMD re-renders by itself, on resize: the names have to be put back each time it does.
+  useEffect(() => {
+    const osmd = osmdRef.current;
+    if (!noteNames || loading || !osmd || !host.current) return;
+    return keepNoteNames(osmd, host.current);
+  }, [noteNames, loading]);
 
   const stats = job.result?.stats;
   return (
@@ -113,6 +137,14 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
         </label>
         <span className="muted">of {measureCount}. Range applies with or without loop; changes take effect on the next Play.</span>
       </div>
+      <div className="controls loop">
+        <label title="Write the French name of every printed note above the staff. Transposing the playback does not rename them.">
+          <input id="note-names" type="checkbox" checked={noteNames} disabled={loading || !!error}
+            onChange={(e) => { setNoteNames(e.target.checked); writeNoteNamesPref(e.target.checked); }} />
+          Note names
+        </label>
+        <span className="muted">do, ré, mi… above the staff, read from the pitches on the page.</span>
+      </div>
       {chordCount > 0 && (
         <div className="controls loop">
           <label><input id="melody" type="checkbox" checked={melodyOn} onChange={(e) => setMelodyOn(e.target.checked)} /> Melody</label>
@@ -127,12 +159,16 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           <span>{stats.rests} rests</span>
           {stats.padded_measures > 0 && <span>{stats.padded_measures} measures padded with rests</span>}
           {(stats.chords ?? 0) > 0 && <span>{stats.chords} chord symbols</span>}
+          {(stats.lyrics_syllables ?? 0) > 0 && <span>{stats.lyrics_syllables} syllables of lyrics</span>}
           <span>read by {job.result?.engine} in {job.result?.seconds}s</span>
         </div>
       )}
       {stats && (stats.chord_warnings?.length || stats.chords_seen?.length || stats.lyrics_seen?.length) ? (
         <div className="stats notes">
           {stats.chord_warnings?.map((w, i) => <span key={"w" + i}>{w}</span>)}
+          {stats.lyrics_seen && stats.lyrics_seen.length > 0 && (
+            <span>Text seen under the staves but not used as lyrics: {stats.lyrics_seen.map((s) => `"${s.text}" (line ${s.staff}, ${s.reason})`).join(", ")}</span>
+          )}
           {stats.chords_seen && stats.chords_seen.length > 0 && (
             <span>Seen above the staves but not used: {stats.chords_seen.map((s) => `"${s.text}" (line ${s.system}, ${s.reason})`).join(", ")}</span>
           )}
@@ -144,7 +180,3 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
     </section>
   );
 }
-          {(stats.lyrics_syllables ?? 0) > 0 && <span>{stats.lyrics_syllables} syllables of lyrics</span>}
-          {stats.lyrics_seen && stats.lyrics_seen.length > 0 && (
-            <span>Text seen under the staves but not used as lyrics: {stats.lyrics_seen.map((s) => `"${s.text}" (line ${s.staff}, ${s.reason})`).join(", ")}</span>
-          )}

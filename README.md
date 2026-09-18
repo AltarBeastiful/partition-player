@@ -11,7 +11,8 @@ Decisions are recorded in `docs/adr/`. The engine benchmark that picked homr is 
   pipeline (preprocess, OMR engine, postprocess). CLI entry point `partition-player`.
 - `frontend/` React + Vite + TypeScript: upload or camera capture, progress, score view with
   OpenSheetMusicDisplay rendering and piano playback (Tone.js sampler, own look-ahead scheduler)
-  with tempo control and a loop over a measure range.
+  with tempo control, a loop over a measure range and a switch that writes the French note names
+  (do, ré, mi…) over the staff.
 - `bench/` benchmark samples, ground truth, scorer and audio rendering.
 - `docs/adr/` architecture decision records.
 
@@ -55,8 +56,8 @@ The image builds for amd64 and arm64. Recognition data lives in the `pp-data` vo
 
 All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_ENGINE` (`homr`),
 `PP_FALLBACK_ENGINE` (`none` or `audiveris`, which also needs `PP_AUDIVERIS_BIN`),
-`PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 `PP_ANTHROPIC_API_KEY` (optional lyrics spelling pass, off when unset),
+`PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
 ## Chord symbols and accompaniment
@@ -69,7 +70,6 @@ chord can come out and nothing is written when the reading is not sure. Chords a
 accompaniment switches. Tokens that were seen but not accepted are listed under the sheet.
 The benchmark is `bench/chords/` (see `bench/RESULTS.md`).
 
-## Score library
 ## Lyrics
 
 The words printed under the staff are read and put under their notes (ADR 0004). The driver cuts a
@@ -101,6 +101,7 @@ nothing is written into the MusicXML, the switch works while the piece plays, an
 playback does not rename them, since they name what is printed. The choice is remembered in the
 browser.
 
+## Score library
 
 Every finished job is a saved score with its own link, `/s/{id}`, listed on the home page with a
 thumbnail and an editable name. There is no login: anyone who can reach the app can add, rename
