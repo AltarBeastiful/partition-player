@@ -139,14 +139,27 @@ Recognition is not perfect, so the score page says where to look and lets you fi
   (`review.webp`), with the position of every measure on it (`layout.json`, from the driver's
   staff geometry and barlines). With **Photo** on, the strip of the print the selected measure was
   read from is shown with the measure framed; click it for the whole page.
-- **Two kinds of click.** The page opens in playing mode: a click on a note leads the playback
+- **Two modes, one click.** The page opens in playing mode: a click on a note leads the playback
   there. While it plays, the sound continues from that note; paused, it resumes there; stopped, the
   cursor moves there and Play starts from it (Stop forgets it). **⏮ Start** (or Home) goes back to
   the beginning of the range, without a break when playing. **Edit the score**, in the toast above
   the sheet (shown only when there are places to check) or at the end of the sheet, enters edit
-  mode: the frame around the sheet turns amber, a click selects the note instead, the review bar
-  and the toolbar appear. **Done** (or Escape with nothing selected) saves what is pending and goes
-  back to playing mode.
+  mode: the frame around the sheet turns amber, the review bar and the toolbar appear, and a click
+  selects the note *and* leads the playback there, so Space plays the passage being corrected;
+  after an edit the playback position goes back to the selected note. **Done** (or Escape with
+  nothing selected) saves what is pending and goes back to playing mode.
+- **Other readings.** Hearing that a note is wrong is easier than knowing what to change it to.
+  Double-click a note (in either mode), or select it and press `o` or **Other readings** in the
+  toolbar, and a dialog lists what the engine may have misread it as (ADR 0006): the durations a
+  dot or a flag away, the pitch a step or two off, the other accidentals, an octave, a rest, no
+  note, two notes instead of one; on a measure that does not add up (or was padded by the
+  pipeline), the single change on any of its notes that makes it add up, ranked first. The strip of
+  the photo is framed on the measure at the top; every reading is engraved on its own with the
+  changed note marked, described in the toolbar's words ("dotted quarter instead of quarter",
+  "measure adds up"), and has **Play** (the previous measure, then the measure read this way, with
+  the accompaniment) and **Use**, which applies it as an ordinary undoable edit and keeps the dialog
+  open for a second correction. It is a closed list of the benchmark's confusion kinds, computed in
+  the browser with no model; an error of another kind still needs the toolbar.
 - **The editor.** In edit mode, click a note or a rest on the sheet (a finger works). The toolbar under the sheet
   changes its pitch (a step, an accidental, an octave), its length (whole to thirty-second, dot,
   tie to the next note of the same pitch), turns it into a rest and back, inserts a note or a rest

@@ -5,6 +5,7 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 ## Correction workflow via small LLM API
 - Goal: after OMR, send the recognized MusicXML (and possibly the image crop) to a cheap multimodal or text LLM to fix obvious errors: wrong durations that break measure totals, missing accidentals, clef/key inconsistencies.
 - The editor (ADR 0005) now records the doubtful measures and keeps the photo strip of each; a model would get exactly those.
+  The "other readings" dialog (ADR 0006) is where a model's suggestion would appear: one more reading with a label and a rank.
 - Benchmark first before committing: compare candidates on a fixed set of OMR outputs with known ground truth, measure note-level accuracy gain, latency and cost per page.
 - Candidates: DeepSeek (V3 / R1 via API), Gemini Flash, Claude Haiku. Pick by accuracy per euro.
 - Depends on: ground-truth test set from the OMR benchmark milestone.

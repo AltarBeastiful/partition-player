@@ -69,8 +69,9 @@ export function ReviewBar({ session, c, hasPhoto, showPhoto, setShowPhoto }: {
 }
 
 /** The tools for the selected event and its measure. */
-export function Toolbar({ session, c, onPlayFrom, onRevert, onReload, onDone, staves }: {
-  session: EditorSession; c: Commands; onPlayFrom: (measure: number) => void; onRevert: () => void; onReload: () => void; onDone: () => void; staves: number;
+export function Toolbar({ session, c, onPlayFrom, onReadings, onRevert, onReload, onDone, staves }: {
+  session: EditorSession; c: Commands; onPlayFrom: (measure: number) => void; onReadings: () => void;
+  onRevert: () => void; onReload: () => void; onDone: () => void; staves: number;
 }) {
   const [panel, setPanel] = useState<"time" | "key" | "clef" | null>(null);
   const [chord, setChord] = useState("");
@@ -94,6 +95,7 @@ export function Toolbar({ session, c, onPlayFrom, onRevert, onReload, onDone, st
             {check && check.status !== "ok" && <span className="bad"> · {check.status === "underfull" ? "short" : check.status === "overfull" ? "long" : "empty"}</span>}
           </span>
         ) : <span className="muted">Click a note on the sheet, or press n for the next place to check.</span>}
+        <button onClick={onReadings} disabled={!ev} title="Other readings of this note (o)">Other readings</button>
         <span className="save-state">
           <button className="quiet" onClick={c.undo} disabled={!session.canUndo} title="Undo (Ctrl+Z)">Undo</button>
           <button className="quiet" onClick={c.redo} disabled={!session.canRedo} title="Redo (Ctrl+Y)">Redo</button>
@@ -192,8 +194,13 @@ export function Toolbar({ session, c, onPlayFrom, onRevert, onReload, onDone, st
   );
 }
 
-/** The strip of the photo the selected measure was read from, the measure framed. */
-export function PrintedStrip({ jobId, layout, measure, onOpen }: { jobId: string; layout: Layout; measure: number | null; onOpen: () => void }) {
+/**
+ * The strip of the photo the selected measure was read from, the measure framed. "measure" zoom
+ * crops to the measure with one measure of print on each side, for a close comparison (plan 0005).
+ */
+export function PrintedStrip({ jobId, layout, measure, zoom = "system", onOpen }: {
+  jobId: string; layout: Layout; measure: number | null; zoom?: "system" | "measure"; onOpen: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -208,12 +215,16 @@ export function PrintedStrip({ jobId, layout, measure, onOpen }: { jobId: string
   const system = measure === null ? null : layout.systems.find((s) => s.measures.some((mm) => mm.index === measure)) ?? null;
   const unit = system?.unit || 30;
   const margin = 4 * unit;
-  const x0 = system ? Math.max(0, system.x0 - margin) : 0;
-  const x1 = system ? Math.min(layout.width, system.x1 + margin) : layout.width;
+  const box = system?.measures.find((mm) => mm.index === measure);
+  // A close crop spans three measure widths, never less than a system's worth of print, so a lone
+  // half note at the end of a line is not blown up to the size of the screen.
+  const span = zoom === "measure" && box ? Math.max(3 * (box.x1 - box.x0), 36 * unit) : 0;
+  const cx = box ? (box.x0 + box.x1) / 2 : 0;
+  const x0 = span ? Math.max(0, cx - span / 2) : system ? Math.max(0, system.x0 - margin) : 0;
+  const x1 = span ? Math.min(layout.width, cx + span / 2) : system ? Math.min(layout.width, system.x1 + margin) : layout.width;
   const y0 = system ? Math.max(0, system.top - 7 * unit) : 0;
   const y1 = system ? Math.min(layout.height, system.bottom + 8 * unit) : Math.min(layout.height, 300);
   const scale = width > 0 ? width / (x1 - x0) : 0;
-  const box = system?.measures.find((mm) => mm.index === measure);
   return (
     <div className="strip" ref={ref} style={{ height: scale ? (y1 - y0) * scale : 80 }} onClick={onOpen} title="Open the whole photo">
       {scale > 0 && (

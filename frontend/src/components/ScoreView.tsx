@@ -8,7 +8,9 @@ import { EditorSession } from "../editor/session";
 import { drawOverlay, hitTest, keepOverlay, rectOf } from "../editor/sheet";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
+import type { EventKey } from "../score/xml";
 import { FormPanel, Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
+import { ReadingsDialog } from "./Readings";
 
 const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
 
@@ -55,6 +57,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const [lightbox, setLightbox] = useState(false);
   const [staves, setStaves] = useState(1);
   const [editing, setEditing] = useState(false);
+  const [readingsFor, setReadingsFor] = useState<EventKey | null>(null); // the note the readings dialog is about
   const [printed, setPrinted] = useState<Pass[]>([]);   // the automatic passes
   const [passes, setPasses] = useState<Pass[]>([]);     // what plays
   const [verseCount, setVerseCount] = useState(1);
@@ -154,6 +157,11 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         const auto = defaultPasses(osmd);
         const played = session.form ? expandForm(session.form, player.measureCount) : auto;
         player.setPasses(played);
+        // The re-render stopped the playback: put it back on the edited note, so Space replays it.
+        if (session.selected) {
+          const at = player.positionOf(session.selected.measure, session.selected.onset);
+          if (at !== null) player.seek(at);
+        }
         lastForm.current = session.form;
         setPrinted(auto); setPasses(played);
         setVerseCount(Math.max(1, ...versesByMeasure(osmd).flat()));
@@ -248,21 +256,34 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     return keepNoteNames(osmd, host.current);
   }, [noteNames, loading]);
 
-  // A click on the sheet: in edit mode it selects the note; otherwise it leads the playback there.
+  // A click on the sheet leads the playback to the note, in both modes; in edit mode it also selects it.
   const onSheetClick = useCallback((e: React.MouseEvent) => {
     const osmd = osmdRef.current, player = playerRef.current;
     if (!osmd || !session) return;
     const key = hitTest(osmd, e.clientX, e.clientY);
-    if (editing) { session.select(key); return; }
+    if (editing) session.select(key);
     if (!key || !player) return;
     const at = player.positionOf(key.measure, key.onset);
     if (at !== null) player.seek(at);
   }, [session, editing]);
 
+  // A double click asks what else this note could have been, entering edit mode on the way.
+  const onSheetDoubleClick = useCallback((e: React.MouseEvent) => {
+    const osmd = osmdRef.current;
+    if (!osmd || !session) return;
+    const key = hitTest(osmd, e.clientX, e.clientY);
+    if (!key) return;
+    session.select(key);
+    playerRef.current?.stop();
+    setEditing(true);
+    setReadingsFor(key);
+  }, [session]);
+
   const enterEdit = useCallback(() => { playerRef.current?.stop(); setEditing(true); }, []);
   const leaveEdit = useCallback(() => {
     session?.select(null);
     if (session?.dirty) void session.save();
+    setReadingsFor(null);
     setEditing(false);
   }, [session]);
 
@@ -275,17 +296,22 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
       if (e.key === " ") { e.preventDefault(); void toggle(); return; }
       if (e.key === "Home" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); restart(); return; }
       if (!editing) return; // the editing keys only act in edit mode
+      if (readingsFor) { // the readings dialog has the keyboard while it is open (state, not the DOM: its own Escape closes it in this same event); undo and redo still reach the score
+        if ((e.ctrlKey || e.metaKey) && ["z", "y"].includes(e.key.toLowerCase())) { e.preventDefault(); if (e.key.toLowerCase() === "y" || e.shiftKey) session.redo(); else session.undo(); }
+        return;
+      }
       if (e.key === "Escape") {
         if (document.querySelector(".lightbox")) return;
         if (session.selected) session.select(null); else leaveEdit();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); void session.save(); return; }
+      if (e.key === "o" && session.selected) { e.preventDefault(); setReadingsFor(session.selected); return; }
       if (shortcut(e, c, session.selected !== null)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, toggle, restart, editing, leaveEdit]);
+  }, [session, toggle, restart, editing, leaveEdit, readingsFor]);
 
   // Leaving with unsaved changes asks first.
   useEffect(() => {
@@ -295,7 +321,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   }, [session]);
 
   // A new document (reload after a lyrics save or a revert) starts in playing mode.
-  useEffect(() => { setEditing(false); }, [job.id, version]);
+  useEffect(() => { setEditing(false); setReadingsFor(null); }, [job.id, version]);
 
   async function revert() {
     if (!session) return;
@@ -376,15 +402,19 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
       )}
       {loading && <p className="muted">Rendering the score…</p>}
       {error && <div className="error">{error}</div>}
-      {editing && <div className="mode"><span className="mode-badge">Edit mode</span><span className="muted">Click a note to select it. Playback clicks come back when you are done.</span></div>}
-      <div className="sheet" ref={host} onClick={onSheetClick} />
-      {session && c && editing && <Toolbar session={session} c={c} onPlayFrom={playFrom} onRevert={revert} onReload={onReload} onDone={leaveEdit} staves={staves} />}
+      {editing && <div className="mode"><span className="mode-badge">Edit mode</span><span className="muted">A click selects the note and leads the playback there; Space plays from it. Double-click it for its other readings.</span></div>}
+      <div className="sheet" ref={host} onClick={onSheetClick} onDoubleClick={onSheetDoubleClick} />
+      {session && c && editing && (
+        <Toolbar session={session} c={c} onPlayFrom={playFrom} onReadings={() => { if (session.selected) setReadingsFor(session.selected); }}
+          onRevert={revert} onReload={onReload} onDone={leaveEdit} staves={staves} />
+      )}
       {session && !editing && (
         <div className="edit-row">
           <button className="edit" onClick={enterEdit}>Edit the score</button>
           <span className="muted">
             {session.open().length > 0 ? `${session.open().length} place${session.open().length > 1 ? "s" : ""} to check. ` : ""}
             Correct notes, rests, measures, chords, time and key. Outside edit mode, clicking a note plays from there.
+            Double-click a note for its other readings.
           </span>
         </div>
       )}
@@ -412,6 +442,11 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         </div>
       ) : null}
       {lightbox && <Lightbox jobId={job.id} onClose={() => setLightbox(false)} />}
+      {session && editing && readingsFor && playerRef.current && (
+        <ReadingsDialog session={session} jobId={job.id} target={readingsFor} bpm={bpm} player={playerRef.current}
+          onApply={(r) => { if (session.apply(r.apply)) setReadingsFor(session.selected); }}
+          onClose={() => setReadingsFor(null)} />
+      )}
     </section>
   );
 }

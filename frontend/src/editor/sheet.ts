@@ -180,6 +180,33 @@ export function drawOverlay(osmd: OpenSheetMusicDisplay, places: Place[], select
   svg.insertBefore(layer, svg.firstChild); // under the notes, so the ink stays black
 }
 
+/**
+ * Mark notes on a sheet of their own (the mini sheets of the other readings, plan 0005): a box round
+ * each notehead, like the selection. The marks are a layer apart, so a sheet that also has doubts on
+ * it keeps them.
+ */
+export function markNotes(osmd: OpenSheetMusicDisplay, keys: EventKey[], cls = "changed-note"): void {
+  const svg = svgOf(osmd);
+  if (!svg) return;
+  svg.querySelectorAll(`g.${LAYER_CLASS}.marks`).forEach((g) => g.remove());
+  const scale = UNIT * (osmd.Zoom || 1);
+  const px = (v: number) => (v * scale).toFixed(1);
+  const layer = document.createElementNS(SVG_NS, "g");
+  layer.setAttribute("class", `${LAYER_CLASS} marks`);
+  for (const key of keys) {
+    const pos = graphicalFor(osmd, key)?.PositionAndShape?.AbsolutePosition;
+    if (!pos) continue;
+    const r = 1.35;
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", px(pos.x - r)); rect.setAttribute("y", px(pos.y - r));
+    rect.setAttribute("width", px(2 * r)); rect.setAttribute("height", px(2 * r));
+    rect.setAttribute("rx", px(0.5));
+    rect.setAttribute("class", cls);
+    layer.appendChild(rect);
+  }
+  svg.insertBefore(layer, svg.firstChild); // under the notes, so the ink stays black
+}
+
 /** The client rectangle of a selected note, to keep it in view. */
 export function rectOf(osmd: OpenSheetMusicDisplay, key: EventKey): DOMRect | null {
   const svg = svgOf(osmd);

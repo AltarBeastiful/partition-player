@@ -162,3 +162,26 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .lightbox { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.85); overflow: auto; padding: 16px; cursor: zoom-out; }
 .lightbox img { display: block; margin: 0 auto; max-width: none; width: min(100%, 1400px); cursor: default; }
 .lightbox .close { position: fixed; top: 16px; right: 16px; z-index: 21; }
+
+/* The other readings of a note (plan 0005): the print, then a card per reading, its measure engraved. */
+.readings { position: fixed; inset: 0; z-index: 20; overflow: auto; padding: 16px; background: rgba(0, 0, 0, 0.5); }
+.readings .panel { max-width: 960px; margin: 0 auto; display: grid; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.readings .head { display: flex; gap: 12px; align-items: baseline; }
+.readings .head button { margin-left: auto; }
+.readings .head button + button { margin-left: 0; }
+.readings .strip { max-height: 320px; }
+.readings p { margin: 0; }
+.readings .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.reading { display: grid; gap: 6px; align-content: start; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+.reading.current { border-color: var(--accent); }
+.reading .mini { background: #fff; border-radius: 4px; overflow: hidden; min-height: 90px; color: #1a1e28; }
+.reading .mini svg { max-width: 100%; height: auto; }
+.reading .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.reading .row .fixes { color: var(--ok); }
+.reading .row button { padding: 5px 10px; }
+.editor-layer rect.changed-note { fill: rgba(220, 38, 38, 0.18); stroke: #dc2626; stroke-width: 1.5; }
+@media (max-width: 600px) {
+  .readings { padding: 8px; }
+  .readings .panel { padding: 12px; }
+  .readings .cards { grid-template-columns: 1fr; }
+}

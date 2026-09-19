@@ -9,6 +9,7 @@
  * every 25 ms it triggers the notes due in the next 120 ms and moves the cursor to the current
  * position (an interval rather than requestAnimationFrame, so it keeps working in a background tab).
  * Looping, pausing, seeking and tempo changes are all done by re-anchoring the position to the clock.
+ * A preview (plan 0005) is a handful of notes played straight on the sampler, beside this timeline.
  */
 import * as Tone from "tone";
 import { accompaniment, collectChords, type ChordSymbol } from "./chords";
@@ -19,6 +20,8 @@ export type PlaybackState = "stopped" | "playing" | "paused";
 export interface LoopRange { from: number; to: number } // 1-based printed measure numbers, inclusive
 
 export type Track = "melody" | "accompaniment";
+/** A note of a preview: time and length in whole notes from the start of the excerpt (plan 0005). */
+export interface PreviewNote { time: number; midi: number; length: number }
 interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number } // whole notes
 interface PrintedStep { time: number; measure: number; notes: { midi: number; length: number }[] }
 interface Step { time: number; printed: number; measure: number; pass: number } // on the unrolled timeline
@@ -69,6 +72,8 @@ export class Player {
   private pending: number | null = null; // where the next Play starts after a click on a note while stopped
   private timer: number | null = null;
   private lastTick = 0;
+  private previewTimer: number | null = null;   // the end of a preview, watched off the transport
+  private previewDone: (() => void) | null = null;
 
   constructor(private osmd: OpenSheetMusicDisplay, private onState: (s: PlaybackState) => void) {
     this.collect();
@@ -90,6 +95,11 @@ export class Player {
   /** The total length of the timeline in whole notes. */
   get length(): number {
     return this.totalWholeNotes;
+  }
+
+  /** The length of a printed measure in whole notes; 0 when it is not on the page. */
+  printedLength(measure: number): number {
+    return this.measureDuration[measure] ?? 0;
   }
 
   private collect(): void {
@@ -255,6 +265,7 @@ export class Player {
   }
 
   async play(bpm: number, loop = false, range: LoopRange | null = null): Promise<void> {
+    this.stopPreview();
     if (this.starting || this.state === "playing") return;
     this.starting = true;
     try {
@@ -290,6 +301,53 @@ export class Player {
     this.onState("playing");
     this.lastTick = 0;
     this.timer = window.setInterval(() => { this.tick(); this.followCursor(); }, TICK_MS);
+  }
+
+  /**
+   * Play a short excerpt on the loaded piano, outside the timeline: the other readings of a measure
+   * are compared by ear this way (plan 0005). The main playback is stopped first, so two things never
+   * sound at once, and the state stays "stopped" (the cursor does not move). The notes are always
+   * heard, since they are what is being compared; the accompaniment of the listed printed measures
+   * follows when that track is on, each measure shifted to where it falls in the excerpt. Resolves
+   * when the last note has sounded, or at once when it is cut short.
+   */
+  async preview(notes: PreviewNote[], accomp: { measure: number; at: number }[] = []): Promise<void> {
+    this.stopPreview();
+    this.stop();
+    await this.ensureReady();
+    const spw = this.secondsPerWhole();
+    const start = Tone.now() + 0.05;
+    let end = start;
+    const sound = (time: number, midi: number, length: number, velocity: number) => {
+      const when = start + time * spw;
+      end = Math.max(end, when + length * spw);
+      try {
+        this.sampler?.triggerAttackRelease(Tone.Frequency(midi + this.transpose, "midi").toNote(), length * spw * 0.95, when, velocity);
+      } catch (e) {
+        console.warn("note skipped", midi, e);
+      }
+    };
+    for (const n of notes) sound(n.time, n.midi, n.length, 0.9);
+    if (this.tracks.accompaniment) {
+      for (const a of accomp) for (const e of this.accompByMeasure[a.measure] ?? []) sound(a.at + e.at, e.midi, e.length, e.velocity);
+    }
+    return new Promise<void>((resolve) => {
+      this.previewDone = resolve;
+      this.previewTimer = window.setTimeout(() => this.endPreview(false), (end - Tone.now()) * 1000 + 120);
+    });
+  }
+
+  /** Cut a preview short; a pending preview() promise resolves. */
+  stopPreview(): void {
+    this.endPreview(true);
+  }
+
+  private endPreview(release: boolean): void {
+    if (this.previewTimer !== null) { window.clearTimeout(this.previewTimer); this.previewTimer = null; }
+    if (release && this.previewDone) this.sampler?.releaseAll();
+    const done = this.previewDone;
+    this.previewDone = null;
+    done?.();
   }
 
   /**
@@ -385,6 +443,7 @@ export class Player {
 
   stop(): void {
     this.clearTimers();
+    this.endPreview(false);
     this.sampler?.releaseAll();
     this.pending = null;
     this.state = "stopped";
@@ -431,6 +490,7 @@ export class Player {
 
   dispose(): void {
     this.clearTimers();
+    this.endPreview(false);
     this.sampler?.dispose();
     this.sampler = null;
     this.ready = null;
