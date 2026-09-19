@@ -12,7 +12,7 @@ def tokens(path):
     p = s.parts[0]
     toks = []; measures = list(p.getElementsByClass('Measure'))
     for m in measures:
-        for e in m.notesAndRests:
+        for e in m.recurse().notesAndRests:   # recurse: a measure split into <voice>s nests them
             if isinstance(e, harmony.ChordSymbol): continue
             ql = float(e.duration.quarterLength)
             if isinstance(e, note.Rest): toks.append(('r', ql))
@@ -60,8 +60,8 @@ def main():
     if cm == gm:
         ok = 0
         for gmm, cmm in zip(gmeas, cmeas):
-            g = [(e.pitch.nameWithOctave if isinstance(e, note.Note) else ('r' if isinstance(e, note.Rest) else min(e.pitches).nameWithOctave), float(e.duration.quarterLength)) for e in gmm.notesAndRests if not isinstance(e, harmony.ChordSymbol)]
-            c = [(e.pitch.nameWithOctave if isinstance(e, note.Note) else ('r' if isinstance(e, note.Rest) else min(e.pitches).nameWithOctave), float(e.duration.quarterLength)) for e in cmm.notesAndRests if not isinstance(e, harmony.ChordSymbol)]
+            g = [(e.pitch.nameWithOctave if isinstance(e, note.Note) else ('r' if isinstance(e, note.Rest) else min(e.pitches).nameWithOctave), float(e.duration.quarterLength)) for e in gmm.recurse().notesAndRests if not isinstance(e, harmony.ChordSymbol)]
+            c = [(e.pitch.nameWithOctave if isinstance(e, note.Note) else ('r' if isinstance(e, note.Rest) else min(e.pitches).nameWithOctave), float(e.duration.quarterLength)) for e in cmm.recurse().notesAndRests if not isinstance(e, harmony.ChordSymbol)]
             ok += (g == c)
         print(f"  fully correct measures: {ok}/{gm}")
     else:
@@ -70,4 +70,5 @@ def main():
         for x,y in pairs:
             flag = '' if (x and y and x==y) else '  <--'
             print(f"    {str(x):16} | {str(y):16}{flag}")
-main()
+if __name__ == "__main__":
+    main()

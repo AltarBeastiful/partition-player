@@ -1,0 +1,34 @@
+# Songs for voice and piano, three staves to a system: the harder second set, not a lead sheet.
+# From the OpenScore Lieder corpus (https://github.com/OpenScore/Lieder, CC0); the scores are
+# downloaded on first use. page = the page of the A4 verovio render; font = the music font.
+# source	ref	lang	page	font	name
+lieder	6491340|Beethoven,_Ludwig_van/8_Lieder,_Op.52/2_Feuerfarb	DE	1	Leipzig	de_beethoven_feuerfarb
+lieder	6491411|Beethoven,_Ludwig_van/8_Lieder,_Op.52/5_Mollys_Abschied	DE	1	Leland	de_beethoven_mollys_abschied
+lieder	5054953|Cornelius,_Peter/6_Lieder,_Op.1/4_Schmetterling	DE	1	Leipzig	de_cornelius_schmetterling
+lieder	5062158|Cornelius,_Peter/An_Bertha,_Op.15/2_Wie_lieb_ich_dich_hab	DE	2	Bravura	de_cornelius_wie_lieb_ich_dich_hab
+lieder	6812991|Franz,_Robert/6_Lieder,_Op.25/4_Kommt_fein’s_Liebchen_heut’	DE	1	Leland	de_franz_kommt_feins_liebchen_heut
+lieder	5105228|Lang,_Josephine/6_Lieder,_Op.25/2_Winterseufzer	DE	2	Gootville	de_lang_winterseufzer
+lieder	5142768|Schumann,_Clara/6_Lieder,_Op.23/6_O_Lust,_o_Lust	DE	2	Leipzig	de_schumann_o_lust_o_lust
+lieder	5025040|Wolf,_Hugo/Eichendorff-Lieder/06_Der_Soldat_II	DE	2	Leland	de_wolf_der_soldat_ii
+lieder	6564816|Beach,_Amy/3_Shakespeare_Songs,_Op.37/3_Fairy_Lullaby	EN	2	Petaluma	en_beach_fairy_lullaby
+lieder	6565727|Burleigh,_Harry_Thacker/_/Ethiopia_Saluting_the_Colors	EN	2	Leipzig	en_burleigh_ethiopia_saluting_the_colors
+lieder	6378337|Butterworth,_George/Bredon_Hill_and_Other_Songs/2_Oh_Fair_Enough_are_Sky_and_Plain	EN	1	Leipzig	en_butterworth_oh_fair_enough_are_sky_and_plain
+lieder	6379527|Butterworth,_George/Bredon_Hill_and_Other_Songs/4_On_the_Idle_Hill_of_Summer	EN	2	Leland	en_butterworth_on_the_idle_hill_of_summer
+lieder	6236150|Elgar,_Edward/7_Lieder/2_Queen_Mary’s_Song	EN	3	Leipzig	en_elgar_queen_marys_song
+lieder	6753355|Lehmann,_Liza/Songs_of_a_“Flapper”/5_Good-night_little_stars	EN	2	Bravura	en_lehmann_good_night_little_stars
+lieder	30190781|Quilter,_Roger/To_Julia,_Op.8/4_To_Daisies	EN	1	Leland	en_quilter_to_daisies
+lieder	29062082|Berlioz,_Hector/Les_nuits_d’été,_Op.7/2_Le_spectre_de_la_rose	FR	6	Gootville	fr_berlioz_le_spectre_de_la_rose
+lieder	31239911|Berlioz,_Hector/Les_nuits_d’été,_Op.7/4_Absence	FR	1	Leipzig	fr_berlioz_absence
+lieder	6635424|Bonis,_Mel/_/Allons_prier!	FR	2	Leland	fr_bonis_allons_prier
+lieder	5077917|Chabrier,_Emmanuel/_/Villanelle_des_petits_canards	FR	2	Petaluma	fr_chabrier_villanelle_des_petits_canards
+lieder	6261607|Chaminade,_Cécile/_/Au_pays_bleu	FR	4	Leipzig	fr_chaminade_au_pays_bleu
+lieder	30190433|Chaminade,_Cécile/_/Villanelle	FR	2	Leipzig	fr_chaminade_villanelle
+lieder	5057847|Chausson,_Ernest/Serres_chaudes,_Op.24/3_Lassitude	FR	1	Leland	fr_chausson_lassitude
+lieder	6137985|Fauré,_Gabriel/4_Songs,_Op.51/2_Au_cimetière	FR	1	Leipzig	fr_faure_au_cimetiere
+lieder	29748062|Gounod,_Charles/_/Le_soir,_CG_441	FR	2	Bravura	fr_gounod_le_soir_cg_441
+lieder	29588081|Gounod,_Charles/_/Sérénade,_CG_437	FR	2	Leland	fr_gounod_serenade_cg_437
+lieder	5987893|Holmès,_Augusta_Mary_Anne/20_Mélodies/12_Évocation_d’amour	FR	5	Gootville	fr_holmes_evocation_damour
+lieder	6217375|Jaëll,_Marie/Les_Orientales/4_Les_tronçons_du_serpent	FR	9	Leipzig	fr_jaell_les_troncons_du_serpent
+lieder	6669339|Puget,_Loïsa/_/Le_bon_curé_patience	FR	3	Leland	fr_puget_le_bon_cure_patience
+lieder	6568021|Ferrari,_Gabrielle/_/Lontan_dagli_occhi,_lontan_dal_cuore,_Op.17	IT	2	Petaluma	it_ferrari_lontan_dagli_occhi_lontan_dal_cuore_op_17
+lieder	29381987|Tosti,_Francesco_Paolo/_/Ideale	IT	2	Leipzig	it_tosti_ideale

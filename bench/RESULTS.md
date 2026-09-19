@@ -206,3 +206,144 @@ Reproduce:
 .venv-oemer/bin/python bench/lyrics/run_bench.py        # about 15 min
 backend/.venv/bin/python bench/lyrics/replace.py        # re-place only, seconds, for tuning
 ```
+
+## Songs: lead sheets, the page the product is for (bench/songs, `leadsheets`)
+
+Date: 2026-09-19. Thirty songbook pages: one staff carrying the sung line, the chord names printed
+above it, the verses stacked under it. Real songs — Brassens's *Chanson pour l'Auvergnat* and *Le
+petit cheval*, *La Marche des Rois*, *Auprès de ma blonde*, *Alfonsina y el mar*, *Camptown Races*,
+*Clementine*, *Home on the Range*, *Die Gedanken sind frei*, Brahms's *Wiegenlied*, *Mattinata*,
+*Vieni sul mar*, *Kristallen den fina* — eleven French, eight English, four Spanish, four German,
+two Italian, one Swedish. **5,819 syllables, 870 chord symbols, 3,240 sung notes**, one to eight
+verses a page, engraved in five music fonts (Leipzig, Leland, Bravura, Gootville and the handwritten
+Petaluma), each page also degraded into a phone photo.
+
+Source: [PDMX](https://zenodo.org/records/15571083), 250K MuseScore scores. Kept: one part, one
+staff, at least eight chord symbols, words, no chord noteheads, **one voice**. That last rule earned
+itself: two Spanish scores with a second voice on the staff scored 0 of 294 syllables placed and 185
+false, because neither scorer can pair a two-voice staff with what an engine reads, and one Italian
+score wrote its chords in solfège display text (`MIm`, `RE`) over a root stuck at C, so all forty
+printed as a bare "C". All three were replaced. The thirty `.mxl` files are vendored in
+`bench/songs/leadsheets/` (216 KB, all public domain or CC0), so the set needs no download.
+
+| set | pages | sung notes | pitch | pitch+duration | syllables | placed | text right | verses | false | chords | right | false |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| engraved | 30 | 3240 | 99.8 % | 99.5 % | 5819 | 90.5 % | 86.6 % | 94 of 104 | 76 | 870 | 83.7 % | 23 |
+| degraded | 30 | 3240 | 99.9 % | 99.7 % | 5819 | 89.9 % | 86.2 % | 95 of 104 | 81 | 870 | 84.7 % | 38 |
+
+"placed" is over the pages whose measure count came back right (28 of 30 clean, 29 of 30 degraded);
+the other pages are scored for text by sequence only. The photo copy scores level with the clean
+render throughout, so nothing here is an OCR-legibility problem.
+
+- **The sung line is solved on this layout**: 99.8 % of notes right on pitch, 99.5 % on pitch and
+  duration, and the measure count right on 57 of 60 pages. Against the voice-and-piano set's 86.6 %,
+  the difference is the single staff.
+- **Verses are found until the fifth, then lost.** Every page with four verses or fewer has all of
+  them; from five up they start to go:
+
+  | verses printed | pages | verses found |
+  |---|---|---|
+  | 1 to 4 | 15 | 46 of 46 |
+  | 5 | 5 | 24 of 25 |
+  | 6 | 3 | 15 of 18 |
+  | 7 | 1 | 4 of 7 |
+  | 8 | 1 | 5 of 8 |
+
+  *Camptown Races* (8), *Clementine* (7), *My Grandfather's Clock* (6), *Le petit cheval* (6), *The
+  First Noel* (6) and *Home on the Range* (5) are the pages that lose rows, and the cause is
+  measurable in `geometry.json`: the lyric band runs from 1.5 to a fixed 12.0 interlines below the
+  staff (`LYRICS_TOP_UNITS`, `LYRICS_BOTTOM_UNITS`), and the verse rows of these pages sit about 2.2
+  interlines apart (2.5, 4.5, 7.0, 9.0, 11.0…). Five rows fit; the sixth would start near 13 and the
+  eighth near 17, outside the band, so those rows are never in the image the OCR is given. A
+  songbook stacks as many verses as the song has.
+- **76 false syllables**, against the ADR's target of 0, and they are not spread out: *Les gens bien
+  élevés* 35, *La Marche des Rois* 10, *My Grandfather's Clock* 8, *La nave del olvido* 6,
+  *Wiegenlied* 6. Twenty of the thirty pages have none.
+- **Chords 83.7 %**, with the misses concentrated the same way: *luna tucumana* 11 of 48, *Alfonsina
+  y el mar* 30 of 46, *Votre divin Maître* 32 of 42. The first two are dense tango and folk sheets
+  with a chord over almost every measure.
+- Time: about 15 s per page on this machine, the three stages together.
+- `bench/out/songs/leadsheets/review.html` puts each page beside the chords and syllables read from
+  it, one row per verse, each syllable addressable as `<page> v2 #17`.
+
+Reproduce:
+
+```
+.venv-oemer/bin/python bench/songs/make_pages.py     # engraves the 30 pages, no download
+.venv-oemer/bin/python bench/songs/run_bench.py      # about 15 min
+.venv-oemer/bin/python bench/songs/review.py         # writes .../leadsheets/review.html
+```
+
+## Songs, second set: voice and written-out piano (bench/songs, `voice_piano`)
+
+Date: 2026-09-19. Not the product's target (that is the lead-sheet set below); this one is art song,
+three staves to a system, and it is here because it is where the staff-grouping defect shows. Thirty
+songs for voice and piano from the [OpenScore Lieder corpus](https://github.com/OpenScore/Lieder) (CC0, transcribed from IMSLP
+scans), thirteen French, eight German, seven English, two Italian; sixteen pages with one verse,
+nine with two, three with three, one with four and one with five; melismas held by extender lines,
+real hyphenation, verse numbers printed in the first syllable, second verses in italic, and **three
+staves to a system**. 2,602 syllables and 2,131 sung notes.
+
+Two tiers, both scored against the same transcription, which is the ground truth for the notes and
+for the syllables alike:
+
+- **engraved**: one page per song rendered by verovio (the music font varies: Leipzig, Leland,
+  Bravura, Gootville, Petaluma), the ground truth cut to exactly the measures verovio put on that
+  page; plus a degraded copy of each, like a phone photo. 60 images.
+- **IMSLP scan**: ten of the actual nineteenth- and twentieth-century prints the transcriptions
+  were made from (Peters, Novello, Augener, Johann André and others, one carrying a library
+  watermark), each pinned to its measures by finding its printed words in the transcription's
+  syllable sequence. Independent check: the pipeline returned the pinned measure count exactly on
+  all ten pages.
+
+| set | pages | sung notes | pitch | pitch+duration | syllables | placed | text right | verses | false |
+|---|---|---|---|---|---|---|---|---|---|
+| engraved | 30 | 2131 | 88.2 % | 86.6 % | 2602 | 25.7 % | 25.6 % | 25 of 52 | 9 |
+| engraved, degraded | 30 | 2131 | 87.4 % | 85.2 % | 2602 | 18.1 % | 16.2 % | 18 of 52 | 8 |
+| IMSLP scan | 10 | 581 | 79.3 % | 73.8 % | 767 | 0.5 % | 0 % | 2 of 21 | 5 |
+
+- The sung line survives: homr reads the voice staff at 86.6 % right on pitch and duration on the
+  engravings and 73.8 % on the real prints, and gets the measure count right on 58 of 60 engraved
+  pages and on all 10 scans. **The lyric stage is what collapses**, from 98.5 % on the synthetic set
+  to 25.7 %, and to nothing at all on the scans.
+- Cause, and it is the same on every page: **homr finds two staves per system where there are
+  three**. On all 30 pages it merges the voice staff with the piano's upper staff into one staff
+  whose interline comes out 1.7 to 2.9 times the true one. The lyric band is measured in interlines
+  of that wrong unit and clipped one interline above the next staff, so it is squeezed to nothing,
+  and the words are never in the image the OCR is given. What is left of the band predicts the
+  result almost exactly:
+
+  | band under the merged staff | pages | placed |
+  |---|---|---|
+  | under 1.1 interlines | 12 | 0 to 29 %, nine of them 0 % |
+  | 1.1 to 2.5 | 6 | 0 to 75 %, two of them 0 % (one page unscored) |
+  | over 2.5 | 12 | 19 to 100 %, none at 0 % |
+
+  Where the engraving happens to leave vertical air, enough band survives and the words are read:
+  Chausson's *Lassitude* 58 of 58 and Tosti's *Ideale* 57 of 57, both perfect. Where it does not,
+  nothing is read at all: 11 of the 30 engraved pages place no syllable at all (a twelfth, Elgar's
+  *Queen Mary's Song*, is the one page whose measure count came out wrong, so it is scored by
+  sequence only). On the scans, which are set
+  tighter than a modern render, no page has room and the whole tier reads nothing.
+- Verses: 13 of 36 verses on the 14 multi-verse pages. Nothing yet handles two to five verse rows
+  stacked under one staff.
+- False syllables are 9 and 8 on the engraved tiers and 5 on the scans, against the ADR's target of
+  0: the rows being read in the squeezed band are piano ink and dynamics ("25. dim. 3", "íl p 1 1"),
+  not words.
+- The photo copy sometimes scores *better* than the clean render it came from (Butterworth's
+  *O Fair Enough* 0 to 29, Gounod's *Le soir* 37 to 70): the staff detection is unstable, not the
+  OCR, which is another face of the same defect.
+- Time: about 23 s per page on this machine, notes plus chords plus lyrics.
+- `bench/out/songs/review.html` puts each page beside the syllables read from it, for the errors the
+  numbers do not describe.
+
+Reproduce:
+
+```
+S="--set voice_piano"
+.venv-oemer/bin/python bench/songs/make_pages.py $S   # downloads the 30 scores
+.venv-oemer/bin/python bench/songs/run_bench.py $S    # about 25 min
+.venv-oemer/bin/python bench/songs/pin_scan.py --all  # ground truth for the scans (PDFs not downloaded by script)
+.venv-oemer/bin/python bench/songs/run_bench.py $S --scans   # about 4 min
+.venv-oemer/bin/python bench/songs/review.py $S       # writes .../voice_piano/review.html
+```

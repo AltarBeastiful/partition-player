@@ -91,6 +91,28 @@ re-renders the sheet. With `PP_ANTHROPIC_API_KEY` set, the recognized text of ea
 with its band image to Claude Haiku for a spelling pass; the answer is used only when it keeps the
 same syllables in the same places. The benchmark is `bench/lyrics/` (see `bench/RESULTS.md`).
 
+## Song benchmark
+
+`bench/songs/` is the real-song benchmark, and it scores the three stages of one page together: the
+sung line, the chord symbols above it and the words under it.
+
+- **`leadsheets.tsv`** — thirty songbook pages, which is what the product is for: one staff, chord
+  names printed above, verses stacked below. Real songs (Brassens, *La Marche des Rois*, *Bésame
+  mucho*, *Camptown Races*, *Die Gedanken sind frei*…) in French, English, Spanish, German, Italian
+  and Swedish, one to eight verses, 10 to 56 chord symbols each. From
+  [PDMX](https://zenodo.org/records/15571083), public-domain and CC0 MuseScore scores; the `.mxl`
+  files are vendored in `bench/songs/leadsheets/`, so the set needs no download.
+- **`voice_piano.tsv`** — thirty art songs with a written-out piano part, three staves to a system,
+  from the [OpenScore Lieder corpus](https://github.com/OpenScore/Lieder) (CC0). Harder than the
+  product's target, kept because it is where the staff-grouping defect shows. It has a second tier
+  of ten **real IMSLP prints** the transcriptions were made from, each pinned to its measures by its
+  printed words (`pin_scan.py`).
+
+The transcription is the ground truth for notes, chords and syllables alike: one page of each song is
+engraved with verovio (`make_pages.py`, the ground truth cut to exactly the measures of that page)
+and degraded into a phone photo. `review.py` writes a page that puts the image next to what the
+pipeline read from it, to look over what the numbers do not say.
+
 ## Note names
 
 The score page has a **Note names** switch that writes the French name of every printed note
