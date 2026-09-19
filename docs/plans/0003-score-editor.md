@@ -2,7 +2,9 @@
 
 Status 2026-09-19: steps 1 to 4 done and checked (backend 68 tests, frontend 12 unit tests, browser
 checks on the benchmark photo, the Gymnopédie page and a score recognized before the editor, at
-desktop and 400 px widths); step 5 done except the server deployment, which is the user's call.
+desktop and 400 px widths); step 5 done and deployed to the main server the same day. Follow-up the
+same day: an explicit edit mode (amber frame, "Edit the score" in the toast and at the end of the
+sheet, Done), a click outside edit mode leads the playback to the note, "⏮ Start" and Home rewind.
 
 Implements ADR 0005. Each step has its own check; nothing moves to the next step until the check
 passes. Work happens on `main` in small commits.

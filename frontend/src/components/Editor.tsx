@@ -68,8 +68,8 @@ export function ReviewBar({ session, c, hasPhoto, showPhoto, setShowPhoto }: {
 }
 
 /** The tools for the selected event and its measure. */
-export function Toolbar({ session, c, onPlayFrom, onRevert, onReload, staves }: {
-  session: EditorSession; c: Commands; onPlayFrom: (measure: number) => void; onRevert: () => void; onReload: () => void; staves: number;
+export function Toolbar({ session, c, onPlayFrom, onRevert, onReload, onDone, staves }: {
+  session: EditorSession; c: Commands; onPlayFrom: (measure: number) => void; onRevert: () => void; onReload: () => void; onDone: () => void; staves: number;
 }) {
   const [panel, setPanel] = useState<"time" | "key" | "clef" | null>(null);
   const [chord, setChord] = useState("");
@@ -101,6 +101,7 @@ export function Toolbar({ session, c, onPlayFrom, onRevert, onReload, staves }: 
           {session.status === "saving" && <span className="muted">Saving…</span>}
           {session.status === "error" && <button className="danger" onClick={() => void session.save()}>Save again</button>}
           {session.status === "stale" && <button className="danger" onClick={onReload}>Reload</button>}
+          <button className="primary" onClick={onDone} title="Leave edit mode (Esc)">Done</button>
         </span>
       </div>
       {session.message && <div className="error">{session.message}</div>}

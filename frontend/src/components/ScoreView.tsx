@@ -52,6 +52,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const [showPhoto, setShowPhoto] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const [staves, setStaves] = useState(1);
+  const [editing, setEditing] = useState(false);
 
   const subscribe = useCallback((fn: () => void) => (session ? session.subscribe(fn) : () => {}), [session]);
   useSyncExternalStore(subscribe, () => session?.version ?? 0);
@@ -173,6 +174,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   }, [state, bpm, loop, from, to]);
 
   const stop = useCallback(() => playerRef.current?.stop(), []);
+  const restart = useCallback(() => playerRef.current?.restart(), []);
 
   const playFrom = useCallback(async (measure: number) => {
     const p = playerRef.current;
@@ -206,6 +208,24 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     return keepNoteNames(osmd, host.current);
   }, [noteNames, loading]);
 
+  // A click on the sheet: in edit mode it selects the note; otherwise it leads the playback there.
+  const onSheetClick = useCallback((e: React.MouseEvent) => {
+    const osmd = osmdRef.current, player = playerRef.current;
+    if (!osmd || !session) return;
+    const key = hitTest(osmd, e.clientX, e.clientY);
+    if (editing) { session.select(key); return; }
+    if (!key || !player) return;
+    const at = player.positionOf(key.measure, key.onset);
+    if (at !== null) player.seek(at);
+  }, [session, editing]);
+
+  const enterEdit = useCallback(() => { playerRef.current?.stop(); setEditing(true); }, []);
+  const leaveEdit = useCallback(() => {
+    session?.select(null);
+    if (session?.dirty) void session.save();
+    setEditing(false);
+  }, [session]);
+
   // Keyboard: the editor's shortcuts, space for play and pause, Escape to drop the selection.
   useEffect(() => {
     if (!session) return;
@@ -213,13 +233,19 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     const onKey = (e: KeyboardEvent) => {
       if (inTextField(e.target) || e.altKey) return;
       if (e.key === " ") { e.preventDefault(); void toggle(); return; }
-      if (e.key === "Escape") { if (!document.querySelector(".lightbox")) session.select(null); return; }
+      if (e.key === "Home" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); restart(); return; }
+      if (!editing) return; // the editing keys only act in edit mode
+      if (e.key === "Escape") {
+        if (document.querySelector(".lightbox")) return;
+        if (session.selected) session.select(null); else leaveEdit();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); void session.save(); return; }
       if (shortcut(e, c, session.selected !== null)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, toggle]);
+  }, [session, toggle, restart, editing, leaveEdit]);
 
   // Leaving with unsaved changes asks first.
   useEffect(() => {
@@ -228,12 +254,8 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     return () => window.removeEventListener("beforeunload", onLeave);
   }, [session]);
 
-  const onSheetClick = useCallback((e: React.MouseEvent) => {
-    const osmd = osmdRef.current;
-    if (!osmd || !session) return;
-    const key = hitTest(osmd, e.clientX, e.clientY);
-    session.select(key);
-  }, [session]);
+  // A new document (reload after a lyrics save or a revert) starts in playing mode.
+  useEffect(() => { setEditing(false); }, [job.id, version]);
 
   async function revert() {
     if (!session) return;
@@ -244,12 +266,13 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const c = session ? commands(session) : null;
 
   return (
-    <section className="card">
+    <section className={"card" + (editing ? " editing" : "")}>
       <div className="controls">
         <button className="primary" onClick={toggle} disabled={loading || !!error}>
           {state === "playing" ? "Pause" : "Play"}
         </button>
         <button onClick={stop} disabled={loading || state === "stopped"}>Stop</button>
+        <button onClick={restart} disabled={loading || !!error} title="Back to the beginning (Home): keeps playing from there, or stops at the start">⏮ Start</button>
         <label>
           Tempo <input id="tempo" type="range" min={40} max={180} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} />
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{bpm} bpm</span>
@@ -293,17 +316,34 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           </>
         )}
       </div>
-      {session && c && <ReviewBar session={session} c={c} hasPhoto={session.hasImage} showPhoto={showPhoto} setShowPhoto={setShowPhoto} />}
-      {session && showPhoto && session.layout && (
+      {session && c && editing && <ReviewBar session={session} c={c} hasPhoto={session.hasImage} showPhoto={showPhoto} setShowPhoto={setShowPhoto} />}
+      {session && !editing && session.open().length > 0 && (
+        <div className="review toast" role="status">
+          <strong>{session.open().length} place{session.open().length > 1 ? "s" : ""} to check</strong>
+          <span>The recognition was unsure there: they are tinted on the sheet with a "?".</span>
+          <button className="primary edit" onClick={enterEdit}>Edit the score</button>
+        </div>
+      )}
+      {session && showPhoto && editing && session.layout && (
         <PrintedStrip jobId={job.id} layout={session.layout} measure={session.selected?.measure ?? null} onOpen={() => setLightbox(true)} />
       )}
-      {session && showPhoto && !session.layout && session.hasImage && (
+      {session && showPhoto && editing && !session.layout && session.hasImage && (
         <div className="strip whole" onClick={() => setLightbox(true)}><img src={`/api/jobs/${job.id}/review.webp`} alt="The uploaded photo" /></div>
       )}
       {loading && <p className="muted">Rendering the score…</p>}
       {error && <div className="error">{error}</div>}
+      {editing && <div className="mode"><span className="mode-badge">Edit mode</span><span className="muted">Click a note to select it. Playback clicks come back when you are done.</span></div>}
       <div className="sheet" ref={host} onClick={onSheetClick} />
-      {session && c && <Toolbar session={session} c={c} onPlayFrom={playFrom} onRevert={revert} onReload={onReload} staves={staves} />}
+      {session && c && editing && <Toolbar session={session} c={c} onPlayFrom={playFrom} onRevert={revert} onReload={onReload} onDone={leaveEdit} staves={staves} />}
+      {session && !editing && (
+        <div className="edit-row">
+          <button className="edit" onClick={enterEdit}>Edit the score</button>
+          <span className="muted">
+            {session.open().length > 0 ? `${session.open().length} place${session.open().length > 1 ? "s" : ""} to check. ` : ""}
+            Correct notes, rests, measures, chords, time and key. Outside edit mode, clicking a note plays from there.
+          </span>
+        </div>
+      )}
       {stats && (
         <div className="stats">
           <span>{stats.measures} measures</span>

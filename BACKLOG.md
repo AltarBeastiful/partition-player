@@ -34,14 +34,12 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Frontend bundle is 1.6 MB minified (OSMD + Tone.js). Lazy-load the score view.
 
 ## Click on the sheet to play from there
-- Partly done with the editor (ADR 0005): a click selects the note, the toolbar's "▶ from here" plays from its measure,
-  Space plays and pauses. Still to do: start from the exact beat rather than the measure, and jump while playing without
-  stopping the sound (re-anchor `anchorPos`/`anchorCtx` on the clicked step). The hit test lives in
-  `frontend/src/editor/sheet.ts`.
+- Done: outside edit mode a click on a note leads the playback to that beat (re-anchored while playing, the resume
+  point while paused, the start of the next Play while stopped); in edit mode a click selects the note. "⏮ Start" and
+  Home go back to the beginning of the range. The hit test lives in `frontend/src/editor/sheet.ts`, the seek in
+  `Player.seek`.
 
-## Restart from the start, and a redesign of the score page
-- Restarting means Stop then Play today, and Play after a pause resumes where it stopped: add a "back to the start"
-  control that rewinds the cursor without stopping, plus a Home shortcut to rewind (Space already plays and pauses).
+## A redesign of the score page
 - The controls have grown into five rows (transport, loop range, note names, melody/accompaniment, stats and warnings)
   with the lyrics panel under them. Redesign the page around one compact transport bar and a separate practice panel for
   what is set rarely (loop, note names, tracks), so the sheet is higher on the screen.
@@ -57,6 +55,6 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Falling-notes / piano-roll view
 - Web MIDI output to a connected digital piano, MIDI file download
 - Practice tools: mute one hand (loop and tempo done)
-- Repeats and endings: post-processing strips repeat signs and volta brackets so the page plays straight through; honour them in playback later
+- Repeats, endings and the form of a song (verses, chorus, D.C., coda): post-processing strips repeat signs and volta brackets so the page plays straight through; the assessment plan is `docs/plans/0004-repeats-and-form.md`
 - Handwritten score support
 - User accounts and saved score library

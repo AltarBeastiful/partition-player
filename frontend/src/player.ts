@@ -51,6 +51,7 @@ export class Player {
   private nextEvent = 0;
   private cursorStep = 0;
   private pausedAt = 0;
+  private pending: number | null = null; // where the next Play starts after a click on a note while stopped
   private timer: number | null = null;
   private lastTick = 0;
 
@@ -174,6 +175,16 @@ export class Player {
       this.winEnd = w.end;
       this.startStep = w.startStep;
       this.pausedAt = w.start;
+      // A note clicked while stopped: start there. Outside the range, the range stretches to it.
+      if (this.pending !== null) {
+        if (this.pending < this.winStart || this.pending >= this.winEnd) {
+          this.winStart = Math.min(this.winStart, this.pending);
+          this.winEnd = this.totalWholeNotes;
+        }
+        this.startStep = this.stepIndex(this.winStart);
+        this.pausedAt = this.pending;
+        this.pending = null;
+      }
     }
     const now = Tone.now() + 0.05;
     this.anchorCtx = now;
@@ -191,6 +202,59 @@ export class Player {
     let s = this.startStep;
     while (s + 1 < this.steps.length && this.steps[s + 1] <= position) s++;
     return s;
+  }
+
+  /** The cursor step at a position, searched from the start of the score. */
+  private stepIndex(position: number): number {
+    let s = 0;
+    while (s + 1 < this.steps.length && this.steps[s + 1] <= position) s++;
+    return s;
+  }
+
+  /** The playback position (whole notes) of a note: the start of its measure plus its onset. */
+  positionOf(measure: number, onset: number): number | null {
+    const first = this.stepMeasure.indexOf(measure);
+    if (first === -1) return null;
+    const at = this.steps[first] + onset;
+    // Snap to the nearest step at or before it, so the cursor lands on a real position.
+    return this.steps[this.stepIndex(at)];
+  }
+
+  /**
+   * Lead playback to a position. Playing: the notes continue from there without a break. Paused:
+   * resuming starts there. Stopped: the cursor moves there and the next Play starts there. A position
+   * outside the measure range extends the range to the end of the score.
+   */
+  seek(position: number): void {
+    const total = this.totalWholeNotes;
+    position = Math.max(0, Math.min(position, total));
+    if (this.state === "stopped") {
+      this.pending = position;
+      this.moveCursor(this.stepIndex(position));
+      return;
+    }
+    if (position < this.winStart || position >= this.winEnd) {
+      this.winStart = Math.min(this.winStart, position);
+      this.winEnd = total;
+    }
+    this.startStep = this.stepIndex(this.winStart);
+    if (this.state === "paused") {
+      this.pausedAt = position;
+      this.moveCursor(this.stepIndex(position));
+      return;
+    }
+    this.sampler?.releaseAll();
+    this.anchorCtx = Tone.now();
+    this.anchorPos = position;
+    this.nextEvent = this.events.findIndex((e) => e.time >= position);
+    if (this.nextEvent === -1) this.nextEvent = this.events.length;
+    this.moveCursor(this.stepIndex(position));
+  }
+
+  /** Back to the beginning of the range: keeps playing from there, or stops at the start. */
+  restart(): void {
+    if (this.state === "playing") this.seek(this.winStart);
+    else this.stop();
   }
 
   private tick(): void {
@@ -250,6 +314,7 @@ export class Player {
   stop(): void {
     this.clearTimers();
     this.sampler?.releaseAll();
+    this.pending = null;
     this.state = "stopped";
     this.osmd.cursor.reset();
     this.cursorStep = 0;

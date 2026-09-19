@@ -139,7 +139,15 @@ Recognition is not perfect, so the score page says where to look and lets you fi
   (`review.webp`), with the position of every measure on it (`layout.json`, from the driver's
   staff geometry and barlines). With **Photo** on, the strip of the print the selected measure was
   read from is shown with the measure framed; click it for the whole page.
-- **The editor.** Click a note or a rest on the sheet (a finger works). The toolbar under the sheet
+- **Two kinds of click.** The page opens in playing mode: a click on a note leads the playback
+  there. While it plays, the sound continues from that note; paused, it resumes there; stopped, the
+  cursor moves there and Play starts from it (Stop forgets it). **⏮ Start** (or Home) goes back to
+  the beginning of the range, without a break when playing. **Edit the score**, in the toast above
+  the sheet (shown only when there are places to check) or at the end of the sheet, enters edit
+  mode: the frame around the sheet turns amber, a click selects the note instead, the review bar
+  and the toolbar appear. **Done** (or Escape with nothing selected) saves what is pending and goes
+  back to playing mode.
+- **The editor.** In edit mode, click a note or a rest on the sheet (a finger works). The toolbar under the sheet
   changes its pitch (a step, an accidental, an octave), its length (whole to thirty-second, dot,
   tie to the next note of the same pitch), turns it into a rest and back, inserts a note or a rest
   before or after it, deletes it; on its measure: fill the missing length with rests, split the
