@@ -126,3 +126,56 @@ def test_lyrics_editor_round_trip(settings):
         assert score.content.count(b"<lyric") == 6 and score.headers["cache-control"] == "no-cache"
         assert "lyrics.json" in [p.name for p in (settings.jobs_dir / job["id"]).iterdir()]
         assert client.patch(f"/api/jobs/{job['id']}/lyrics", json={"verses": []}).json()["verses"] == []
+
+
+def test_editor_save_revert_and_revision(settings):
+    """ADR 0005: the browser saves the whole document; the server validates, re-reads the lyrics,
+    keeps the revision honest and can put the recognized version back."""
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("photo.jpg", PHOTO.read_bytes(), "image/jpeg")})
+        job = wait_done(client, r.json()["id"])
+        jid = job["id"]
+        state = client.get(f"/api/jobs/{jid}/review").json()
+        assert state["revision"] == 1 and state["doubts"] == [] and state["checked"] == []
+        assert state["has_image"] and state["has_original"] and state["layout"] is None  # the fake engine has no geometry
+        assert client.get(f"/api/jobs/{jid}/review.webp").headers["content-type"] == "image/webp"
+        assert b"<score-partwise" in client.get(f"/api/jobs/{jid}/original.musicxml").content
+
+        client.patch(f"/api/jobs/{jid}/lyrics", json={"verses": ["Lors-que nous é-tions"]})
+        xml = client.get(f"/api/jobs/{jid}/score.musicxml").text
+        notes_before = job["result"]["stats"]["notes"]
+        # drop the first sounding note (it carries "Lors") and shorten nothing else
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml)
+        measure = root.find("part").find("measure")
+        first = next(n for n in measure.findall("note") if n.find("rest") is None)
+        measure.remove(first)
+        edited = ET.tostring(root, encoding="unicode")
+
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [0, 3], "revision": 1})
+        assert r.status_code == 200, r.text
+        saved = r.json()
+        assert saved["revision"] == 2 and saved["checked"] == [0, 3]
+        assert saved["stats"]["notes"] == notes_before - 1
+        assert any(d["kind"] == "underfull" and d["measure"] == 0 for d in saved["check"])
+        assert client.get(f"/api/jobs/{jid}").json()["edited_at"]
+        lyrics = client.get(f"/api/jobs/{jid}/lyrics").json()
+        assert lyrics["verses"] == ["que nous é-tions"] and lyrics["syllables"] == [4]
+
+        # a second browser that still holds revision 1 is refused
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 1})
+        assert r.status_code == 409 and "revision 2" in r.json()["error"]
+        # nonsense is refused and nothing changes
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<nope>", "checked": [], "revision": 2}).status_code == 422
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<score-partwise><part id='P1'/></score-partwise>", "checked": [], "revision": 2}).status_code == 422
+        assert client.get(f"/api/jobs/{jid}/review").json()["revision"] == 2
+
+        r = client.post(f"/api/jobs/{jid}/revert")
+        assert r.status_code == 200 and r.json()["revision"] == 3 and r.json()["checked"] == []
+        assert r.json()["stats"]["notes"] == notes_before
+        assert client.get(f"/api/jobs/{jid}/score.musicxml").text == client.get(f"/api/jobs/{jid}/original.musicxml").text
+        # the panel shows what the document has: the fixture score's own words, re-read on revert
+        assert client.get(f"/api/jobs/{jid}/lyrics").json()["verses"][0].startswith("Lors-que nous é-tions")
+        assert client.get(f"/api/jobs/{jid}").json()["edited_at"] is None

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__
+from . import __version__, review
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
 from .pipeline.lyrics import edit as lyrics_edit
@@ -27,6 +27,15 @@ class Rename(BaseModel):
 
 class Verses(BaseModel):
     verses: list[str] = Field(max_length=12)
+
+
+class Edited(BaseModel):
+    """A save from the editor (ADR 0005): the whole document, the review state it goes with, and the
+    revision it was edited from."""
+    musicxml: str = Field(max_length=review.MAX_DOCUMENT)
+    checked: list[int] = Field(default_factory=list, max_length=10_000)
+    revision: int = 0
+    doubts: list[dict] | None = Field(default=None, max_length=10_000)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -130,6 +139,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lyrics_inject.rewrite(score, placed)
             lyrics_inject.save(lyrics_file, placed, [], [])
         return lyrics_state(job_id)
+
+    def done(job_id: str):
+        job = load(job_id)
+        if job.status != "done":
+            raise HTTPException(409, f"job is {job.status}")
+        return job
+
+    @app.get("/api/jobs/{job_id}/review")
+    def get_review(job_id: str) -> dict:
+        """Doubts, checked measures, revision, layout of the photo (ADR 0005)."""
+        done(job_id)
+        return review.state(store, job_id)
+
+    @app.put("/api/jobs/{job_id}/score")
+    def save_score(job_id: str, body: Edited) -> dict:
+        job = done(job_id)
+        try:
+            return review.save(store, job, body.musicxml, body.checked, body.revision, body.doubts)
+        except review.InvalidDocument as e:
+            raise HTTPException(422, f"the score could not be saved: {e}") from e
+        except review.StaleRevision as e:
+            raise HTTPException(409, str(e)) from e
+
+    @app.post("/api/jobs/{job_id}/revert")
+    def revert_score(job_id: str) -> dict:
+        job = done(job_id)
+        try:
+            return review.revert(store, job)
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e)) from e
+
+    @app.get("/api/jobs/{job_id}/review.webp")
+    def get_review_image(job_id: str) -> FileResponse:
+        p = store.dir(job_id) / "review.webp"
+        if not p.exists():
+            raise HTTPException(404, "no photo kept for this score")
+        return FileResponse(p, media_type="image/webp", headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.get("/api/jobs/{job_id}/original.musicxml")
+    def get_original(job_id: str) -> FileResponse:
+        p = store.dir(job_id) / "original.musicxml"
+        if not p.exists():
+            raise HTTPException(404, "no recognized version kept for this score")
+        return FileResponse(p, media_type="application/vnd.recordare.musicxml+xml", headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/jobs/{job_id}/input")
     def get_input(job_id: str) -> FileResponse:
