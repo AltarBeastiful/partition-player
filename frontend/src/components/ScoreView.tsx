@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
-import { scoreUrl, type Job } from "../api";
+import { getReview, getScoreText, scoreUrl, type Job, type Stats } from "../api";
+import { commands, shortcut } from "../editor/commands";
+import { EditorSession } from "../editor/session";
+import { drawOverlay, hitTest, keepOverlay, rectOf } from "../editor/sheet";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
+import { Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
 
 const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
 
@@ -14,10 +18,21 @@ function writeNoteNamesPref(on: boolean): void {
   try { localStorage.setItem(NOTE_NAMES_PREF, on ? "1" : "0"); } catch { /* private browsing */ }
 }
 
-export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) {
+function inTextField(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  if (el.tagName === "INPUT") return !["checkbox", "radio", "range", "button", "submit"].includes((el as HTMLInputElement).type);
+  return ["TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable;
+}
+
+export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }: {
+  job: Job; version?: number; onStats?: (s: Stats) => void; registerFlush?: (flush: (() => Promise<void>) | null) => void; onReload: () => void;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
   const playerRef = useRef<Player | null>(null);
+  const renderedDoc = useRef(0);
+  const [session, setSession] = useState<EditorSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState>("stopped");
@@ -33,6 +48,15 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(1);
   const [measureCount, setMeasureCount] = useState(0);
+  const [stats, setStats] = useState<Stats | undefined>(job.result?.stats);
+  const [showPhoto, setShowPhoto] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
+  const [staves, setStaves] = useState(1);
+
+  const subscribe = useCallback((fn: () => void) => (session ? session.subscribe(fn) : () => {}), [session]);
+  useSyncExternalStore(subscribe, () => session?.version ?? 0);
+
+  useEffect(() => { setStats(job.result?.stats); }, [job]);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +72,11 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
         cursorsOptions: [{ type: 0, color: "#0e7490", alpha: 0.35, follow: false }],
       });
       try {
-        await osmd.load(scoreUrl(job.id, version));
+        const [xml, review] = await Promise.all([getScoreText(job.id, version), getReview(job.id)]);
+        if (cancelled) return;
+        const s = new EditorSession(job.id, xml, review);
+        s.onStats = (st) => { setStats(st); onStats?.(st); };
+        await osmd.load(s.xml);
         if (cancelled) return;
         reserveNoteNamesSpace(osmd, noteNamesRef.current); // before the first render, so nothing jumps
         osmd.render();
@@ -56,10 +84,15 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
         osmdRef.current = osmd;
         const player = new Player(osmd, setState);
         playerRef.current = player;
-        (window as unknown as { __player?: Player }).__player = player; // debugging aid
+        (window as unknown as { __player?: Player; __session?: EditorSession }).__player = player; // debugging aid
+        (window as unknown as { __session?: EditorSession }).__session = s;
+        renderedDoc.current = s.docVersion;
         setMeasureCount(player.measureCount);
         setChordCount(player.chords.length);
+        setStaves(Math.max(1, ...s.measures.flatMap((m) => m.events.map((e) => e.key.staff))));
         setTo(player.measureCount);
+        setSession(s);
+        registerFlush?.(() => s.save());
         setLoading(false);
       } catch (e) {
         setError("Could not render the score: " + (e as Error).message);
@@ -72,13 +105,65 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
     // here or the page ends up showing both.
     return () => {
       cancelled = true;
+      registerFlush?.(null);
       playerRef.current?.dispose();
       playerRef.current = null;
       osmdRef.current?.clear();
       osmdRef.current = null;
       host.current?.replaceChildren();
+      setSession((s) => { s?.dispose(); return null; });
     };
-  }, [job.id, version]);
+  }, [job.id, version]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const redraw = useCallback(() => {
+    const osmd = osmdRef.current;
+    if (!osmd || !session) return;
+    drawOverlay(osmd, session.places(), session.selected);
+  }, [session]);
+
+  // The document changed (an edit, undo, redo): render it again and read the events again.
+  useEffect(() => {
+    const osmd = osmdRef.current, player = playerRef.current;
+    if (!osmd || !player || !session || loading || session.docVersion === renderedDoc.current) return;
+    renderedDoc.current = session.docVersion;
+    let cancelled = false;
+    (async () => {
+      try {
+        await osmd.load(session.xml);
+        if (cancelled) return;
+        osmd.render();
+        osmd.cursor.show();
+        player.rebuild();
+        setMeasureCount(player.measureCount);
+        setChordCount(player.chords.length);
+        setTo((t) => Math.min(Math.max(t, 1), player.measureCount || 1));
+        setFrom((f) => Math.min(Math.max(f, 1), player.measureCount || 1));
+        if (noteNamesRef.current) drawNoteNames(osmd);
+        redraw();
+        setError(null);
+      } catch (e) {
+        setError("Could not render the edited score: " + (e as Error).message + ". Undo the last change.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, session?.docVersion, loading, redraw]);
+
+  // Selection or places changed: the overlay only.
+  useEffect(() => {
+    if (loading || !session) return;
+    redraw();
+    const osmd = osmdRef.current;
+    if (osmd && session.selected) {
+      const r = rectOf(osmd, session.selected);
+      if (r && (r.top < 60 || r.bottom > window.innerHeight - 200)) window.scrollBy({ top: r.top - window.innerHeight / 3, behavior: "smooth" });
+    }
+  }, [session, session?.version, loading, redraw]);
+
+  // OSMD re-renders by itself on resize: put the overlay back each time it does.
+  useEffect(() => {
+    if (loading || !host.current || !session) return;
+    return keepOverlay(host.current, redraw);
+  }, [loading, session, redraw]);
 
   const toggle = useCallback(async () => {
     const p = playerRef.current;
@@ -88,6 +173,13 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
   }, [state, bpm, loop, from, to]);
 
   const stop = useCallback(() => playerRef.current?.stop(), []);
+
+  const playFrom = useCallback(async (measure: number) => {
+    const p = playerRef.current;
+    if (!p) return;
+    p.stop();
+    await p.play(bpm, false, { from: measure + 1, to: p.measureCount });
+  }, [bpm]);
 
   useEffect(() => { playerRef.current?.setBpm(bpm); }, [bpm]);
   useEffect(() => { playerRef.current?.setTranspose(transpose); }, [transpose]);
@@ -104,7 +196,8 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
       osmd.cursor.show();
     }
     if (noteNames) drawNoteNames(osmd); else clearNoteNames(osmd);
-  }, [noteNames, loading]);
+    redraw();
+  }, [noteNames, loading, redraw]);
 
   // OSMD re-renders by itself, on resize: the names have to be put back each time it does.
   useEffect(() => {
@@ -113,7 +206,43 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
     return keepNoteNames(osmd, host.current);
   }, [noteNames, loading]);
 
-  const stats = job.result?.stats;
+  // Keyboard: the editor's shortcuts, space for play and pause, Escape to drop the selection.
+  useEffect(() => {
+    if (!session) return;
+    const c = commands(session);
+    const onKey = (e: KeyboardEvent) => {
+      if (inTextField(e.target) || e.altKey) return;
+      if (e.key === " ") { e.preventDefault(); void toggle(); return; }
+      if (e.key === "Escape") { if (!document.querySelector(".lightbox")) session.select(null); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); void session.save(); return; }
+      if (shortcut(e, c, session.selected !== null)) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [session, toggle]);
+
+  // Leaving with unsaved changes asks first.
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => { if (session?.dirty) { e.preventDefault(); } };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [session]);
+
+  const onSheetClick = useCallback((e: React.MouseEvent) => {
+    const osmd = osmdRef.current;
+    if (!osmd || !session) return;
+    const key = hitTest(osmd, e.clientX, e.clientY);
+    session.select(key);
+  }, [session]);
+
+  async function revert() {
+    if (!session) return;
+    if (!window.confirm("Put the recognized score back? Every correction made here will be dropped.")) return;
+    try { await session.revert(); onReload(); } catch (e) { setError((e as Error).message); }
+  }
+
+  const c = session ? commands(session) : null;
+
   return (
     <section className="card">
       <div className="controls">
@@ -156,14 +285,25 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           Note names
         </label>
         <span className="muted">do, ré, mi… above the staff, read from the pitches on the page.</span>
+        {chordCount > 0 && (
+          <>
+            <label><input id="melody" type="checkbox" checked={melodyOn} onChange={(e) => setMelodyOn(e.target.checked)} /> Melody</label>
+            <label><input id="accompaniment" type="checkbox" checked={accompOn} onChange={(e) => setAccompOn(e.target.checked)} /> Accompaniment</label>
+            <span className="muted">Piano chords from the {chordCount} chord symbols on the page.</span>
+          </>
+        )}
       </div>
-      {chordCount > 0 && (
-        <div className="controls loop">
-          <label><input id="melody" type="checkbox" checked={melodyOn} onChange={(e) => setMelodyOn(e.target.checked)} /> Melody</label>
-          <label><input id="accompaniment" type="checkbox" checked={accompOn} onChange={(e) => setAccompOn(e.target.checked)} /> Accompaniment</label>
-          <span className="muted">Piano chords from the {chordCount} chord symbols on the page. Turn the melody off to sing it yourself.</span>
-        </div>
+      {session && c && <ReviewBar session={session} c={c} hasPhoto={session.hasImage} showPhoto={showPhoto} setShowPhoto={setShowPhoto} />}
+      {session && showPhoto && session.layout && (
+        <PrintedStrip jobId={job.id} layout={session.layout} measure={session.selected?.measure ?? null} onOpen={() => setLightbox(true)} />
       )}
+      {session && showPhoto && !session.layout && session.hasImage && (
+        <div className="strip whole" onClick={() => setLightbox(true)}><img src={`/api/jobs/${job.id}/review.webp`} alt="The uploaded photo" /></div>
+      )}
+      {loading && <p className="muted">Rendering the score…</p>}
+      {error && <div className="error">{error}</div>}
+      <div className="sheet" ref={host} onClick={onSheetClick} />
+      {session && c && <Toolbar session={session} c={c} onPlayFrom={playFrom} onRevert={revert} onReload={onReload} staves={staves} />}
       {stats && (
         <div className="stats">
           <span>{stats.measures} measures</span>
@@ -173,6 +313,7 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           {(stats.chords ?? 0) > 0 && <span>{stats.chords} chord symbols</span>}
           {(stats.lyrics_syllables ?? 0) > 0 && <span>{stats.lyrics_syllables} syllables of lyrics</span>}
           <span>read by {job.result?.engine} in {job.result?.seconds}s</span>
+          {job.edited_at && <span>edited</span>}
         </div>
       )}
       {stats && (stats.chord_warnings?.length || stats.chords_seen?.length || stats.lyrics_seen?.length) ? (
@@ -186,9 +327,7 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           )}
         </div>
       ) : null}
-      {loading && <p className="muted">Rendering the score…</p>}
-      {error && <div className="error">{error}</div>}
-      <div className="sheet" ref={host} />
+      {lightbox && <Lightbox jobId={job.id} onClose={() => setLightbox(false)} />}
     </section>
   );
 }

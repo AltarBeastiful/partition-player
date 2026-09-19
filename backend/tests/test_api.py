@@ -144,6 +144,7 @@ def test_editor_save_revert_and_revision(settings):
         assert b"<score-partwise" in client.get(f"/api/jobs/{jid}/original.musicxml").content
 
         client.patch(f"/api/jobs/{jid}/lyrics", json={"verses": ["Lors-que nous é-tions"]})
+        assert client.get(f"/api/jobs/{jid}/review").json()["revision"] == 2  # the lyrics panel moves the revision on too
         xml = client.get(f"/api/jobs/{jid}/score.musicxml").text
         notes_before = job["result"]["stats"]["notes"]
         # drop the first sounding note (it carries "Lors") and shorten nothing else
@@ -154,26 +155,26 @@ def test_editor_save_revert_and_revision(settings):
         measure.remove(first)
         edited = ET.tostring(root, encoding="unicode")
 
-        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [0, 3], "revision": 1})
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [0, 3], "revision": 2})
         assert r.status_code == 200, r.text
         saved = r.json()
-        assert saved["revision"] == 2 and saved["checked"] == [0, 3]
+        assert saved["revision"] == 3 and saved["checked"] == [0, 3]
         assert saved["stats"]["notes"] == notes_before - 1
         assert any(d["kind"] == "underfull" and d["measure"] == 0 for d in saved["check"])
         assert client.get(f"/api/jobs/{jid}").json()["edited_at"]
         lyrics = client.get(f"/api/jobs/{jid}/lyrics").json()
         assert lyrics["verses"] == ["que nous é-tions"] and lyrics["syllables"] == [4]
 
-        # a second browser that still holds revision 1 is refused
-        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 1})
-        assert r.status_code == 409 and "revision 2" in r.json()["error"]
+        # a second browser that still holds revision 2 is refused
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 2})
+        assert r.status_code == 409 and "revision 3" in r.json()["error"]
         # nonsense is refused and nothing changes
-        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<nope>", "checked": [], "revision": 2}).status_code == 422
-        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<score-partwise><part id='P1'/></score-partwise>", "checked": [], "revision": 2}).status_code == 422
-        assert client.get(f"/api/jobs/{jid}/review").json()["revision"] == 2
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<nope>", "checked": [], "revision": 3}).status_code == 422
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<score-partwise><part id='P1'/></score-partwise>", "checked": [], "revision": 3}).status_code == 422
+        assert client.get(f"/api/jobs/{jid}/review").json()["revision"] == 3
 
         r = client.post(f"/api/jobs/{jid}/revert")
-        assert r.status_code == 200 and r.json()["revision"] == 3 and r.json()["checked"] == []
+        assert r.status_code == 200 and r.json()["revision"] == 4 and r.json()["checked"] == []
         assert r.json()["stats"]["notes"] == notes_before
         assert client.get(f"/api/jobs/{jid}/score.musicxml").text == client.get(f"/api/jobs/{jid}/original.musicxml").text
         # the panel shows what the document has: the fixture score's own words, re-read on revert

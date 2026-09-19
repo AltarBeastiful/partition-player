@@ -10,6 +10,7 @@ export interface Job {
   name: string;
   error: string | null;
   result: { engine: string; seconds: number; stats: Stats } | null;
+  edited_at?: string | null;
 }
 
 export interface Stats {
@@ -18,6 +19,7 @@ export interface Stats {
   chords_seen?: { system: number; text: string; reading: string; confidence: number; reason: string }[];
   lyrics_verses?: number; lyrics_syllables?: number; lyrics_read?: number; lyric_warnings?: string[];
   lyrics_seen?: { staff: number; text: string; reason: string }[];
+  doubts?: Doubt[];
 }
 
 export class ApiError extends Error {
@@ -81,4 +83,37 @@ export async function saveLyrics(id: string, verses: string[]): Promise<LyricsSt
 
 export function thumbUrl(id: string): string {
   return `/api/jobs/${id}/thumb.jpg`;
+}
+
+// ---- the editor (ADR 0005) ----
+
+export interface Doubt { measure: number; part?: number; kind: string; text: string; info?: boolean; [k: string]: unknown }
+export interface LayoutMeasure { index: number; x0: number; x1: number }
+export interface LayoutSystem { index: number; x0: number; x1: number; top: number; bottom: number; unit: number; staves: { top: number; bottom: number }[]; measures: LayoutMeasure[] }
+export interface Layout { width: number; height: number; systems: LayoutSystem[] }
+export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean }
+export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
+
+export async function getReview(id: string): Promise<ReviewState> {
+  return check<ReviewState>(await fetch(`/api/jobs/${id}/review`));
+}
+
+export async function getScoreText(id: string, version = 0): Promise<string> {
+  const r = await fetch(scoreUrl(id, version || Date.now()));
+  if (!r.ok) throw new ApiError(r.statusText, r.status);
+  return r.text();
+}
+
+export async function saveScore(id: string, body: { musicxml: string; checked: number[]; revision: number; doubts: Doubt[] }): Promise<SaveResult> {
+  return check<SaveResult>(await fetch(`/api/jobs/${id}/score`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }));
+}
+
+export async function revertScore(id: string): Promise<SaveResult> {
+  return check<SaveResult>(await fetch(`/api/jobs/${id}/revert`, { method: "POST" }));
+}
+
+export function reviewImageUrl(id: string): string {
+  return `/api/jobs/${id}/review.webp`;
 }

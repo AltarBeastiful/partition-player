@@ -38,6 +38,15 @@ def load(d: Path) -> dict:
     return {"doubts": data.get("doubts", []), "checked": data.get("checked", []), "revision": int(data.get("revision", 0))}
 
 
+def bump(d: Path) -> int:
+    """A change to the document made outside the editor (the lyrics panel): the revision moves on.
+    Caller holds the store lock."""
+    current = load(d)
+    current["revision"] += 1
+    (d / "review.json").write_text(json.dumps(current, indent=1))
+    return current["revision"]
+
+
 def state(store: JobStore, job_id: str) -> dict:
     d = store.dir(job_id)
     s = load(d)

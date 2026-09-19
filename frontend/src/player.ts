@@ -58,6 +58,17 @@ export class Player {
     this.collect();
   }
 
+  /** Read the events again after the sheet was edited and re-rendered; the piano stays loaded. */
+  rebuild(): void {
+    this.stop();
+    this.events = [];
+    this.steps = [];
+    this.stepMeasure = [];
+    this.chords = [];
+    this.totalWholeNotes = 0;
+    this.collect();
+  }
+
   private collect(): void {
     const cursor = this.osmd.cursor;
     cursor.reset();

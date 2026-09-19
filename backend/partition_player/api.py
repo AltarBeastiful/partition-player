@@ -138,6 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             placed = lyrics_edit.deal(verses, order, old)
             lyrics_inject.rewrite(score, placed)
             lyrics_inject.save(lyrics_file, placed, [], [])
+            review.bump(store.dir(job_id))  # the editor holding the old revision must reload, not overwrite
         return lyrics_state(job_id)
 
     def done(job_id: str):

@@ -77,3 +77,55 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 /* Lyrics editor: one text field per verse, monospace so hyphens and holds line up with the eye. */
 .lyrics .verse { display: grid; gap: 4px; }
 .lyrics textarea { font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); resize: vertical; width: 100%; box-sizing: border-box; }
+
+/* Editor (ADR 0005): the doubts and the selection are a layer under the notes. */
+.sheet { cursor: pointer; }
+.editor-layer rect.place { stroke-width: 1; }
+.editor-layer rect.place.doubt { fill: rgba(245, 158, 11, 0.16); stroke: rgba(217, 119, 6, 0.8); }
+.editor-layer rect.place.info { fill: rgba(56, 189, 248, 0.10); stroke: rgba(14, 116, 144, 0.35); }
+.editor-layer rect.place.checked { fill: rgba(34, 197, 94, 0.08); stroke: rgba(22, 163, 74, 0.45); stroke-dasharray: 4 3; }
+.editor-layer rect.selected-measure { fill: none; stroke: #0e7490; stroke-width: 1.5; }
+.editor-layer rect.selected-note { fill: rgba(14, 116, 144, 0.28); stroke: #0e7490; stroke-width: 1.2; }
+.editor-layer text.badge { font: 700 11px system-ui, sans-serif; fill: #b45309; }
+.editor-layer text.badge.info { fill: #0e7490; }
+
+.review { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.review .ok { color: var(--ok); }
+.review .nav { display: inline-flex; gap: 6px; }
+.review .here { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; color: #b45309; }
+.review .here.info { color: var(--muted); }
+@media (prefers-color-scheme: dark) { .review .here { color: #fbbf24; } }
+.review .photo-toggle { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.review .photo-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.toolbar { position: sticky; bottom: 0; z-index: 4; display: grid; gap: 8px; padding: 10px 12px; margin: 0 -8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06); }
+.toolbar-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.toolbar-head .save-state { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.toolbar .bad { color: var(--bad); }
+.toolbar .groups { display: flex; gap: 8px; flex-wrap: wrap; }
+.toolbar .group { display: inline-flex; gap: 4px; align-items: center; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.toolbar .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-right: 4px; }
+.toolbar button { padding: 6px 9px; font-size: 14px; line-height: 1.2; min-width: 34px; }
+.toolbar button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.toolbar input.chord { font: inherit; padding: 5px 8px; width: 7ch; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.toolbar .panel { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.toolbar .keys { font-size: 12px; }
+@media (max-width: 1100px) {
+  .toolbar .groups { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+  .toolbar .group { flex: 0 0 auto; }
+  .toolbar .keys { display: none; }
+}
+@media (max-width: 700px) {
+  .toolbar { margin: 0 -12px; border-radius: 8px 8px 0 0; }
+  .toolbar button { padding: 9px 11px; min-width: 40px; }
+  .review .photo-toggle { margin-left: 0; }
+}
+
+.strip { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #eee; cursor: zoom-in; min-height: 60px; }
+.strip img { position: absolute; max-width: none; user-select: none; }
+.strip.whole img { position: static; width: 100%; height: auto; display: block; }
+.strip-box { position: absolute; border: 2px solid #0e7490; background: rgba(14, 116, 144, 0.10); border-radius: 3px; pointer-events: none; }
+.strip-none { position: absolute; left: 12px; top: 12px; }
+.lightbox { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.85); overflow: auto; padding: 16px; cursor: zoom-out; }
+.lightbox img { display: block; margin: 0 auto; max-width: none; width: min(100%, 1400px); cursor: default; }
+.lightbox .close { position: fixed; top: 16px; right: 16px; z-index: 21; }

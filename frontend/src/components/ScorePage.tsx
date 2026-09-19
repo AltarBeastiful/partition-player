@@ -14,6 +14,8 @@ export function ScorePage({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [version, setVersion] = useState(0); // bumped when the lyrics are saved, so the sheet reloads
+  const [lyricsVersion, setLyricsVersion] = useState(0); // bumped when the notes are saved, so the panel reloads
+  const flush = useRef<(() => Promise<void>) | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -80,8 +82,13 @@ export function ScorePage({ id }: { id: string }) {
         {error && <div className="error">{error}</div>}
       </section>
       {job && job.status !== "done" && <Progress jobId={id} onDone={onDone} />}
-      {job && job.status === "done" && <ScoreView job={job} version={version} />}
-      {job && job.status === "done" && <LyricsPanel jobId={id} onSaved={() => setVersion((v) => v + 1)} />}
+      {job && job.status === "done" && (
+        <ScoreView job={job} version={version} onReload={() => setVersion((v) => v + 1)}
+          onStats={() => setLyricsVersion((v) => v + 1)} registerFlush={(f) => { flush.current = f; }} />
+      )}
+      {job && job.status === "done" && (
+        <LyricsPanel jobId={id} version={lyricsVersion} beforeSave={() => flush.current?.() ?? Promise.resolve()} onSaved={() => setVersion((v) => v + 1)} />
+      )}
     </>
   );
 }
