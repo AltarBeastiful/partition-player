@@ -31,9 +31,10 @@ The script ends with `free -m` and `docker stats` so the memory picture is in fr
   rest of the host. Check with `docker stats partition-player` during a recognition.
 - CPU: a recognition uses both cores for 15 s to a few minutes; `cpu_shares: 512` lets Caddy and
   PocketBase win contention.
-- Disk: the image is about 1.5 GB (models included). A finished score keeps only
-  `score.musicxml`, `thumb.jpg` and two small JSON files (about 50 KB); the input photo and the
-  engine's intermediate files are deleted as soon as the job ends. Failed jobs keep their photo and
+- Disk: the image is about 1.5 GB (models included). A finished score keeps `score.musicxml`,
+  `original.musicxml`, `review.webp` (the photo at 2400 px, under 300 KB, ADR 0005), `thumb.jpg` and
+  four small JSON files (about 350 KB in all, so 500 scores are under 200 MB); the full-size photo
+  and the engine's intermediate files are deleted as soon as the job ends. Failed jobs keep their photo and
   logs for `PP_JOB_TTL_DAYS` (7) and are then removed. `PP_MAX_SCORES` (500) drops the oldest
   scores beyond that count. Old images are pruned on each deploy.
 

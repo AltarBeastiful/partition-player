@@ -1,6 +1,8 @@
 # Plan 0003: Doubts on the sheet and the score editor
 
-Status 2026-09-19: in progress.
+Status 2026-09-19: steps 1 to 4 done and checked (backend 68 tests, frontend 12 unit tests, browser
+checks on the benchmark photo, the Gymnopédie page and a score recognized before the editor, at
+desktop and 400 px widths); step 5 done except the server deployment, which is the user's call.
 
 Implements ADR 0005. Each step has its own check; nothing moves to the next step until the check
 passes. Work happens on `main` in small commits.

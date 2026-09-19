@@ -11,8 +11,9 @@ Decisions are recorded in `docs/adr/`. The engine benchmark that picked homr is 
   pipeline (preprocess, OMR engine, postprocess). CLI entry point `partition-player`.
 - `frontend/` React + Vite + TypeScript: upload or camera capture, progress, score view with
   OpenSheetMusicDisplay rendering and piano playback (Tone.js sampler, own look-ahead scheduler)
-  with tempo control, a loop over a measure range and a switch that writes the French note names
-  (do, ré, mi…) over the staff.
+  with tempo control, a loop over a measure range, a switch that writes the French note names
+  (do, ré, mi…) over the staff, and the score editor (`src/score/` for the document and its
+  operations, `src/editor/` for the session, the sheet mapping and the commands).
 - `bench/` benchmark samples, ground truth, scorer and audio rendering.
 - `docs/adr/` architecture decision records.
 
@@ -123,13 +124,47 @@ nothing is written into the MusicXML, the switch works while the piece plays, an
 playback does not rename them, since they name what is printed. The choice is remembered in the
 browser.
 
+## Checking and correcting the score
+
+Recognition is not perfect, so the score page says where to look and lets you fix it (ADR 0005).
+
+- **Doubts.** While it pads and checks the engine's output, the pipeline records every measure that
+  did not add up: shorter than its time signature (a rest was added), longer, a rest merged into a
+  chord, the pickup. On the lead-sheet benchmark these flags point at 95 of the 98 wrong measures
+  with 90 % precision (`bench/RESULTS.md`, "Doubts"). They are tinted on the sheet with a "?" badge,
+  counted in the review bar ("4 places to check", previous, next, mark checked), and explained in
+  words ("shorter than 3/4 by an eighth: a rest was added at the end"). A measure you edit counts
+  as checked; the live check keeps flagging any measure that still does not add up.
+- **The photo.** A copy of the upload is kept at 2400 px on its longest side and under 300 KB
+  (`review.webp`), with the position of every measure on it (`layout.json`, from the driver's
+  staff geometry and barlines). With **Photo** on, the strip of the print the selected measure was
+  read from is shown with the measure framed; click it for the whole page.
+- **The editor.** Click a note or a rest on the sheet (a finger works). The toolbar under the sheet
+  changes its pitch (a step, an accidental, an octave), its length (whole to thirty-second, dot,
+  tie to the next note of the same pitch), turns it into a rest and back, inserts a note or a rest
+  before or after it, deletes it; on its measure: fill the missing length with rests, split the
+  measure at the selected note, merge it with the one after it, insert or delete a measure; on the
+  score: time signature, key signature and clef from that measure on; the chord symbol on the
+  selected beat (`Cm`, `F#m7/A`, empty to remove). Keyboard: ↑ ↓ pitch, Shift+↑ ↓ octave, − 0 +
+  accidental, 1…6 length, `.` dot, `t` tie, `r` rest, `a` `b` insert after or before, Del, `f` fill,
+  ← → move along the voice, `n` `p` next and previous place, `c` checked, Space play, Ctrl+Z / Ctrl+Y.
+  Tuplets, grace notes and beams are kept as they are. Lyrics stay attached to their notes and are
+  edited in the Lyrics panel as before; a deleted note loses its syllable, which the panel shows.
+- **Saving.** Every change is saved by itself a second later, as the whole document, with the
+  revision it was edited from; the server validates it, recomputes the statistics and refuses a
+  save made from an outdated revision (another browser, or the lyrics panel, changed the score in
+  between), in which case the page says to reload. **Revert** puts the recognized version back
+  (`original.musicxml`). Scores recognized before the editor existed have no photo and no recorded
+  doubts; the live check and the editor still work on them.
+
 ## Score library
 
 Every finished job is a saved score with its own link, `/s/{id}`, listed on the home page with a
 thumbnail and an editable name. There is no login: anyone who can reach the app can add, rename
-and delete. To keep the disk flat, a finished job keeps only the MusicXML, a small thumbnail and its
-metadata (about 50 KB); the uploaded photo and the engine's intermediate files are deleted when the
-job ends.
+and delete. To keep the disk flat, a finished job keeps the MusicXML, the recognized version, the
+review copy of the photo (under 300 KB), the measure layout, the doubts, a small thumbnail and its
+metadata (about 350 KB in all); the full-size upload and the engine's intermediate files are deleted
+when the job ends.
 
 ## API
 
@@ -139,6 +174,12 @@ job ends.
 - `GET /api/jobs/{id}/score.musicxml`: the result once `done`.
 - `GET /api/jobs?limit=50`: the library, newest first. `PATCH /api/jobs/{id}` with `{"name": ...}`
   renames; `DELETE /api/jobs/{id}` removes; `GET /api/jobs/{id}/thumb.jpg` is the list thumbnail.
+- `GET /api/jobs/{id}/lyrics` and `PATCH /api/jobs/{id}/lyrics` with `{"verses": [...]}`: the words.
+- `GET /api/jobs/{id}/review`: doubts, checked measures, revision, layout, whether a photo is kept.
+  `PUT /api/jobs/{id}/score` with `{"musicxml", "checked", "revision", "doubts"}` saves an edited
+  document (422 when it is not a usable score, 409 when the revision is stale).
+  `POST /api/jobs/{id}/revert` puts the recognized version back. `GET /api/jobs/{id}/review.webp`
+  and `GET /api/jobs/{id}/original.musicxml` serve the kept files.
 
 ## License
 

@@ -4,6 +4,7 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 
 ## Correction workflow via small LLM API
 - Goal: after OMR, send the recognized MusicXML (and possibly the image crop) to a cheap multimodal or text LLM to fix obvious errors: wrong durations that break measure totals, missing accidentals, clef/key inconsistencies.
+- The editor (ADR 0005) now records the doubtful measures and keeps the photo strip of each; a model would get exactly those.
 - Benchmark first before committing: compare candidates on a fixed set of OMR outputs with known ground truth, measure note-level accuracy gain, latency and cost per page.
 - Candidates: DeepSeek (V3 / R1 via API), Gemini Flash, Claude Haiku. Pick by accuracy per euro.
 - Depends on: ground-truth test set from the OMR benchmark milestone.
@@ -33,19 +34,14 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Frontend bundle is 1.6 MB minified (OSMD + Tone.js). Lazy-load the score view.
 
 ## Click on the sheet to play from there
-- Goal: click (or tap) a note or a measure on the rendered score and the cursor moves there; Play then starts from that
-  point, and a click while playing jumps without stopping the sound.
-- Implementation: the player already keeps `steps` (cursor step -> time in whole notes) and `stepMeasure`; OSMD's
-  graphical model gives every staff entry its page position, the same walk `frontend/src/noteNames.ts` does for the note
-  names. Map the click's SVG coordinates to the nearest staff entry of the nearest staff line, then to its cursor step,
-  and re-anchor the playback position on it (`anchorPos`/`anchorCtx`) so tempo, loop and transpose keep working.
-- Decide what a click does to the loop range: leave it alone, or set the loop start. Probably leave it, with the range
-  fields staying the way to set a loop.
-- Give the cursor a visible hover state so it is clear the sheet is clickable, and keep the tap target usable on a phone.
+- Partly done with the editor (ADR 0005): a click selects the note, the toolbar's "▶ from here" plays from its measure,
+  Space plays and pauses. Still to do: start from the exact beat rather than the measure, and jump while playing without
+  stopping the sound (re-anchor `anchorPos`/`anchorCtx` on the clicked step). The hit test lives in
+  `frontend/src/editor/sheet.ts`.
 
 ## Restart from the start, and a redesign of the score page
 - Restarting means Stop then Play today, and Play after a pause resumes where it stopped: add a "back to the start"
-  control that rewinds the cursor without stopping, plus keyboard shortcuts (space to play or pause, Home to rewind).
+  control that rewinds the cursor without stopping, plus a Home shortcut to rewind (Space already plays and pauses).
 - The controls have grown into five rows (transport, loop range, note names, melody/accompaniment, stats and warnings)
   with the lyrics panel under them. Redesign the page around one compact transport bar and a separate practice panel for
   what is set rarely (loop, note names, tracks), so the sheet is higher on the screen.
@@ -53,7 +49,9 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
   width and the sheet needs the vertical space.
 
 ## Other deferred features
-- In-app note editor (pitch / duration fixes on the rendered score)
+- Editor follow-ups (the editor itself is done, ADR 0005): tuplet entry, a second voice, beaming, moving a note
+  between staves, a doubt from a second engine's disagreement, a language-model second opinion on the flagged measures
+  (the flags and the photo strips are what it would plug into).
 - Multi-page pieces: several photos merged into one MusicXML
 - Multi-page PDF input, split server-side
 - Falling-notes / piano-roll view
