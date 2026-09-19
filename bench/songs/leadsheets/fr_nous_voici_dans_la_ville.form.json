@@ -1,0 +1,41 @@
+{
+ "note": "repeat sign at the end, four stacked verses",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 4
+  }
+ ]
+}

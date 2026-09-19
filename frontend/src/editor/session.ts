@@ -3,14 +3,15 @@
  * undo and redo as serializations, the doubts and the checked measures, and the autosave that sends
  * the whole document with the revision it was edited from. React reads it through subscribe().
  */
-import { revertScore, saveScore, type Doubt, type Layout, type ReviewState, type Stats } from "../api";
+import { revertScore, saveScore, type Doubt, type Form, type Layout, type ReviewState, type Stats } from "../api";
+import { remapForm } from "../form";
 import { checkMeasures, checkText, type MeasureCheck } from "../score/check";
 import { EditError } from "../score/edit";
 import { find, nearest, parse, part, serialize, walk, type EventKey, type MeasureInfo } from "../score/xml";
 
 export type SaveStatus = "saved" | "unsaved" | "saving" | "error" | "stale";
 
-interface Snapshot { xml: string; doubts: Doubt[]; checked: number[]; selected: EventKey | null }
+interface Snapshot { xml: string; doubts: Doubt[]; checked: number[]; selected: EventKey | null; form: Form | null }
 
 /** One measure with something to look at: the recognition's doubts and the live check, together. */
 export interface Place { measure: number; texts: string[]; info: boolean; live: boolean; checked: boolean }
@@ -24,6 +25,7 @@ export class EditorSession {
   doubts: Doubt[];
   checked: Set<number>;
   revision: number;
+  form: Form | null;  // the user's form, or null for the automatic one (plan 0004)
   readonly layout: Layout | null;
   readonly hasImage: boolean;
   readonly hasOriginal: boolean;
@@ -49,6 +51,7 @@ export class EditorSession {
     this.doubts = review.doubts;
     this.checked = new Set(review.checked);
     this.revision = review.revision;
+    this.form = review.form ?? null;
     this.layout = review.layout;
     this.hasImage = review.has_image;
     this.hasOriginal = review.has_original;
@@ -125,6 +128,12 @@ export class EditorSession {
     this.touch();
   }
 
+  /** The way the page is played; null goes back to the automatic form. Saved with the score, not undoable. */
+  setForm(form: Form | null): void {
+    this.form = form;
+    this.touch();
+  }
+
   // ---- selection ----------------------------------------------------------------------------------
 
   select(key: EventKey | null): void {
@@ -156,7 +165,7 @@ export class EditorSession {
    * operation changed the measure list, so the doubts and the checked marks follow their measures.
    */
   apply(fn: (doc: XMLDocument) => EventKey | null | void | number, remap?: (m: number) => number | null): boolean {
-    const before: Snapshot = { xml: this.xml, doubts: this.doubts, checked: [...this.checked], selected: this.selected };
+    const before: Snapshot = this.snapshot();
     const measureBefore = this.selected?.measure ?? null;
     let result: EventKey | null | void | number;
     try {
@@ -172,6 +181,7 @@ export class EditorSession {
     if (remap) {
       this.doubts = this.doubts.flatMap((d) => { const m = remap(d.measure); return m === null ? [] : [{ ...d, measure: m }]; });
       this.checked = new Set([...this.checked].map(remap).filter((m): m is number => m !== null));
+      if (this.form) this.form = remapForm(this.form, remap);
     }
     this.refresh();
     if (measureBefore !== null && this.doubts.some((d) => d.measure === (remap ? remap(measureBefore) : measureBefore) && !d.info)) {
@@ -194,21 +204,26 @@ export class EditorSession {
   undo(): void {
     const snap = this.undoStack.pop();
     if (!snap) return;
-    this.redoStack.push({ xml: this.xml, doubts: this.doubts, checked: [...this.checked], selected: this.selected });
+    this.redoStack.push(this.snapshot());
     this.restore(snap);
   }
 
   redo(): void {
     const snap = this.redoStack.pop();
     if (!snap) return;
-    this.undoStack.push({ xml: this.xml, doubts: this.doubts, checked: [...this.checked], selected: this.selected });
+    this.undoStack.push(this.snapshot());
     this.restore(snap);
+  }
+
+  private snapshot(): Snapshot {
+    return { xml: this.xml, doubts: this.doubts, checked: [...this.checked], selected: this.selected, form: this.form };
   }
 
   private restore(snap: Snapshot): void {
     this.doc = parse(snap.xml);
     this.doubts = snap.doubts;
     this.checked = new Set(snap.checked);
+    this.form = snap.form;
     this.refresh();
     this.selected = snap.selected ? nearest(this.measures, snap.selected)?.key ?? null : null;
     this.message = null;
@@ -236,7 +251,7 @@ export class EditorSession {
     this.status = "saving";
     this.emit();
     try {
-      const result = await saveScore(this.jobId, { musicxml: this.xml, checked: [...this.checked], revision: this.revision, doubts: this.doubts });
+      const result = await saveScore(this.jobId, { musicxml: this.xml, checked: [...this.checked], revision: this.revision, doubts: this.doubts, form: this.form });
       this.revision = result.revision;
       this.onStats?.(result.stats);
       this.status = this.pending ? "unsaved" : "saved";
@@ -258,6 +273,7 @@ export class EditorSession {
     const result = await revertScore(this.jobId);
     this.onStats?.(result.stats);
     this.revision = result.revision;
+    this.form = null;
   }
 
   dispose(): void {

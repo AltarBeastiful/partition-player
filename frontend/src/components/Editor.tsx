@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { reviewImageUrl, type Layout } from "../api";
-import { TYPES, tiedToNext, typeOf, type DurationType } from "../score/edit";
+import { reviewImageUrl, type Form, type Layout } from "../api";
+import { describePasses, formFromPasses, preset, type Pass } from "../form";
+import { TYPES, hasRepeat, tiedToNext, typeOf, type DurationType } from "../score/edit";
 import { find, type Event, type EventKey } from "../score/xml";
 import type { Commands } from "../editor/commands";
 import type { EditorSession, Place } from "../editor/session";
@@ -150,6 +151,11 @@ export function Toolbar({ session, c, onPlayFrom, onRevert, onReload, onDone, st
           <button onClick={() => m && onPlayFrom(m.index)} disabled={!m} title="Play from this measure">▶ from here</button>
         </div>
         <div className="group">
+          <span className="label">Repeat</span>
+          <button className={m && hasRepeat(m.el, "forward") ? "on" : ""} onClick={() => c.repeat("forward")} disabled={!m} title="Repeat sign at the start of this measure (play from here again)">𝄆 from here</button>
+          <button className={m && hasRepeat(m.el, "backward") ? "on" : ""} onClick={() => c.repeat("backward")} disabled={!m} title="Repeat sign at the end of this measure (go back from here)">𝄇 back here</button>
+        </div>
+        <div className="group">
           <span className="label">Score</span>
           <button className={panel === "time" ? "on" : ""} onClick={() => setPanel(panel === "time" ? null : "time")} disabled={!m}>Time {m ? `${m.beats}/${m.beatType}` : ""}</button>
           <button className={panel === "key" ? "on" : ""} onClick={() => setPanel(panel === "key" ? null : "key")} disabled={!m}>Key {m ? KEY_NAMES[m.fifths] ?? m.fifths : ""}</button>
@@ -232,6 +238,99 @@ export function Lightbox({ jobId, onClose }: { jobId: string; onClose: () => voi
     <div className="lightbox" onClick={onClose} role="dialog" aria-label="The photo">
       <button className="close" onClick={onClose}>Close</button>
       <img src={reviewImageUrl(jobId)} alt="The uploaded photo" onClick={(e) => e.stopPropagation()} />
+    </div>
+  );
+}
+
+/**
+ * How the page is played (plan 0004): the pass list in words, and a panel to change it: presets,
+ * sections over measure ranges, the passes in order with a verse each.
+ */
+export function FormPanel({ form, passes, printed, measureCount, verseCount, currentPass, onChange }: {
+  form: Form | null; passes: Pass[]; printed: Pass[]; measureCount: number; verseCount: number; currentPass: number | null; onChange: (form: Form | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [verses, setVerses] = useState(verseCount);
+  useEffect(() => { setVerses(verseCount); }, [verseCount]);
+  const summary = describePasses(passes, form);
+  const current = form ?? formFromPasses(printed, measureCount);
+  const update = (f: Form) => onChange(f);
+  const setSection = (i: number, patch: Partial<Form["sections"][number]>) => {
+    const sections = current.sections.map((s, k) => (k === i ? { ...s, ...patch } : s));
+    const sec = sections[i];
+    sec.from = Math.max(0, Math.min(sec.from, measureCount - 1)); sec.to = Math.max(sec.from, Math.min(sec.to, measureCount - 1));
+    update({ ...current, sections });
+  };
+  const removeSection = (i: number) => {
+    update({ sections: current.sections.filter((_, k) => k !== i), passes: current.passes.filter((p) => p.section !== i).map((p) => ({ ...p, section: p.section > i ? p.section - 1 : p.section })) });
+  };
+  const addSection = () => {
+    const last = current.sections[current.sections.length - 1];
+    const from = last ? Math.min(last.to + 1, measureCount - 1) : 0;
+    update({ ...current, sections: [...current.sections, { name: "Part " + String.fromCharCode(65 + current.sections.length), from, to: measureCount - 1 }] });
+  };
+  const addPass = (section: number) => {
+    const before = current.passes.filter((p) => p.section === section);
+    const verse = before.some((p) => p.verse !== null) ? Math.max(...before.map((p) => p.verse ?? 0)) + 1 : null;
+    update({ ...current, passes: [...current.passes, { section, verse }] });
+  };
+  const setPass = (i: number, verse: number | null) => update({ ...current, passes: current.passes.map((p, k) => (k === i ? { ...p, verse } : p)) });
+  const removePass = (i: number) => update({ ...current, passes: current.passes.filter((_, k) => k !== i) });
+  const movePass = (i: number, d: -1 | 1) => {
+    const ps = [...current.passes]; const j = i + d; if (j < 0 || j >= ps.length) return;
+    [ps[i], ps[j]] = [ps[j], ps[i]]; update({ ...current, passes: ps });
+  };
+  return (
+    <div className={"form" + (open ? " open" : "")}>
+      <div className="form-head">
+        <span className="label">Played as</span>
+        <span className="summary">
+          {summary.split(" · ").map((label, i) => passes.length > 0 && <span key={i} className={"pass" + (i === currentPass ? " now" : "")}>{label}</span>)}
+          {passes.length === 0 && <span className="muted">once through</span>}
+        </span>
+        <span className="muted">{form ? "your form" : "from the repeat signs and the verses"}</span>
+        <button className="quiet" onClick={() => setOpen(!open)}>{open ? "Close" : "Change"}</button>
+      </div>
+      {open && (
+        <div className="form-body">
+          <div className="row">
+            <span className="label">Presets</span>
+            <button onClick={() => onChange(null)} disabled={!form}>Automatic</button>
+            <button onClick={() => update(preset("printed", printed, verses, measureCount))}>As printed</button>
+            <button onClick={() => update(preset("verses", printed, verses, measureCount))}>Once per verse</button>
+            <button onClick={() => update(preset("chorus", printed, verses, measureCount))}>Chorus after every verse</button>
+            <label>verses <input type="number" min={1} max={20} value={verses} onChange={(e) => setVerses(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} /></label>
+          </div>
+          <div className="row sections">
+            <span className="label">Sections</span>
+            {current.sections.map((s, i) => (
+              <span key={i} className="section">
+                <input className="name" value={s.name} maxLength={20} onChange={(e) => setSection(i, { name: e.target.value })} aria-label="Section name" />
+                <label>m. <input type="number" min={1} max={measureCount} value={s.from + 1} onChange={(e) => setSection(i, { from: Number(e.target.value) - 1 })} /></label>
+                <label>to <input type="number" min={1} max={measureCount} value={s.to + 1} onChange={(e) => setSection(i, { to: Number(e.target.value) - 1 })} /></label>
+                <button className="quiet" onClick={() => addPass(i)} title="Add a pass through this section">+ pass</button>
+                <button className="quiet" onClick={() => removeSection(i)} title="Remove this section" disabled={current.sections.length < 2}>×</button>
+              </span>
+            ))}
+            <button className="quiet" onClick={addSection}>+ section</button>
+          </div>
+          <div className="row passes">
+            <span className="label">Order</span>
+            {current.passes.map((p, i) => (
+              <span key={i} className={"chip" + (i === currentPass ? " now" : "")}>
+                <button className="quiet" onClick={() => movePass(i, -1)} disabled={i === 0} title="Earlier">‹</button>
+                {current.sections[p.section]?.name || "?"}
+                <input type="number" min={1} max={20} placeholder="–" value={p.verse ?? ""} title="The verse sung on this pass; empty for none"
+                  onChange={(e) => setPass(i, e.target.value === "" ? null : Math.max(1, Math.min(20, Number(e.target.value))))} />
+                <button className="quiet" onClick={() => movePass(i, 1)} disabled={i === current.passes.length - 1} title="Later">›</button>
+                <button className="quiet" onClick={() => removePass(i)} title="Remove this pass">×</button>
+              </span>
+            ))}
+            {current.passes.length === 0 && <span className="muted">no pass: nothing plays. Add one with "+ pass" on a section.</span>}
+          </div>
+          <div className="muted">A pass plays its section once; the verse number says which words are sung, the others are dimmed while it plays. Measure numbers are the printed ones.</div>
+        </div>
+      )}
     </div>
   );
 }

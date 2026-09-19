@@ -1,0 +1,36 @@
+{
+ "note": "pickup, repeat m2-25 with ending 1 at m24-25, ending 2 from m26",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     0
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     1,
+     24
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     1,
+     22
+    ],
+    [
+     25,
+     50
+    ]
+   ],
+   "verse": 2
+  }
+ ]
+}

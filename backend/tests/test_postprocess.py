@@ -1,3 +1,4 @@
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from partition_player.pipeline.postprocess import postprocess
@@ -102,13 +103,32 @@ REPEATS = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def test_repeats_are_stripped(tmp_path: Path):
+def test_repeats_are_kept_and_noted(tmp_path: Path):
+    """Plan 0004: the signs stay in the document for the player, with an information doubt."""
     src = tmp_path / "in.musicxml"; src.write_text(REPEATS)
     dst = tmp_path / "out.musicxml"
     stats = postprocess(src, dst)
     out = dst.read_text()
-    assert stats.repeats_removed == 3
-    assert "<repeat" not in out and "<ending" not in out and "bar-style" in out
+    assert stats.repeat_signs == 2
+    assert "<repeat" in out and "<ending" in out and "bar-style" in out
+    [d] = [d for d in stats.doubts if d["kind"] == "repeat"]
+    assert d["measure"] == 0 and d["info"] and d["directions"] == ["forward", "backward"]
+
+
+def test_repeat_barlines_are_normalized(tmp_path: Path):
+    """homr puts a forward repeat on a "right" barline at the start of the measure; it becomes a left
+    barline, first in the measure, with the heavy-light style, so OSMD starts the repeat there."""
+    src = tmp_path / "in.musicxml"
+    src.write_text(REPEATS.replace('<barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>',
+                                   '<barline location="right"><repeat direction="forward"/></barline>'))
+    dst = tmp_path / "out.musicxml"
+    postprocess(src, dst)
+    measure = ET.parse(dst).getroot().find("part").find("measure")
+    first = list(measure)[0]
+    assert first.tag == "barline" and first.get("location") == "left"
+    assert [c.tag for c in first] == ["bar-style", "repeat"] and first.find("bar-style").text == "heavy-light"
+    last = list(measure)[-1]
+    assert last.tag == "barline" and last.get("location") == "right" and last.find("repeat").get("direction") == "backward"
 
 
 def test_short_first_measure_is_a_pickup(tmp_path):

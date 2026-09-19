@@ -1,0 +1,32 @@
+{
+ "note": "three stacked verses, no signs",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 3
+  }
+ ]
+}

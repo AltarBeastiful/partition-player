@@ -28,6 +28,7 @@ export function commands(s: EditorSession) {
     time: (beats: number, beatType: number) => { const m = measure(); if (m !== null) s.apply((d) => { ops.setTime(d, m, beats, beatType); }); },
     key: (fifths: number) => { const m = measure(); if (m !== null) s.apply((d) => { ops.setKey(d, m, fifths); }); },
     clef: (staff: number, sign: "G" | "F" | "C") => { const m = measure(); if (m !== null) s.apply((d) => { ops.setClef(d, m, staff, sign); }); },
+    repeat: (direction: "forward" | "backward") => { const m = measure(); if (m !== null) s.apply((d) => { ops.toggleRepeat(d, m, direction); }); },
     chord: (text: string) => withKey((k) => s.apply((d) => { ops.setChord(d, k, text); })),
     chordText: () => { const k = key(); try { return k ? ops.chordAt(s.doc, k) : ""; } catch { return ""; } },
     place: (direction: 1 | -1) => { const p = s.nextPlace(measure(), direction); if (p) s.selectMeasure(p.measure); },

@@ -1,0 +1,52 @@
+{
+ "note": "three endings in the middle of the repeated section (m9, m10-11, m12), Fine at m20",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ],
+    [
+     12,
+     19
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     1,
+     7
+    ],
+    [
+     9,
+     10
+    ],
+    [
+     12,
+     19
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     1,
+     7
+    ],
+    [
+     11,
+     11
+    ],
+    [
+     12,
+     19
+    ]
+   ],
+   "verse": 3
+  }
+ ]
+}

@@ -5,7 +5,7 @@ import { checkMeasures, checkText, describe as describeLength } from "./check";
 import { chordText, parseChord } from "./chordText";
 import {
   EditError, chordAt, deleteEvent, fillMeasure, insertEvent, insertMeasure, keyAlter, mergeWithNext, setAlter, setChord,
-  setDuration, setKey, setTime, shiftOctave, splitMeasure, splitQuarters, stepPitch, toNote, toRest, toggleDot, toggleTie, deleteMeasure,
+  setDuration, setKey, setTime, shiftOctave, splitMeasure, splitQuarters, stepPitch, toNote, toRest, toggleDot, toggleTie, deleteMeasure, hasRepeat, toggleRepeat,
 } from "./edit";
 import { find, parse, part, serialize, walk, type EventKey } from "./xml";
 
@@ -197,5 +197,23 @@ describe("chord symbols", () => {
     expect(chordAt(doc, keyAt(doc, 0, 0))).toBe("");
     expect(() => setChord(doc, keyAt(doc, 0, 0), "Xyz")).toThrow(EditError);
     expect(part(doc).querySelectorAll("harmony").length).toBe(1);
+  });
+});
+
+describe("repeat signs (plan 0004)", () => {
+  it("puts a repeat sign on a measure and takes it off again", () => {
+    const doc = doc1(`<measure number="1">{attrs}${note("C", 4, 12, "half", 0, "<dot/>")}</measure><measure number="2">${note("D", 4, 12, "half", 0, "<dot/>")}</measure>`);
+    toggleRepeat(doc, 0, "forward");
+    toggleRepeat(doc, 1, "backward");
+    const ms = walk(part(doc));
+    expect(hasRepeat(ms[0].el, "forward")).toBe(true);
+    expect(hasRepeat(ms[1].el, "backward")).toBe(true);
+    expect(ms[0].el.firstElementChild?.tagName).toBe("barline"); // the left barline comes first
+    expect(serialize(doc)).toContain('<barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>');
+    toggleRepeat(doc, 1, "backward");
+    expect(hasRepeat(walk(part(doc))[1].el, "backward")).toBe(false);
+    expect(serialize(doc)).not.toContain('location="right"');
+    // the measure still checks and plays: nothing else changed
+    expect(checkMeasures(walk(part(doc))).every((c) => c.status === "ok")).toBe(true);
   });
 });

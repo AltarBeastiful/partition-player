@@ -36,6 +36,7 @@ class Edited(BaseModel):
     checked: list[int] = Field(default_factory=list, max_length=10_000)
     revision: int = 0
     doubts: list[dict] | None = Field(default=None, max_length=10_000)
+    form: dict | None = None  # plan 0004: sections and passes, None for the automatic form
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -157,7 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def save_score(job_id: str, body: Edited) -> dict:
         job = done(job_id)
         try:
-            return review.save(store, job, body.musicxml, body.checked, body.revision, body.doubts)
+            return review.save(store, job, body.musicxml, body.checked, body.revision, body.doubts, body.form)
         except review.InvalidDocument as e:
             raise HTTPException(422, f"the score could not be saved: {e}") from e
         except review.StaleRevision as e:

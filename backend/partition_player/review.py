@@ -1,6 +1,8 @@
 """The editor's server side (ADR 0005): the review record, saving an edited document, reverting.
 
-review.json: {"doubts": [...], "checked": [measure indices], "revision": n}. The document is edited in
+review.json: {"doubts": [...], "checked": [measure indices], "revision": n, "form": null | {...}}. The
+form (plan 0004) is how the page is played: sections over measure ranges and passes through them,
+null when the automatic form (the repeat signs and the verses) is what plays. The document is edited in
 the browser and saved whole; the server validates it, recomputes the statistics, re-reads the lyric
 placements and bumps the revision. A save must name the revision it started from, so two browsers
 cannot silently overwrite each other.
@@ -33,9 +35,32 @@ class StaleRevision(ValueError):
 def load(d: Path) -> dict:
     p = d / "review.json"
     if not p.exists():  # a score recognized before the editor existed
-        return {"doubts": [], "checked": [], "revision": 0}
+        return {"doubts": [], "checked": [], "revision": 0, "form": None}
     data = json.loads(p.read_text())
-    return {"doubts": data.get("doubts", []), "checked": data.get("checked", []), "revision": int(data.get("revision", 0))}
+    return {"doubts": data.get("doubts", []), "checked": data.get("checked", []), "revision": int(data.get("revision", 0)),
+            "form": data.get("form")}
+
+
+def validate_form(form: dict | None, measure_count: int) -> dict | None:
+    """The form as the browser sends it, checked for shape and measure bounds; None is the automatic form."""
+    if form is None:
+        return None
+    try:
+        sections = [{"name": str(sec.get("name", ""))[:40], "from": int(sec["from"]), "to": int(sec["to"])} for sec in form["sections"]]
+        passes = [{"section": int(ps["section"]), "verse": None if ps.get("verse") is None else int(ps["verse"])} for ps in form["passes"]]
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
+        raise InvalidDocument(f"the form is malformed: {e}") from e
+    if len(sections) > 200 or len(passes) > 1000:
+        raise InvalidDocument("the form is too long")
+    for sec in sections:
+        if not 0 <= sec["from"] <= sec["to"] < measure_count:
+            raise InvalidDocument(f"section {sec['name']!r} covers measures {sec['from'] + 1} to {sec['to'] + 1}, outside the score")
+    for ps in passes:
+        if not 0 <= ps["section"] < len(sections):
+            raise InvalidDocument("a pass names a section that does not exist")
+        if ps["verse"] is not None and not 1 <= ps["verse"] <= 50:
+            raise InvalidDocument("a pass names a verse outside 1 to 50")
+    return {"sections": sections, "passes": passes}
 
 
 def bump(d: Path) -> int:
@@ -83,10 +108,12 @@ def _stats(tree: ET.ElementTree, previous: dict | None) -> dict:
     return out
 
 
-def save(store: JobStore, job: Job, musicxml: str, checked: list[int], revision: int, doubts: list[dict] | None) -> dict:
+def save(store: JobStore, job: Job, musicxml: str, checked: list[int], revision: int, doubts: list[dict] | None,
+         form: dict | None = None) -> dict:
     """Validate, write, re-read the lyrics, update the statistics, bump the revision. Returns the new
     review state with the live check under "check" and the statistics under "stats"."""
     tree = validate(musicxml)
+    form = validate_form(form, len(tree.getroot().find("part").findall("measure")))
     d = store.dir(job.id)
     with store.lock:
         current = load(d)
@@ -97,7 +124,7 @@ def save(store: JobStore, job: Job, musicxml: str, checked: list[int], revision:
         tree.write(tmp, encoding="UTF-8", xml_declaration=True)
         tmp.replace(score)
         record = {"doubts": doubts if doubts is not None else current["doubts"],
-                  "checked": sorted(set(int(c) for c in checked)), "revision": current["revision"] + 1}
+                  "checked": sorted(set(int(c) for c in checked)), "revision": current["revision"] + 1, "form": form}
         (d / "review.json").write_text(json.dumps(record, indent=1))
         placed = lyrics_inject.read_placements(score)
         lyrics_file = d / "lyrics.json"
@@ -114,7 +141,7 @@ def save(store: JobStore, job: Job, musicxml: str, checked: list[int], revision:
 
 
 def revert(store: JobStore, job: Job) -> dict:
-    """The score as recognized, back in place; the checked list is cleared."""
+    """The score as recognized, back in place; the checked list is cleared and the form is the automatic one again."""
     d = store.dir(job.id)
     original = d / "original.musicxml"
     if not original.exists():
@@ -124,7 +151,7 @@ def revert(store: JobStore, job: Job) -> dict:
         tmp = d / "score.musicxml.tmp"
         tmp.write_bytes(original.read_bytes())
         tmp.replace(d / "score.musicxml")
-        (d / "review.json").write_text(json.dumps({**current, "checked": [], "revision": current["revision"] + 1}, indent=1))
+        (d / "review.json").write_text(json.dumps({**current, "checked": [], "revision": current["revision"] + 1, "form": None}, indent=1))
         tree = ET.parse(d / "score.musicxml")
         placed = lyrics_inject.read_placements(d / "score.musicxml")
         lyrics_file = d / "lyrics.json"

@@ -110,6 +110,24 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .toolbar input.chord { font: inherit; padding: 5px 8px; width: 7ch; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 .toolbar .panel { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 .toolbar .keys { font-size: 12px; }
+/* The form (plan 0004): the pass list and its panel; the verse layer dims the other verses' words. */
+.form { display: grid; gap: 8px; font-size: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.form-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.form .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.form .summary { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.form .summary .pass { padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); }
+.form .summary .pass.now, .form .chip.now { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.form-head > button { margin-left: auto; }
+.form-body { display: grid; gap: 8px; }
+.form .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.form input[type="number"] { width: 4.5em; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.form input.name { width: 8em; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.form .section, .form .chip { display: inline-flex; gap: 4px; align-items: center; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.form .chip input[type="number"] { width: 3em; }
+.form .chip.now input { color: var(--accent-ink); background: transparent; border-color: rgba(255, 255, 255, 0.4); }
+.form button.quiet { padding: 2px 6px; min-width: 0; }
+.verse-layer rect.dim { fill: #fff; opacity: 0.72; }
+
 /* Edit mode: the frame around the sheet changes hue so the two kinds of click are told apart. */
 .review.toast { background: #fff6e3; border-color: #f0c36a; }
 .review.toast .edit { margin-left: auto; }

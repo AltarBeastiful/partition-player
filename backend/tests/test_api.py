@@ -155,10 +155,19 @@ def test_editor_save_revert_and_revision(settings):
         measure.remove(first)
         edited = ET.tostring(root, encoding="unicode")
 
-        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [0, 3], "revision": 2})
+        form = {"sections": [{"name": "Verse", "from": 0, "to": 7}, {"name": "Chorus", "from": 8, "to": 18}],
+                "passes": [{"section": 0, "verse": 1}, {"section": 1, "verse": None}, {"section": 0, "verse": 2}, {"section": 1}]}
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [0, 3], "revision": 2, "form": form})
         assert r.status_code == 200, r.text
         saved = r.json()
         assert saved["revision"] == 3 and saved["checked"] == [0, 3]
+        assert saved["form"]["passes"][3] == {"section": 1, "verse": None} and saved["form"]["sections"][1]["name"] == "Chorus"
+        assert client.get(f"/api/jobs/{jid}/review").json()["form"] == saved["form"]
+        # a form outside the score, or naming a missing section, is refused
+        bad = {"sections": [{"name": "x", "from": 0, "to": 99}], "passes": []}
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 3, "form": bad}).status_code == 422
+        bad = {"sections": [{"name": "x", "from": 0, "to": 1}], "passes": [{"section": 4}]}
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 3, "form": bad}).status_code == 422
         assert saved["stats"]["notes"] == notes_before - 1
         assert any(d["kind"] == "underfull" and d["measure"] == 0 for d in saved["check"])
         assert client.get(f"/api/jobs/{jid}").json()["edited_at"]
@@ -174,7 +183,7 @@ def test_editor_save_revert_and_revision(settings):
         assert client.get(f"/api/jobs/{jid}/review").json()["revision"] == 3
 
         r = client.post(f"/api/jobs/{jid}/revert")
-        assert r.status_code == 200 and r.json()["revision"] == 4 and r.json()["checked"] == []
+        assert r.status_code == 200 and r.json()["revision"] == 4 and r.json()["checked"] == [] and r.json()["form"] is None
         assert r.json()["stats"]["notes"] == notes_before
         assert client.get(f"/api/jobs/{jid}/score.musicxml").text == client.get(f"/api/jobs/{jid}/original.musicxml").text
         # the panel shows what the document has: the fixture score's own words, re-read on revert

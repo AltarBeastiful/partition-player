@@ -165,6 +165,32 @@ Recognition is not perfect, so the score page says where to look and lets you fi
   (`original.musicxml`). Scores recognized before the editor existed have no photo and no recorded
   doubts; the live check and the editor still work on them.
 
+## Playing a song the way it is sung (plan 0004)
+
+A songbook page is not played in the order it is printed: the verses are stacked under one line of
+notes and the chorus is engraved once. The score page plays a **list of passes** through the printed
+measures, shown above the sheet ("Played as: Verse 1 · Chorus · Verse 2 · Chorus…"), with the pass
+being played highlighted.
+
+- **Automatic form.** The pipeline keeps the repeat signs the engine read (an "i" doubt marks them),
+  and the browser expands them with OSMD, each repeat played once per lyric row under it. Then the
+  songbook rule: on a page without repeat signs, or when three or more verses are stacked and a
+  single-lyric part follows them, the page is sung in rounds, verse *k* then the chorus. Two stacked
+  rows under a repeat are played as printed (a first phrase sung twice). On the song benchmark this
+  gives the right measure order on 23 of 60 pages, the rest one edit away; the causes are in
+  `bench/RESULTS.md`, "Form".
+- **The words of the pass.** While verse 3 plays, the other rows of words are dimmed; a note with a
+  single row (the chorus) keeps it.
+- **Your form.** *Change* opens the panel: presets (*As printed*, *Once per verse*, *Chorus after
+  every verse*, with the verse count), sections over printed measure ranges, and the passes in
+  order, each with the verse it sings. It is saved with the score under the same revision as the
+  notes, follows the measures when one is split, merged, inserted or deleted, and *Automatic* puts
+  the derived form back. In edit mode the Measure group has two repeat-sign toggles, so a sign the
+  engine missed can be put on the page.
+- **Playback on the unrolled timeline.** A click on a note plays the occurrence of its measure
+  that holds the current position, else the next one; the loop range runs from the first occurrence
+  of its first measure to the following occurrence of its last; the accompaniment follows the passes.
+
 ## Score library
 
 Every finished job is a saved score with its own link, `/s/{id}`, listed on the home page with a
@@ -184,7 +210,7 @@ when the job ends.
   renames; `DELETE /api/jobs/{id}` removes; `GET /api/jobs/{id}/thumb.jpg` is the list thumbnail.
 - `GET /api/jobs/{id}/lyrics` and `PATCH /api/jobs/{id}/lyrics` with `{"verses": [...]}`: the words.
 - `GET /api/jobs/{id}/review`: doubts, checked measures, revision, layout, whether a photo is kept.
-  `PUT /api/jobs/{id}/score` with `{"musicxml", "checked", "revision", "doubts"}` saves an edited
+  `PUT /api/jobs/{id}/score` with `{"musicxml", "checked", "revision", "doubts", "form"}` saves an edited
   document (422 when it is not a usable score, 409 when the revision is stale).
   `POST /api/jobs/{id}/revert` puts the recognized version back. `GET /api/jobs/{id}/review.webp`
   and `GET /api/jobs/{id}/original.musicxml` serve the kept files.

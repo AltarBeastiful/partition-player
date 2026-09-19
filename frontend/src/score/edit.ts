@@ -443,6 +443,35 @@ export function splitMeasure(doc: XMLDocument, key: EventKey): EventKey {
   return { ...key, measure: key.measure + 1, onset: 0 };
 }
 
+/** Whether a measure carries a repeat sign at its start ("forward") or its end ("backward"). */
+export function hasRepeat(m: Element, direction: "forward" | "backward"): boolean {
+  return children(m, "barline").some((b) => children(b, "repeat").some((r) => (r.getAttribute("direction") ?? "backward") === direction));
+}
+
+/** Put a repeat sign on a measure's barline, or take it off (plan 0004). */
+export function toggleRepeat(doc: XMLDocument, index: number, direction: "forward" | "backward"): void {
+  const { m } = measureCtx(doc, index);
+  const location = direction === "forward" ? "left" : "right";
+  const existing = children(m.el, "barline").filter((b) => (b.getAttribute("location") ?? "right") === location);
+  const holder = existing.find((b) => children(b, "repeat").some((r) => (r.getAttribute("direction") ?? "backward") === direction));
+  if (holder) {
+    for (const r of children(holder, "repeat")) holder.removeChild(r);
+    if (children(holder, "bar-style").length && children(holder, "bar-style")[0].textContent?.includes("heavy")) holder.removeChild(children(holder, "bar-style")[0]);
+    if (holder.children.length === 0) m.el.removeChild(holder);
+    return;
+  }
+  let barline = existing[0];
+  if (!barline) {
+    barline = make(doc, "barline", undefined, { location });
+    if (location === "left") m.el.insertBefore(barline, m.el.firstChild);
+    else m.el.appendChild(barline);
+  }
+  removeChildren(barline, "bar-style");
+  const style = make(doc, "bar-style", location === "left" ? "heavy-light" : "light-heavy");
+  barline.insertBefore(style, barline.firstChild);
+  barline.appendChild(make(doc, "repeat", undefined, { direction }));
+}
+
 export function mergeWithNext(doc: XMLDocument, index: number): void {
   const { partEl, measures, m } = measureCtx(doc, index);
   const next = measures[index + 1];

@@ -1,0 +1,45 @@
+{
+ "note": "intro, repeat with ending '1, 2' (m21-36) and ending 3 (m37-58, its words printed as the only row)",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     3
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     4,
+     35
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     4,
+     35
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     4,
+     19
+    ],
+    [
+     36,
+     57
+    ]
+   ],
+   "verse": 3
+  }
+ ]
+}

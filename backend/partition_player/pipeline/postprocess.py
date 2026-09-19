@@ -26,7 +26,7 @@ class ScoreStats:
     rests: int = 0
     padded_measures: int = 0
     pickup: bool = False  # short first measure, padded at the front
-    repeats_removed: int = 0
+    repeat_signs: int = 0  # repeat barlines kept in the document (plan 0004)
     warnings: list[str] = field(default_factory=list)
     doubts: list[dict] = field(default_factory=list)  # per measure, see `doubt`
     chords: int = 0
@@ -97,15 +97,33 @@ def _fix_rest_chords(measure: ET.Element) -> int:
     return fixes
 
 
-def _strip_repeats(measure: ET.Element) -> int:
-    """Remove repeat signs and volta brackets. v1 plays the page straight through (BACKLOG: repeats)."""
-    removed = 0
-    for barline in measure.findall("barline"):
-        for tag in ("repeat", "ending"):
-            for el in barline.findall(tag):
-                barline.remove(el)
-                removed += 1
-    return removed
+def _repeat_signs(measure: ET.Element) -> list[str]:
+    """The repeat signs on a measure's barlines, "forward" and "backward", kept in the document: the
+    player follows them and the user sees what was read (plan 0004). homr writes both on a barline
+    marked "right" at the start of the measure, which renderers ignore for a forward sign: the
+    location and the bar style are set from the direction, and the left barline moved first."""
+    signs = []
+    for barline in list(measure.findall("barline")):
+        directions = [el.get("direction") or "backward" for el in barline.findall("repeat")]
+        if not directions:
+            continue
+        direction = directions[0]
+        for el in barline.findall("repeat")[1:]:
+            barline.remove(el)
+        location = "left" if direction == "forward" else "right"
+        barline.set("location", location)
+        for style in barline.findall("bar-style"):
+            barline.remove(style)
+        style = ET.Element("bar-style")
+        style.text = "heavy-light" if location == "left" else "light-heavy"
+        barline.insert(0, style)
+        measure.remove(barline)
+        if location == "left":
+            measure.insert(0, barline)
+        else:
+            measure.append(barline)
+        signs.append(direction)
+    return signs
 
 
 @dataclass
@@ -196,7 +214,11 @@ def postprocess(src: Path, dst: Path) -> ScoreStats:
         for ctx in measures(part):
             measure = ctx.measure
             stats.measures += 1
-            stats.repeats_removed += _strip_repeats(measure)
+            signs = _repeat_signs(measure)
+            if signs:
+                stats.repeat_signs += len(signs)
+                words = " and ".join("goes back to here" if d == "forward" else "goes back from here" for d in signs)
+                stats.doubts.append(doubt(ctx.index, "repeat", f"a repeat sign was read: playback {words}", p, info=True, directions=signs))
             fixed = _fix_rest_chords(measure)
             if fixed:
                 stats.warnings.append(f"measure {measure.get('number')}: removed {fixed} rest(s) merged into a chord")

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
-import { getReview, getScoreText, scoreUrl, type Job, type Stats } from "../api";
+import { getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
+import { defaultPasses, expandForm, versesByMeasure, type Pass } from "../form";
+import { clearVerses, dimVerses } from "../verses";
 import { commands, shortcut } from "../editor/commands";
 import { EditorSession } from "../editor/session";
 import { drawOverlay, hitTest, keepOverlay, rectOf } from "../editor/sheet";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
-import { Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
+import { FormPanel, Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
 
 const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
 
@@ -53,6 +55,12 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const [lightbox, setLightbox] = useState(false);
   const [staves, setStaves] = useState(1);
   const [editing, setEditing] = useState(false);
+  const [printed, setPrinted] = useState<Pass[]>([]);   // the automatic passes
+  const [passes, setPasses] = useState<Pass[]>([]);     // what plays
+  const [verseCount, setVerseCount] = useState(1);
+  const [currentPass, setCurrentPass] = useState<number | null>(null);
+  const lastForm = useRef<Form | null | undefined>(undefined);
+  const verseRef = useRef<number | null>(null);
 
   const subscribe = useCallback((fn: () => void) => (session ? session.subscribe(fn) : () => {}), [session]);
   useSyncExternalStore(subscribe, () => session?.version ?? 0);
@@ -84,7 +92,14 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         osmd.cursor.show();
         osmdRef.current = osmd;
         const player = new Player(osmd, setState);
+        player.onPass = setCurrentPass;
         playerRef.current = player;
+        const auto = defaultPasses(osmd);
+        const played = s.form ? expandForm(s.form, player.measureCount) : auto;
+        player.setPasses(played);
+        lastForm.current = s.form;
+        setPrinted(auto); setPasses(played);
+        setVerseCount(Math.max(1, ...versesByMeasure(osmd).flat()));
         (window as unknown as { __player?: Player; __session?: EditorSession }).__player = player; // debugging aid
         (window as unknown as { __session?: EditorSession }).__session = s;
         renderedDoc.current = s.docVersion;
@@ -120,6 +135,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     const osmd = osmdRef.current;
     if (!osmd || !session) return;
     drawOverlay(osmd, session.places(), session.selected);
+    if (verseRef.current !== null) dimVerses(osmd, verseRef.current); else clearVerses(osmd);
   }, [session]);
 
   // The document changed (an edit, undo, redo): render it again and read the events again.
@@ -135,6 +151,12 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         osmd.render();
         osmd.cursor.show();
         player.rebuild();
+        const auto = defaultPasses(osmd);
+        const played = session.form ? expandForm(session.form, player.measureCount) : auto;
+        player.setPasses(played);
+        lastForm.current = session.form;
+        setPrinted(auto); setPasses(played);
+        setVerseCount(Math.max(1, ...versesByMeasure(osmd).flat()));
         setMeasureCount(player.measureCount);
         setChordCount(player.chords.length);
         setTo((t) => Math.min(Math.max(t, 1), player.measureCount || 1));
@@ -148,6 +170,24 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     })();
     return () => { cancelled = true; };
   }, [session, session?.docVersion, loading, redraw]);
+
+  // The form changed (the panel, undo, revert): the player plays the new passes.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (loading || !session || !player || lastForm.current === session.form) return;
+    lastForm.current = session.form;
+    const played = session.form ? expandForm(session.form, player.measureCount) : printed;
+    player.setPasses(played);
+    setPasses(played);
+  }, [session, session?.version, loading, printed]);
+
+  // The pass being played: its verse's words stay, the others are dimmed.
+  useEffect(() => {
+    const osmd = osmdRef.current;
+    if (!osmd || loading) return;
+    verseRef.current = currentPass === null ? null : passes[currentPass]?.verse ?? null;
+    dimVerses(osmd, verseRef.current);
+  }, [currentPass, passes, loading]);
 
   // Selection or places changed: the overlay only.
   useEffect(() => {
@@ -323,6 +363,10 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           <span>The recognition was unsure there: they are tinted on the sheet with a "?".</span>
           <button className="primary edit" onClick={enterEdit}>Edit the score</button>
         </div>
+      )}
+      {session && !loading && (
+        <FormPanel form={session.form} passes={passes} printed={printed} measureCount={measureCount} verseCount={verseCount} currentPass={currentPass}
+          onChange={(f) => session.setForm(f)} />
       )}
       {session && showPhoto && editing && session.layout && (
         <PrintedStrip jobId={job.id} layout={session.layout} measure={session.selected?.measure ?? null} onOpen={() => setLightbox(true)} />

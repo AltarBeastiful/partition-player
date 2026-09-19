@@ -91,7 +91,11 @@ export interface Doubt { measure: number; part?: number; kind: string; text: str
 export interface LayoutMeasure { index: number; x0: number; x1: number }
 export interface LayoutSystem { index: number; x0: number; x1: number; top: number; bottom: number; unit: number; staves: { top: number; bottom: number }[]; measures: LayoutMeasure[] }
 export interface Layout { width: number; height: number; systems: LayoutSystem[] }
-export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean }
+export interface FormSection { name: string; from: number; to: number }
+export interface FormPass { section: number; verse: number | null }
+/** How the page is played (plan 0004): null is the automatic form from the repeat signs and the verses. */
+export interface Form { sections: FormSection[]; passes: FormPass[] }
+export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null }
 export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
 
 export async function getReview(id: string): Promise<ReviewState> {
@@ -104,7 +108,7 @@ export async function getScoreText(id: string, version = 0): Promise<string> {
   return r.text();
 }
 
-export async function saveScore(id: string, body: { musicxml: string; checked: number[]; revision: number; doubts: Doubt[] }): Promise<SaveResult> {
+export async function saveScore(id: string, body: { musicxml: string; checked: number[]; revision: number; doubts: Doubt[]; form: Form | null }): Promise<SaveResult> {
   return check<SaveResult>(await fetch(`/api/jobs/${id}/score`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }));

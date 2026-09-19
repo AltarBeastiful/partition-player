@@ -1,0 +1,32 @@
+{
+ "note": "three stacked verses over four phrases",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     62
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     62
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     62
+    ]
+   ],
+   "verse": 3
+  }
+ ]
+}

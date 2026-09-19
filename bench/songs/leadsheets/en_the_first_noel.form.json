@@ -1,0 +1,113 @@
+{
+ "note": "VERSES m1-17, CHORUS m18-26 after each",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     17,
+     25
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     17,
+     25
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     17,
+     25
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     17,
+     25
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 5
+  },
+  {
+   "ranges": [
+    [
+     17,
+     25
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 6
+  },
+  {
+   "ranges": [
+    [
+     17,
+     25
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

@@ -1,0 +1,95 @@
+{
+ "note": "five verses, chorus after each",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     7
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     8,
+     15
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     7
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     8,
+     15
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     7
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     8,
+     15
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     7
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     8,
+     15
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     7
+    ]
+   ],
+   "verse": 5
+  },
+  {
+   "ranges": [
+    [
+     8,
+     15
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

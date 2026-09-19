@@ -1,0 +1,86 @@
+{
+ "note": "three verses, the chorus m35-50 under a repeat sign is sung twice after each",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     33
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     34,
+     49
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     34,
+     49
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     33
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     34,
+     49
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     34,
+     49
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     33
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     34,
+     49
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     34,
+     49
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

@@ -380,3 +380,50 @@ Reproduce:
 ```
 .venv-oemer/bin/python bench/songs/doubts.py          # needs the run outputs of run_bench.py, both sets
 ```
+
+## Form: repeats, verses and the order a song is sung in (plan 0004)
+
+Date: 2026-09-19. A songbook page is not played in the order it is printed: verses are stacked under
+one line of notes, the chorus is engraved once and sung after each. The app now plays a list of
+passes derived from the repeat signs the engine read and the lyric rows it placed (`frontend/src/form.ts`),
+and the user can replace it. The truth is the order each song is sung in, written by hand from the
+print (`bench/songs/leadsheets/<song>.form.json`, 30 songs plus the sample); a machine expansion of
+the truth's signs would give "verses N times, then the chorus once", which is not the song.
+
+What the truth prints (`python -m songs.form`), 31 songs:
+
+| structure | songs |
+|---|---|
+| repeat barlines | 15 |
+| first and second endings | 8 |
+| D.C., Fine or coda | 2 |
+| two or more stacked verses | 25 |
+| three or more stacked verses | 19 |
+
+Repeat barlines read by homr on the 60 song pages, against the truth by measure index and direction:
+precision 0.88, recall 0.74 (by count per page: 1.00 / 0.84). The misses: the implied forward repeat
+at the first barline (4, harmless: OSMD defaults it), signs one measure early on pages whose measure
+count is off by one (5), signs not read at all (6). Voltas are never read (0 of 8 songs).
+
+The automatic form against the hand truth, on the 60 run outputs of the song benchmark
+(`npm run bench:form` in `frontend/`, output in `bench/out/form.txt`):
+
+| pages | exact pass list | same measure order | same pass count | verses sung / printed |
+|---|---|---|---|---|
+| 60 | 21 (35 %) | 23 (38 %) | 26 | 178 / 206 |
+
+The rule that gets there ("the songbook rule" in `form.ts`): OSMD's expansion of the signs, each
+repeat played once per lyric row under it; then, when the page has no repeat sign, or when three or
+more verses are stacked and a single-lyric part follows them, the list is played in rounds, verse k
+with the chorus after it. Two stacked rows under a repeat are taken literally (a first phrase sung
+twice: *Kristallen den fina*).
+
+Where the 37 other pages go wrong, by cause: verses under-read by the lyrics stage (*Camptown* 5 of
+8, *Clementine* 4 of 7, *First Noel* 5 of 6, *Home on the range* 4 of 5, *Petit cheval* 5 of 6: the
+order is right, the last verses are not sung); voltas not read, so the two endings play as one
+(*Alfonsina*, *Luna tucumana*, *La nave*, *Mattinata*, *Marche des rois*); a measure count off by
+one, which shifts every section (*Vieni sul mar*, *Home on the range*); a printed form no sign says
+(*La clairière*'s "4 couplets, dernière fois coda", *Votre divin maître*, *Joyeux Noël*'s
+forward-only repeat, the refrain-first *Probier's mal*); and the third ending of *Les gens bien
+élevés*, whose single-lyric tail the rule takes for a chorus. All of these are one edit away in the
+form panel; the under-read verses are the lyrics stage's problem, not the form's.

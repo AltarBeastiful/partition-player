@@ -1,0 +1,59 @@
+{
+ "note": "'4 couplets, derni\u00e8re fois coda': four times the verse, the last time to 'Fine al Coda' at m12, then the coda m25-30, which is repeated",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     0,
+     11
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     24,
+     29
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     24,
+     29
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

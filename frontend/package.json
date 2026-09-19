@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "bench:form": "vitest run --config vitest.bench.config.ts"
   },
   "dependencies": {
     "opensheetmusicdisplay": "^1.9.0",

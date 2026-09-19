@@ -1,0 +1,36 @@
+{
+ "note": "intro, repeat m3-33 with ending 1 at m31-33, ending 2 from m34",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     1
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     2,
+     32
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     2,
+     29
+    ],
+    [
+     33,
+     38
+    ]
+   ],
+   "verse": 2
+  }
+ ]
+}

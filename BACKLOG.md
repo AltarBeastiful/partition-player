@@ -55,6 +55,6 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Falling-notes / piano-roll view
 - Web MIDI output to a connected digital piano, MIDI file download
 - Practice tools: mute one hand (loop and tempo done)
-- Repeats, endings and the form of a song (verses, chorus, D.C., coda): post-processing strips repeat signs and volta brackets so the page plays straight through; the assessment plan is `docs/plans/0004-repeats-and-form.md`
+- Form of a song, next steps (plan 0004 done to step 3): voltas are never read by the engine (8 of 30 songs) and must be entered by hand; verse rows are under-read on 6 of 25 songs (the lyrics stage); a volta editor (endings on a measure) and D.C./Fine/Coda words are not in the editor; multi-page songs
 - Handwritten score support
 - User accounts and saved score library
