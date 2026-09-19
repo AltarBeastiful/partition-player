@@ -1,4 +1,6 @@
-"""Make engine output safe to play: validate, pad short measures with rests, collect statistics.
+"""Make engine output safe to play: validate, pad short measures with rests, collect statistics, and
+record the doubts (ADR 0005): the measures where the engine's own output did not add up, which is
+where its mistakes are (97 % of the wrong measures on the lead-sheet benchmark).
 
 Works on the MusicXML tree directly (no music21 import cost on every job). Only score-partwise
 documents are handled, which is what every engine here produces.
@@ -6,6 +8,7 @@ documents are handled, which is what every engine here produces.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
@@ -25,6 +28,7 @@ class ScoreStats:
     pickup: bool = False  # short first measure, padded at the front
     repeats_removed: int = 0
     warnings: list[str] = field(default_factory=list)
+    doubts: list[dict] = field(default_factory=list)  # per measure, see `doubt`
     chords: int = 0
     chord_warnings: list[str] = field(default_factory=list)
     chords_seen: list[dict] = field(default_factory=list)  # tokens read but not accepted
@@ -33,6 +37,29 @@ class ScoreStats:
     lyrics_read: int = 0        # read in accepted verse rows
     lyric_warnings: list[str] = field(default_factory=list)
     lyrics_seen: list[dict] = field(default_factory=list)   # rows and syllables read but not used
+
+
+def doubt(measure: int, kind: str, text: str, part: int = 0, **detail) -> dict:
+    """One thing to check. `measure` is the 0-based index in its part; kinds: padded, overfull,
+    rest_chord, pickup (information, not an error), underfull (a live check, never from recognition)."""
+    return {"measure": measure, "part": part, "kind": kind, "text": text, **detail}
+
+
+NAMES = {Fraction(4): "a whole note", Fraction(3): "a dotted half", Fraction(2): "a half note", Fraction(3, 2): "a dotted quarter",
+         Fraction(1): "a quarter", Fraction(3, 4): "a dotted eighth", Fraction(1, 2): "an eighth", Fraction(1, 4): "a sixteenth",
+         Fraction(1, 8): "a thirty-second"}
+WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
+
+
+def describe(quarters: Fraction) -> str:
+    """A length in words a musician reads: 'a dotted quarter', 'five eighths', '2.5 quarters'."""
+    if quarters in NAMES:
+        return NAMES[quarters]
+    for unit, name in ((Fraction(1), "quarters"), (Fraction(1, 2), "eighths"), (Fraction(1, 4), "sixteenths")):
+        n = quarters / unit
+        if n.denominator == 1 and 2 <= n <= 12:
+            return f"{WORDS[int(n)]} {name}"
+    return f"{float(quarters):g} quarters"
 
 
 def _measure_filled(measure: ET.Element, divisions: int) -> Fraction:
@@ -81,43 +108,105 @@ def _strip_repeats(measure: ET.Element) -> int:
     return removed
 
 
+@dataclass
+class MeasureCtx:
+    index: int
+    measure: ET.Element
+    divisions: int
+    beats: int
+    beat_type: int
+
+    @property
+    def expected(self) -> Fraction:
+        return Fraction(self.beats * 4, self.beat_type) * self.divisions
+
+    @property
+    def time(self) -> str:
+        return f"{self.beats}/{self.beat_type}"
+
+    def quarters(self, divs: Fraction) -> Fraction:
+        return divs / self.divisions
+
+
+def measures(part: ET.Element) -> Iterator[MeasureCtx]:
+    """Every measure with the divisions and time signature in force (engines may split attributes)."""
+    divisions, beats, beat_type = 1, 4, 4
+    for index, measure in enumerate(part.findall("measure")):
+        for attrs in measure.findall("attributes"):
+            if (d := attrs.findtext("divisions")) is not None:
+                divisions = int(d.strip())
+            if (t := attrs.find("time")) is not None:
+                beats = int(t.findtext("beats", "4").strip())
+                beat_type = int(t.findtext("beat-type", "4").strip())
+        yield MeasureCtx(index, measure, divisions, beats, beat_type)
+
+
+def _count(stats: ScoreStats, measure: ET.Element) -> None:
+    for n in measure.findall("note"):
+        if n.find("rest") is not None:
+            stats.rests += 1
+        else:
+            stats.notes += 1
+
+
+def _check_root(root: ET.Element) -> None:
+    if root.tag != "score-partwise":
+        raise PostprocessError(f"expected score-partwise, got <{root.tag}>")
+
+
+def inspect(tree: ET.ElementTree) -> ScoreStats:
+    """Statistics and the live check of a document, without changing it: the measures that are
+    shorter or longer than their time signature become doubts of kind underfull / overfull."""
+    root = tree.getroot()
+    _check_root(root)
+    stats = ScoreStats()
+    for p, part in enumerate(root.findall("part")):
+        stats.parts += 1
+        for ctx in measures(part):
+            stats.measures += 1
+            _count(stats, ctx.measure)
+            filled = _measure_filled(ctx.measure, ctx.divisions)
+            if filled == 0 or filled == ctx.expected:
+                continue
+            if filled < ctx.expected:
+                gap = ctx.quarters(ctx.expected - filled)
+                stats.doubts.append(doubt(ctx.index, "underfull", f"shorter than {ctx.time} by {describe(gap)}", p, gap=str(gap)))
+            else:
+                excess = ctx.quarters(filled - ctx.expected)
+                stats.warnings.append(f"measure {ctx.measure.get('number')} overfull: {float(ctx.quarters(filled)):g} vs {float(ctx.quarters(ctx.expected)):g} quarters")
+                stats.doubts.append(doubt(ctx.index, "overfull", f"longer than {ctx.time} by {describe(excess)}", p, excess=str(excess)))
+    if stats.parts == 0:
+        raise PostprocessError("no <part> in the document")
+    if stats.notes == 0:
+        raise PostprocessError("the document has no notes")
+    return stats
+
+
 def postprocess(src: Path, dst: Path) -> ScoreStats:
     try:
         tree = ET.parse(src)
     except ET.ParseError as e:
         raise PostprocessError(f"engine output is not well-formed XML: {e}") from e
     root = tree.getroot()
-    if root.tag != "score-partwise":
-        raise PostprocessError(f"expected score-partwise, got <{root.tag}>")
+    _check_root(root)
 
     stats = ScoreStats()
-    for part in root.findall("part"):
+    for p, part in enumerate(root.findall("part")):
         stats.parts += 1
-        divisions = 1
-        beats, beat_type = 4, 4
-        for measure in part.findall("measure"):
+        for ctx in measures(part):
+            measure = ctx.measure
             stats.measures += 1
-            for attrs in measure.findall("attributes"):  # engines may split attributes over several blocks
-                if (d := attrs.findtext("divisions")) is not None:
-                    divisions = int(d.strip())
-                if (t := attrs.find("time")) is not None:
-                    beats = int(t.findtext("beats", "4").strip())
-                    beat_type = int(t.findtext("beat-type", "4").strip())
             stats.repeats_removed += _strip_repeats(measure)
             fixed = _fix_rest_chords(measure)
             if fixed:
                 stats.warnings.append(f"measure {measure.get('number')}: removed {fixed} rest(s) merged into a chord")
-            for n in measure.findall("note"):
-                if n.find("rest") is not None:
-                    stats.rests += 1
-                else:
-                    stats.notes += 1
-            expected = Fraction(beats * 4, beat_type) * divisions
-            filled = _measure_filled(measure, divisions)
+                stats.doubts.append(doubt(ctx.index, "rest_chord", f"a rest merged into a chord was removed ({fixed}); check the beat", p, fixed=fixed))
+            _count(stats, measure)
+            filled = _measure_filled(measure, ctx.divisions)
             if filled == 0:
                 continue  # empty measure, leave it (OSMD renders it as a whole rest)
-            if filled < expected:
-                gap = expected - filled
+            if filled < ctx.expected:
+                gap = ctx.expected - filled
                 rest = ET.Element("note")
                 ET.SubElement(rest, "rest")
                 ET.SubElement(rest, "duration").text = str(int(gap))
@@ -128,13 +217,18 @@ def postprocess(src: Path, dst: Path) -> ScoreStats:
                     measure.insert(first_note, rest)
                     measure.set("implicit", "yes")
                     stats.pickup = True
+                    stats.doubts.append(doubt(ctx.index, "pickup", f"first measure is shorter than {ctx.time} by {describe(ctx.quarters(gap))}: treated as a pickup, a rest was added at the front",
+                                              p, gap=str(ctx.quarters(gap)), info=True))
                 else:
                     measure.append(rest)
+                    stats.doubts.append(doubt(ctx.index, "padded", f"shorter than {ctx.time} by {describe(ctx.quarters(gap))}: a rest was added at the end", p, gap=str(ctx.quarters(gap))))
                 stats.padded_measures += 1
-            elif filled > expected:
+            elif filled > ctx.expected:
                 stats.warnings.append(
-                    f"measure {measure.get('number')} overfull: {float(filled / divisions):g} vs {float(expected / divisions):g} quarters"
+                    f"measure {measure.get('number')} overfull: {float(ctx.quarters(filled)):g} vs {float(ctx.quarters(ctx.expected)):g} quarters"
                 )
+                excess = ctx.quarters(filled - ctx.expected)
+                stats.doubts.append(doubt(ctx.index, "overfull", f"longer than {ctx.time} by {describe(excess)}", p, excess=str(excess)))
     if stats.parts == 0:
         raise PostprocessError("no <part> in engine output")
     if stats.notes == 0:

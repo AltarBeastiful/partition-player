@@ -1,7 +1,8 @@
 """Filesystem-backed job store and a single worker thread (ADR 0001).
 
 Layout while running: <data>/jobs/<id>/{input.<ext>, status.json, preprocessed.png, <engine>/..., score.musicxml}
-After success only {status.json, result.json, score.musicxml, thumb.jpg} are kept (about 50 KB instead of 20 MB);
+After success only {status.json, result.json, score.musicxml, thumb.jpg, lyrics.json} and the editor's files
+{original.musicxml, review.json, review.webp, layout.json} are kept (about 350 KB instead of 20 MB, ADR 0005);
 after failure the input and the engine error logs stay until `prune` drops the job.
 """
 from __future__ import annotations
@@ -24,7 +25,8 @@ log = logging.getLogger(__name__)
 
 TERMINAL = {"done", "failed"}
 MAX_NAME = 120
-KEEP_DONE = {"status.json", "result.json", "score.musicxml", "thumb.jpg", "lyrics.json"}
+KEEP_DONE = {"status.json", "result.json", "score.musicxml", "thumb.jpg", "lyrics.json",
+             "original.musicxml", "review.json", "review.webp", "layout.json"}
 KEEP_FAILED_SUFFIXES = (".error.log",)
 
 
@@ -48,6 +50,7 @@ class Job:
     name: str = ""  # user-facing title, editable; defaults to the upload's file name
     error: str | None = None
     result: dict | None = None
+    edited_at: str | None = None  # last save from the editor (ADR 0005)
 
     def to_dict(self) -> dict:
         return asdict(self)

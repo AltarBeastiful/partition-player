@@ -121,3 +121,59 @@ def test_short_first_measure_is_a_pickup(tmp_path):
     assert m1.get("implicit") == "yes"
     tags = [el.tag for el in m1]
     assert tags[:2] == ["attributes", "note"] and m1.findall("note")[0].find("rest") is not None
+
+
+UNEVEN = """<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>8</duration><type>half</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type><dot/></note>
+    </measure>
+  </part>
+</score-partwise>
+"""
+
+
+def test_doubts_name_the_measures_that_do_not_add_up(tmp_path: Path):
+    """ADR 0005: the padded and overfull measures are recorded per measure, in words."""
+    src = tmp_path / "in.musicxml"; src.write_text(UNEVEN)
+    stats = postprocess(src, tmp_path / "out.musicxml")
+    kinds = [(d["measure"], d["kind"]) for d in stats.doubts]
+    assert kinds == [(1, "padded"), (2, "overfull")]
+    assert stats.doubts[0]["text"] == "shorter than 3/4 by a dotted quarter: a rest was added at the end"
+    assert stats.doubts[1]["text"] == "longer than 3/4 by an eighth"
+    assert stats.doubts[0]["gap"] == "3/2" and stats.doubts[1]["excess"] == "1/2"
+
+
+def test_pickup_is_information_not_an_error(tmp_path: Path):
+    src = tmp_path / "in.musicxml"; src.write_text(SHORT_MEASURE)
+    stats = postprocess(src, tmp_path / "out.musicxml")
+    assert [d["kind"] for d in stats.doubts] == ["pickup"] and stats.doubts[0]["info"] is True
+    assert "shorter than 2/4 by a quarter" in stats.doubts[0]["text"]
+
+
+def test_inspect_reports_without_changing(tmp_path: Path):
+    """The live check the editor's save runs: the same measures, kinds underfull and overfull."""
+    import xml.etree.ElementTree as ET
+    from partition_player.pipeline.postprocess import describe, inspect
+    from fractions import Fraction
+
+    tree = ET.ElementTree(ET.fromstring(UNEVEN))
+    before = ET.tostring(tree.getroot())
+    stats = inspect(tree)
+    assert ET.tostring(tree.getroot()) == before
+    assert (stats.measures, stats.notes, stats.rests) == (3, 7, 0)
+    assert [(d["measure"], d["kind"]) for d in stats.doubts] == [(1, "underfull"), (2, "overfull")]
+    assert describe(Fraction(5, 2)) == "five eighths" and describe(Fraction(1, 3)) == "0.333333 quarters"

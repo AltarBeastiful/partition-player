@@ -347,3 +347,36 @@ S="--set voice_piano"
 .venv-oemer/bin/python bench/songs/run_bench.py $S --scans   # about 4 min
 .venv-oemer/bin/python bench/songs/review.py $S       # writes .../voice_piano/review.html
 ```
+
+## Doubts: where the wrong measures are (ADR 0005)
+
+Date: 2026-09-19. The editor needs to say where to look. A measure of the engine's own output that is
+shorter or longer than its time signature (what the post-processing pads or warns about) is a
+*doubt*; here it is scored against the event alignment of `bench/score.py` on the song benchmark's
+run outputs, per measure, on the pages whose measure count came back right (`bench/songs/doubts.py`).
+
+| set | measures | flagged | of which wrong | precision | wrong measures | of which flagged | recall |
+|---|---|---|---|---|---|---|---|
+| lead sheets | 1505 | 106 | 95 | 0.90 | 98 | 95 | 0.97 |
+| voice and piano | 1073 | 571 | 461 | 0.81 | 597 | 461 | 0.77 |
+
+- On the product's page three wrong measures in 1505 carry no flag. The flag costs nothing and needs
+  no model; it only has to be recorded before the padding hides it, which the pipeline now does
+  (`review.json`). The padded pickup measure is counted as flagged and wrong here (the scorer sees the
+  added rest as an extra event); the editor shows it as information.
+- Two weaker signals were measured on the lead sheets and are not used as doubts: the detected
+  barlines give the system's measure count on 277 of 302 systems (used to frame the measure on the
+  photo, with an even split as the fallback), and the segmentation net's notehead count equals the
+  transformer's note count on 256 of 302 systems.
+- The kinds of error behind the flags, over all 120 pages (`bench/score.py` alignment): on lead
+  sheets, after the padding rests, a duration a dot or a flag off (dotted half read as whole 30 times
+  over both sets, dotted quarter as half 12, eighth as quarter 9, quarter as eighth 14), a rest read
+  as a note or a note as a rest, a rest's duration; on the piano pages also extra and missing notes
+  (staff grouping), pitches two steps off (25), one step off (20), an octave off (14) and a missing
+  accidental (12). The editor's operations are these (ADR 0005, decision 4).
+
+Reproduce:
+
+```
+.venv-oemer/bin/python bench/songs/doubts.py          # needs the run outputs of run_bench.py, both sets
+```

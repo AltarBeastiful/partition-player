@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,10 +16,12 @@ from .lyrics import inject as lyrics_inject
 from .lyrics.align import place_lyrics
 from .lyrics.polish import polish
 from .engines import EngineError, get_engine
+from .layout import make_layout
 from .postprocess import PostprocessError, postprocess
-from .preprocess import preprocess, thumbnail
+from .preprocess import preprocess, review_image, thumbnail
 
 Progress = Callable[[str, str], None]  # (stage, message)
+log = logging.getLogger(__name__)
 
 
 def _engine_kwargs(settings: Settings, name: str) -> dict:
@@ -39,6 +43,11 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
         thumbnail(image, out_dir / "thumb.jpg")
     except Exception:  # noqa: BLE001  (a missing thumbnail must not fail the job)
         pass
+    review: dict | None = None
+    try:
+        review = review_image(image, out_dir / "review.webp")  # the copy the editor shows (ADR 0005)
+    except Exception:  # noqa: BLE001  (the editor works without the photo)
+        log.exception("review image failed")
 
     engines = [settings.engine] + ([settings.fallback_engine] if settings.fallback_engine != "none" else [])
     engine_xml: Path | None = None
@@ -85,7 +94,23 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
         stats.lyrics_seen = lyrics_info["seen"]
     info["stats"] = dataclasses.asdict(stats)
     (out_dir / "result.json").write_text(json.dumps(info, indent=2))
+    write_review(out_dir, info["engine"], stats, review)
     return final
+
+
+def write_review(out_dir: Path, engine: str, stats, review: dict | None) -> None:
+    """The editor's files (ADR 0005): the score as recognized, the doubts, and where each measure is
+    on the review image."""
+    final = out_dir / "score.musicxml"
+    shutil.copyfile(final, out_dir / "original.musicxml")
+    (out_dir / "review.json").write_text(json.dumps({"doubts": stats.doubts, "checked": [], "revision": 1}, indent=1))
+    geometry_file = out_dir / engine / "geometry.json"
+    if review is not None and geometry_file.exists():
+        try:
+            layout = make_layout(json.loads(geometry_file.read_text()), review, stats.measures)
+            (out_dir / "layout.json").write_text(json.dumps(layout))
+        except Exception:  # noqa: BLE001  (the strip is a convenience; the editor works without it)
+            log.exception("layout failed")
 
 
 def add_chords(engine_xml: Path, geometry_file: Path, dst: Path) -> dict | None:

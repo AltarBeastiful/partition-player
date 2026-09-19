@@ -37,3 +37,25 @@ def thumbnail(src: Path, dst: Path, max_side_px: int = 480) -> None:
         im.thumbnail((max_side_px, max_side_px), Image.LANCZOS)
         dst.parent.mkdir(parents=True, exist_ok=True)
         im.save(dst, "JPEG", quality=80, optimize=True)
+
+
+def review_image(src: Path, dst: Path, budget: int = 300_000, max_side: int = 2400) -> dict:
+    """A copy of the upload the user can check the sheet against (ADR 0005): WebP, colour, longest side
+    `max_side`, quality stepped down until the file is under `budget` bytes, then the side reduced.
+    Returns width, height and the scale from upload pixels (EXIF-oriented) to review pixels."""
+    import io
+
+    with Image.open(src) as im:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        w, h = im.size
+        for side in (max_side, 2000, 1600, 1200):
+            scale = min(1.0, side / max(w, h))
+            small = im.resize((round(w * scale), round(h * scale)), Image.LANCZOS) if scale < 1.0 else im
+            for quality in (78, 70, 62, 55, 48, 40):
+                buf = io.BytesIO()
+                small.save(buf, "WEBP", quality=quality, method=4)
+                if buf.tell() <= budget or (side == 1200 and quality == 40):
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_bytes(buf.getvalue())
+                    return {"width": small.size[0], "height": small.size[1], "scale": round(scale, 6), "bytes": buf.tell(), "quality": quality}
+    raise RuntimeError("unreachable")

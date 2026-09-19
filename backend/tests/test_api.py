@@ -47,7 +47,8 @@ def test_library_list_rename_delete(settings):
         assert job["name"] == "Anton Yvan Boris"
         assert client.get(f"/api/jobs/{job['id']}/thumb.jpg").headers["content-type"] == "image/jpeg"
         kept = sorted(p.name for p in (settings.jobs_dir / job["id"]).iterdir())
-        assert kept == ["result.json", "score.musicxml", "status.json", "thumb.jpg"]
+        assert kept == ["original.musicxml", "result.json", "review.json", "review.webp", "score.musicxml", "status.json", "thumb.jpg"]
+        assert (settings.jobs_dir / job["id"] / "review.webp").stat().st_size <= 300_000  # ADR 0005: the photo the editor shows
         assert client.get(f"/api/jobs/{job['id']}/input").status_code == 404
 
         listed = client.get("/api/jobs").json()
