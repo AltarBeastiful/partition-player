@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import JSZip from "jszip";
 import { beforeAll, describe, expect, it } from "vitest";
-import { defaultPasses, describePasses, expandForm, formFromPasses, preset, remapForm, type Pass } from "./form";
+import { defaultPasses, describePasses, expandForm, formFromPasses, parseForm, preset, remapForm, type Form, type Pass, type Section } from "./form";
 
 let OpenSheetMusicDisplay: typeof import("opensheetmusicdisplay").OpenSheetMusicDisplay;
 
@@ -92,6 +92,64 @@ describe("forms", () => {
   it("presets: once per verse, and the chorus after every verse", () => {
     expect(text(expandForm(preset("verses", printed, 3, 17), 17))).toBe("0-16 v1 | 0-16 v2 | 0-16 v3");
     expect(text(expandForm(preset("chorus", printed, 3, 17), 17))).toBe("0-8 v1 | 9-16 | 0-8 v2 | 9-16 | 0-8 v3 | 9-16");
+  });
+
+  it("folds a pass played twice in a row into one chip with a count", () => {
+    const doubled: Pass[] = [
+      { ranges: [{ from: 0, to: 8 }], verse: 1 }, { ranges: [{ from: 9, to: 16 }], verse: null }, { ranges: [{ from: 9, to: 16 }], verse: null },
+      { ranges: [{ from: 0, to: 8 }], verse: 2 }, { ranges: [{ from: 9, to: 16 }], verse: null },
+    ];
+    const form = formFromPasses(doubled, 17);
+    expect(form.passes).toEqual([
+      { section: 0, verse: 1 }, { section: 1, verse: null, times: 2 }, { section: 0, verse: 2 }, { section: 1, verse: null },
+    ]);
+    expect(describePasses(doubled, form)).toBe("Verse 1 · Chorus ×2 · Verse 2 · Chorus");
+    expect(text(expandForm(form, 17))).toBe(text(doubled)); // the fold plays exactly what it folded
+  });
+
+  it("presets build on the sections the panel already has", () => {
+    const mine: Form = { sections: [{ name: "Verse", from: 0, to: 10 }, { name: "Chorus", from: 11, to: 18 }], passes: [{ section: 0, verse: 1 }] };
+    const made = preset("chorus", printed, 2, 19, { current: mine });
+    expect(made.sections).toEqual(mine.sections); // not the half-page guess, and not the printed ones
+    expect(text(expandForm(made, 19))).toBe("0-10 v1 | 11-18 | 0-10 v2 | 11-18");
+    const twice = preset("chorus", printed, 2, 19, { current: mine, chorusTwice: true });
+    expect(describePasses(expandForm(twice, 19), twice)).toBe("Verse 1 · Chorus ×2 · Verse 2 · Chorus ×2");
+    // with nothing to build on it still invents them, as before
+    expect(text(expandForm(preset("chorus", printed, 3, 17), 17))).toBe("0-8 v1 | 9-16 | 0-8 v2 | 9-16 | 0-8 v3 | 9-16");
+  });
+
+  it("reads a form written as one line", () => {
+    const sections: Section[] = [{ name: "Verse", from: 0, to: 10 }, { name: "Chorus", from: 11, to: 18 }];
+    const anton = parseForm("V1 C×2 V2 C×2 V3 C V4 C×2 V5 C×2", sections);
+    expect(anton.error).toBeNull();
+    const form: Form = { sections, passes: anton.passes! };
+    expect(expandForm(form, 19)).toHaveLength(14);
+    expect(describePasses(expandForm(form, 19), form))
+      .toBe("Verse 1 · Chorus ×2 · Verse 2 · Chorus ×2 · Verse 3 · Chorus · Verse 4 · Chorus ×2 · Verse 5 · Chorus ×2");
+  });
+
+  it("takes the summary's own line back, dots and all", () => {
+    const sections: Section[] = [{ name: "Verse", from: 0, to: 10 }, { name: "Chorus", from: 11, to: 18 }];
+    const form: Form = { sections, passes: [{ section: 0, verse: 1 }, { section: 1, verse: null, times: 2 }] };
+    const line = describePasses(expandForm(form, 19), form);
+    expect(line).toBe("Verse 1 · Chorus ×2");
+    expect(parseForm(line, sections).passes).toEqual(form.passes);
+    expect(parseForm("verse 1 x2 · chorus", sections).passes).toEqual([{ section: 0, verse: 1, times: 2 }, { section: 1, verse: null }]);
+  });
+
+  it("refuses a line it cannot place, and says why", () => {
+    const sections: Section[] = [{ name: "Verse", from: 0, to: 10 }, { name: "Chorus", from: 11, to: 18 }, { name: "Coda", from: 18, to: 18 }];
+    expect(parseForm("V1 Bridge", sections).error).toMatch(/no section called “Bridge”/);
+    expect(parseForm("V1 C", sections).error).toMatch(/fits Chorus and Coda/);
+    expect(parseForm("", sections).error).toMatch(/Name a section/);
+    expect(parseForm("Verse×99", sections).error).toMatch(/1 to 50/);
+    expect(parseForm("V1", []).error).toMatch(/no section to play/);
+    expect(parseForm("V1 Bridge", sections).passes).toBeNull(); // nothing is applied from a bad line
+  });
+
+  it("names a section with a space when it is quoted", () => {
+    const sections: Section[] = [{ name: "Verse 2", from: 0, to: 4 }, { name: "Chorus", from: 5, to: 9 }];
+    expect(parseForm('"Verse 2" 3 · Chorus', sections).passes).toEqual([{ section: 0, verse: 3 }, { section: 1, verse: null }]);
   });
 
   it("follows its measures through a merge and a deleted edge", () => {

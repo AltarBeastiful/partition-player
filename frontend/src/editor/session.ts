@@ -40,6 +40,7 @@ export class EditorSession {
 
   private xmlCache: string | null = null;
   private undoStack: Snapshot[] = [];
+  private formRun: string | null = null; // the form field being typed in, for coalescing (plan 0007)
   private redoStack: Snapshot[] = [];
   private listeners = new Set<() => void>();
   private timer = 0;
@@ -128,9 +129,18 @@ export class EditorSession {
     this.touch();
   }
 
-  /** The way the page is played; null goes back to the automatic form. Saved with the score, not undoable. */
-  setForm(form: Form | null): void {
+  /**
+   * The way the page is played; null goes back to the automatic form. Saved with the score and
+   * undoable like any edit (plan 0007, step 1): the form already travelled in the snapshots, so
+   * leaving it out of the stack made an undo of an older note edit revert a form built after it.
+   * `coalesce` is the field being typed in ("name:2", "verse:5"): consecutive changes carrying the
+   * same key are one undo step, so a six-keystroke rename is undone once.
+   */
+  setForm(form: Form | null, coalesce?: string): void {
+    if (!coalesce || coalesce !== this.formRun) this.push();
+    this.formRun = coalesce ?? null;
     this.form = form;
+    this.message = null;
     this.touch();
   }
 
@@ -191,14 +201,20 @@ export class EditorSession {
     if (typeof result === "number") this.selected = this.measures[result]?.events[0]?.key ?? null;
     else if (result === undefined) this.selected = this.selected ? nearest(this.measures, this.selected)?.key ?? null : null;
     else this.selected = result;
-    this.undoStack.push(before);
-    if (this.undoStack.length > 200) this.undoStack.shift();
-    this.redoStack = [];
-    this.canUndo = true; this.canRedo = false;
+    this.push(before);
+    this.formRun = null;
     this.message = null;
     this.docVersion++;
     this.touch();
     return true;
+  }
+
+  /** Put the state as it is now on the undo stack. */
+  private push(snap: Snapshot = this.snapshot()): void {
+    this.undoStack.push(snap);
+    if (this.undoStack.length > 200) this.undoStack.shift();
+    this.redoStack = [];
+    this.canUndo = true; this.canRedo = false;
   }
 
   undo(): void {
@@ -220,14 +236,23 @@ export class EditorSession {
   }
 
   private restore(snap: Snapshot): void {
-    this.doc = parse(snap.xml);
+    // A form-only step leaves the document alone: no re-parse and no docVersion bump, so undoing a
+    // form change does not re-render the sheet or stop the playback (plan 0007, step 1).
+    const sameDoc = snap.xml === this.xml;
+    if (!sameDoc) {
+      this.doc = parse(snap.xml);
+      this.refresh();
+    } else {
+      this.canUndo = this.undoStack.length > 0;
+      this.canRedo = this.redoStack.length > 0;
+    }
     this.doubts = snap.doubts;
     this.checked = new Set(snap.checked);
     this.form = snap.form;
-    this.refresh();
+    this.formRun = null;
     this.selected = snap.selected ? nearest(this.measures, snap.selected)?.key ?? null : null;
     this.message = null;
-    this.docVersion++;
+    if (!sameDoc) this.docVersion++;
     this.touch();
   }
 
@@ -274,6 +299,7 @@ export class EditorSession {
     this.onStats?.(result.stats);
     this.revision = result.revision;
     this.form = null;
+    this.formRun = null;
   }
 
   dispose(): void {

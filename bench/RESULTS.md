@@ -427,3 +427,19 @@ one, which shifts every section (*Vieni sul mar*, *Home on the range*); a printe
 forward-only repeat, the refrain-first *Probier's mal*); and the third ending of *Les gens bien
 élevés*, whose single-lyric tail the rule takes for a chorus. All of these are one edit away in the
 form panel; the under-read verses are the lyrics stage's problem, not the form's.
+
+### How long the visit to the form panel is (plan 0007)
+
+"One edit away" was optimistic, so the run now measures it: the passes to add, remove or change to
+turn the automatic list into the truth, per page (`npm run bench:form`, second summary line).
+
+| pages needing the panel | median pass edits | mean | worst | also need a section the app never proposed |
+|---|---|---|---|---|
+| 39 of 60 | 5 | 7.1 | 32 | 31 |
+
+The worst page is *Chanson pour l'Auvergnat* (32 passes derived from its repeat signs against a truth
+of 3). This is what plan 0007 works on: the panel writes a pass count (`Chorus ×2`), takes the whole
+form as one line of words, and puts a section's edge on the note the user clicks, inside a measure
+when the chorus starts on an upbeat. Building Anton's fourteen passes went from about 27 interactions
+to 8, checked in the browser. The automatic form itself — the first summary line — is unchanged by
+that work.

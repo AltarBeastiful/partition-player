@@ -126,6 +126,20 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .form .chip input[type="number"] { width: 3em; }
 .form .chip.now input { color: var(--accent-ink); background: transparent; border-color: rgba(255, 255, 255, 0.4); }
 .form button.quiet { padding: 2px 6px; min-width: 0; }
+/* plan 0007: the chip a new pass lands after, the repeat count, and the form written as one line */
+.form .chip { cursor: pointer; }
+.form .chip.picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.form .chip button.times { font-variant-numeric: tabular-nums; color: var(--muted); }
+.form .chip.now button.times { color: inherit; }
+.form input.line { flex: 1 1 22em; min-width: 12em; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.form .error-text { color: var(--bad); }
+.form .chip button.times { font-variant-numeric: tabular-nums; }
+.form button.edge { color: var(--accent); border: 1px solid var(--line); border-radius: 999px; }
+/* plan 0007: the sections drawn over the measures they cover */
+.section-band { opacity: 0.55; rx: 2; }
+.section-name { font: 500 11px ui-sans-serif, system-ui, sans-serif; opacity: 0.9; }
+.band-0 { fill: #0e7490; } .band-1 { fill: #b45309; } .band-2 { fill: #4d7c0f; }
+.band-3 { fill: #7c3aed; } .band-4 { fill: #be185d; } .band-5 { fill: #0f766e; }
 .verse-layer rect.dim { fill: #fff; opacity: 0.72; }
 
 /* Edit mode: the frame around the sheet changes hue so the two kinds of click are told apart. */

@@ -189,3 +189,24 @@ def test_editor_save_revert_and_revision(settings):
         # the panel shows what the document has: the fixture score's own words, re-read on revert
         assert client.get(f"/api/jobs/{jid}/lyrics").json()["verses"][0].startswith("Lors-que nous é-tions")
         assert client.get(f"/api/jobs/{jid}").json()["edited_at"] is None
+
+        # plan 0007: a doubled pass and a section starting on an upbeat are kept, not dropped
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        rich = {"sections": [{"name": "Verse", "from": 0, "to": 10}, {"name": "Chorus", "from": 10, "to": 18, "fromOnset": 0.25}],
+                "passes": [{"section": 0, "verse": 1}, {"section": 1, "verse": None, "times": 2}]}
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": rev, "form": rich})
+        assert r.status_code == 200, r.text
+        kept = r.json()["form"]
+        assert kept["passes"][1]["times"] == 2 and kept["sections"][1]["fromOnset"] == 0.25
+        assert "fromOnset" not in kept["sections"][0] and "times" not in kept["passes"][0]
+        assert client.get(f"/api/jobs/{jid}/review").json()["form"] == kept
+        # each of the new fields is bounded, and the save is refused rather than trimmed
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        for bad_form in (
+            {"sections": [{"name": "x", "from": 0, "to": 1}], "passes": [{"section": 0, "times": 500}]},
+            {"sections": [{"name": "x", "from": 0, "to": 1, "fromOnset": 99}], "passes": []},
+            {"sections": [{"name": "x", "from": 2, "to": 2, "fromOnset": 0.5, "toOnset": 0.25}], "passes": []},
+        ):
+            assert client.put(f"/api/jobs/{jid}/score",
+                              json={"musicxml": edited, "checked": [], "revision": rev, "form": bad_form}).status_code == 422
+        assert client.get(f"/api/jobs/{jid}/review").json()["form"] == kept

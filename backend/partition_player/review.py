@@ -2,7 +2,9 @@
 
 review.json: {"doubts": [...], "checked": [measure indices], "revision": n, "form": null | {...}}. The
 form (plan 0004) is how the page is played: sections over measure ranges and passes through them,
-null when the automatic form (the repeat signs and the verses) is what plays. The document is edited in
+null when the automatic form (the repeat signs and the verses) is what plays. A pass may carry
+`times` and a section a `fromOnset` / `toOnset` beat inside its first and last measure (plan 0007);
+all three are optional and old files simply lack them. The document is edited in
 the browser and saved whole; the server validates it, recomputes the statistics, re-reads the lyric
 placements and bumps the revision. A save must name the revision it started from, so two browsers
 cannot silently overwrite each other.
@@ -41,20 +43,52 @@ def load(d: Path) -> dict:
             "form": data.get("form")}
 
 
+MAX_ONSET = 16.0   # whole notes from a measure start: far past any real measure, the browser clamps to its length
+MAX_TIMES = 50     # how often one pass may repeat itself
+
+
+def _section(sec: dict) -> dict:
+    """One section: measures, and optionally the beat inside them where it starts and ends (plan 0007)."""
+    out = {"name": str(sec.get("name", ""))[:40], "from": int(sec["from"]), "to": int(sec["to"])}
+    for edge in ("fromOnset", "toOnset"):
+        if sec.get(edge) is not None:
+            onset = float(sec[edge])
+            if not 0 <= onset <= MAX_ONSET:
+                raise InvalidDocument(f"a section {edge} of {onset} is outside a measure")
+            out[edge] = onset
+    return out
+
+
+def _pass(ps: dict) -> dict:
+    out = {"section": int(ps["section"]), "verse": None if ps.get("verse") is None else int(ps["verse"])}
+    if ps.get("times") is not None:
+        times = int(ps["times"])
+        if not 1 <= times <= MAX_TIMES:
+            raise InvalidDocument(f"a pass played {times} times is outside 1 to {MAX_TIMES}")
+        out["times"] = times
+    return out
+
+
 def validate_form(form: dict | None, measure_count: int) -> dict | None:
-    """The form as the browser sends it, checked for shape and measure bounds; None is the automatic form."""
+    """The form as the browser sends it, checked for shape and measure bounds; None is the automatic form.
+
+    Every field is copied out by name, so a field this server does not know is dropped rather than
+    stored: `times` and the two onsets (plan 0007) are listed here for that reason.
+    """
     if form is None:
         return None
     try:
-        sections = [{"name": str(sec.get("name", ""))[:40], "from": int(sec["from"]), "to": int(sec["to"])} for sec in form["sections"]]
-        passes = [{"section": int(ps["section"]), "verse": None if ps.get("verse") is None else int(ps["verse"])} for ps in form["passes"]]
+        sections = [_section(sec) for sec in form["sections"]]
+        passes = [_pass(ps) for ps in form["passes"]]
     except (KeyError, TypeError, ValueError, AttributeError) as e:
         raise InvalidDocument(f"the form is malformed: {e}") from e
-    if len(sections) > 200 or len(passes) > 1000:
+    if len(sections) > 200 or len(passes) > 1000 or sum(ps.get("times", 1) for ps in passes) > 1000:
         raise InvalidDocument("the form is too long")
     for sec in sections:
         if not 0 <= sec["from"] <= sec["to"] < measure_count:
             raise InvalidDocument(f"section {sec['name']!r} covers measures {sec['from'] + 1} to {sec['to'] + 1}, outside the score")
+        if sec["from"] == sec["to"] and sec.get("toOnset") is not None and sec["toOnset"] <= sec.get("fromOnset", 0.0):
+            raise InvalidDocument(f"section {sec['name']!r} ends before it starts")
     for ps in passes:
         if not 0 <= ps["section"] < len(sections):
             raise InvalidDocument("a pass names a section that does not exist")

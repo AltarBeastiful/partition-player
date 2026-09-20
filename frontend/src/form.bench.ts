@@ -36,6 +36,27 @@ function withRepeats(scoreXml: string, engineXml: string): Document {
 }
 
 const text = (passes: Pass[]) => passes.map((p) => `${p.ranges.map((r) => `${r.from}-${r.to}`).join("+")}${p.verse !== null ? ` v${p.verse}` : ""}`).join(" | ");
+
+/**
+ * How much hand work the page leaves: the passes to add, remove or change to turn the automatic
+ * list into the truth (plan 0007). This is the number the form panel is judged on — the exact-match
+ * column above says how often the panel is not needed at all, this one how long the visit is.
+ */
+function passEdits(a: Pass[], b: Pass[]): number {
+  const x = a.map((p) => text([p])), y = b.map((p) => text([p]));
+  const d: number[][] = Array.from({ length: x.length + 1 }, (_, i) => Array.from({ length: y.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+  for (let i = 1; i <= x.length; i++) {
+    for (let j = 1; j <= y.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1));
+    }
+  }
+  return d[x.length][y.length];
+}
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length === 0 ? 0 : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+};
 const order = (passes: Pass[]) => passes.flatMap((p) => p.ranges.flatMap((r) => Array.from({ length: r.to - r.from + 1 }, (_, i) => r.from + i))).join(",");
 
 it("scores the automatic form of every song run against the hand truth", async () => {
@@ -46,6 +67,8 @@ it("scores the automatic form of every song run against the hand truth", async (
   const runs = resolve(BENCH, "out/songs/leadsheets/run");
   const lines: string[] = [];
   let exact = 0, sameOrder = 0, sameCount = 0, n = 0, versesFound = 0, versesPrinted = 0;
+  const edits: number[] = [];
+  const newRanges: number[] = [];
   for (const name of readdirSync(runs).sort()) {
     const base = name.endsWith("_photo") ? name.slice(0, -6) : name;
     const truthPath = resolve(BENCH, `songs/leadsheets/${base}.form.json`);
@@ -73,9 +96,17 @@ it("scores the automatic form of every song run against the hand truth", async (
     const printed = Math.max(0, ...truth.map((p) => p.verse ?? 0));
     const found = Math.max(0, ...got.map((p) => p.verse ?? 0));
     versesPrinted += printed; versesFound += Math.min(found, printed);
-    lines.push(`${ok ? "ok   " : okOrder ? "order" : okCount ? "count" : "no   "} ${name}\n      app   ${text(got)}\n      truth ${text(truth)}`);
+    const edit = passEdits(got, truth);
+    edits.push(edit);
+    if (edit > 0) {
+      const has = new Set(got.map((p) => p.ranges.map((r) => `${r.from}-${r.to}`).join("+")));
+      newRanges.push(truth.filter((p) => !has.has(p.ranges.map((r) => `${r.from}-${r.to}`).join("+"))).length > 0 ? 1 : 0);
+    }
+    lines.push(`${ok ? "ok   " : okOrder ? "order" : okCount ? "count" : "no   "} ${name} (${edit} pass edit${edit === 1 ? "" : "s"} from the truth)\n      app   ${text(got)}\n      truth ${text(truth)}`);
   }
-  const summary = `pages ${n}: exact ${exact} (${(exact / n * 100).toFixed(0)} %), same measure order ${sameOrder} (${(sameOrder / n * 100).toFixed(0)} %), same pass count ${sameCount}; verses sung ${versesFound} of ${versesPrinted} printed`;
+  const work = edits.filter((e) => e > 0);
+  const hand = `pages needing the panel ${work.length}: pass edits median ${median(work)}, mean ${(work.reduce((a, b) => a + b, 0) / Math.max(1, work.length)).toFixed(1)}, worst ${Math.max(0, ...work)}; a section the app never proposed on ${newRanges.reduce((a, b) => a + b, 0)} of them`;
+  const summary = `pages ${n}: exact ${exact} (${(exact / n * 100).toFixed(0)} %), same measure order ${sameOrder} (${(sameOrder / n * 100).toFixed(0)} %), same pass count ${sameCount}; verses sung ${versesFound} of ${versesPrinted} printed\n${hand}`;
   writeFileSync(resolve(BENCH, "out/form.txt"), summary + "\n\n" + lines.join("\n") + "\n");
   console.log(summary);
 });

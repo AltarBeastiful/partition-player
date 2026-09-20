@@ -124,6 +124,82 @@ function measureBox(osmd: OpenSheetMusicDisplay, measure: number): { x: number; 
   return { x: x0, y: y0 - 1.5, w: x1 - x0, h: y1 - y0 + 3 };
 }
 
+export const SECTION_CLASS = "section-layer";
+
+/** The x of the first note at or after a beat of a measure, in units; null when there is none. */
+function onsetX(osmd: OpenSheetMusicDisplay, measure: number, onset: number): number | null {
+  let best: number | null = null;
+  let bestOnset = Infinity;
+  for (const { gn, measure: m } of graphicalNotes(osmd)) {
+    if (m !== measure) continue;
+    const at = Number(gn?.sourceNote?.ParentVoiceEntry?.Timestamp?.RealValue ?? NaN);
+    const x = gn?.PositionAndShape?.AbsolutePosition?.x;
+    if (!isFinite(at) || x === undefined || at < onset - 1e-9 || at >= bestOnset) continue;
+    bestOnset = at; best = x - 0.8; // a little room before the notehead
+  }
+  return best;
+}
+
+export function clearSections(osmd: OpenSheetMusicDisplay): void {
+  svgOf(osmd)?.querySelectorAll(`g.${SECTION_CLASS}`).forEach((g) => g.remove());
+}
+
+/**
+ * A band over the measures of every section, named at its start (plan 0007, step 5): the form is
+ * read on the page, so the sections are shown there rather than only as numbers in the panel. A
+ * section that crosses a system break gets one band per row, and an edge inside a measure is drawn
+ * at the note it falls on. Every coordinate is read at draw time — 2.x snaps staff lines to half
+ * pixels, so nothing here may be cached between renders.
+ */
+export function drawSections(osmd: OpenSheetMusicDisplay, sections: { name: string; from: number; to: number; fromOnset?: number; toOnset?: number }[]): void {
+  const svg = svgOf(osmd);
+  if (!svg) return;
+  clearSections(osmd);
+  if (sections.length === 0) return;
+  const scale = UNIT * (osmd.Zoom || 1);
+  const px = (v: number) => (v * scale).toFixed(1);
+  const layer = document.createElementNS(SVG_NS, "g");
+  layer.setAttribute("class", SECTION_CLASS);
+  sections.forEach((section, i) => {
+    // the measures of this section, grouped into the rows of the page they are drawn on
+    const rows: { x0: number; x1: number; y: number; first: boolean; last: boolean }[] = [];
+    for (let m = section.from; m <= section.to; m++) {
+      const box = measureBox(osmd, m);
+      if (!box) continue;
+      const row = rows[rows.length - 1];
+      if (row && Math.abs(row.y - box.y) < 0.5) { row.x1 = box.x + box.w; row.last = m === section.to; }
+      else rows.push({ x0: box.x, x1: box.x + box.w, y: box.y, first: m === section.from, last: m === section.to });
+    }
+    if (rows.length === 0) return;
+    if (section.fromOnset) {
+      const x = onsetX(osmd, section.from, section.fromOnset);
+      if (x !== null) rows[0].x0 = Math.max(rows[0].x0, x);
+    }
+    if (section.toOnset !== undefined) {
+      const x = onsetX(osmd, section.to, section.toOnset);
+      if (x !== null) rows[rows.length - 1].x1 = Math.min(rows[rows.length - 1].x1, x);
+    }
+    for (const [k, row] of rows.entries()) {
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("x", px(row.x0));
+      rect.setAttribute("y", px(row.y - 2.2));
+      rect.setAttribute("width", px(Math.max(0.4, row.x1 - row.x0)));
+      rect.setAttribute("height", px(1.4));
+      rect.setAttribute("class", `section-band band-${i % 6}`);
+      layer.appendChild(rect);
+      if (k === 0 && section.name) {
+        const label = document.createElementNS(SVG_NS, "text");
+        label.setAttribute("x", px(row.x0 + 0.3));
+        label.setAttribute("y", px(row.y - 2.6));
+        label.setAttribute("class", `section-name band-${i % 6}`);
+        label.textContent = section.name;
+        layer.appendChild(label);
+      }
+    }
+  });
+  svg.appendChild(layer);
+}
+
 /** Draw the doubts and the selection. Cheap; called after every render and every selection change. */
 export function drawOverlay(osmd: OpenSheetMusicDisplay, places: Place[], selected: EventKey | null): void {
   const svg = svgOf(osmd);
@@ -228,7 +304,8 @@ export function keepOverlay(host: HTMLElement, draw: () => void): () => void {
   const observer = new MutationObserver((records) => {
     if (records.every((r) => [...r.addedNodes, ...r.removedNodes].every((n) => {
       const c = (n as Element).classList;
-      return c?.contains(LAYER_CLASS) || c?.contains("note-names");
+      // the layers this module draws itself, or drawing one would ask for another draw for ever
+      return c?.contains(LAYER_CLASS) || c?.contains(SECTION_CLASS) || c?.contains("verse-layer") || c?.contains("note-names");
     }))) return;
     window.clearTimeout(timer);
     timer = window.setTimeout(draw, 120);

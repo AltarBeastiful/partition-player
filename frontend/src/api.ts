@@ -91,10 +91,13 @@ export interface Doubt { measure: number; part?: number; kind: string; text: str
 export interface LayoutMeasure { index: number; x0: number; x1: number }
 export interface LayoutSystem { index: number; x0: number; x1: number; top: number; bottom: number; unit: number; staves: { top: number; bottom: number }[]; measures: LayoutMeasure[] }
 export interface Layout { width: number; height: number; systems: LayoutSystem[] }
-export interface FormSection { name: string; from: number; to: number }
-export interface FormPass { section: number; verse: number | null }
-/** How the page is played (plan 0004): null is the automatic form from the repeat signs and the verses. */
-export interface Form { sections: FormSection[]; passes: FormPass[] }
+/**
+ * How the page is played (plan 0004): null is the automatic form from the repeat signs and the
+ * verses. The shape is the one `form.ts` works in and the one the server stores; it was declared
+ * twice until a `times` added on one side went missing on the other (plan 0007).
+ */
+import type { Form } from "./form";
+export type { Form, FormPass, Section as FormSection } from "./form";
 export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null }
 export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
 

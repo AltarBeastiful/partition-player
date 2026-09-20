@@ -13,7 +13,7 @@
  */
 import * as Tone from "tone";
 import { accompaniment, collectChords, type ChordSymbol } from "./chords";
-import type { Pass } from "./form";
+import { samePrefix, type Pass } from "./form";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 
 export type PlaybackState = "stopped" | "playing" | "paused";
@@ -22,9 +22,97 @@ export interface LoopRange { from: number; to: number } // 1-based printed measu
 export type Track = "melody" | "accompaniment";
 /** A note of a preview: time and length in whole notes from the start of the excerpt (plan 0005). */
 export interface PreviewNote { time: number; midi: number; length: number }
-interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number } // whole notes
-interface PrintedStep { time: number; measure: number; notes: { midi: number; length: number }[] }
-interface Step { time: number; printed: number; measure: number; pass: number } // on the unrolled timeline
+export interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number } // whole notes
+export interface PrintedStep { time: number; measure: number; notes: { midi: number; length: number }[] }
+export interface Step { time: number; printed: number; measure: number; pass: number } // on the unrolled timeline
+export interface AccompPulse { at: number; midi: number; length: number; velocity: number } // `at` from the measure start
+
+/** The page in printed order: what the passes are laid out from. */
+export interface PrintedScore {
+  printed: PrintedStep[];
+  measureStart: number[];
+  measureDuration: number[];
+  accompByMeasure: AccompPulse[][];
+  measureCount: number;
+}
+
+/**
+ * One stretch of one printed measure as it is played, in timeline order: where its beat 0 would
+ * fall (`origin`, which is before the slice when the measure is entered on an upbeat) and which
+ * part of it is actually played, in whole notes from the measure's start. A whole measure is
+ * `from: 0, to: its duration`. Recorded rather than recomputed, because subtracting a step's
+ * in-measure offset cannot tell a sliced measure from a whole one (plan 0007, step 5).
+ */
+export interface Slice { measure: number; pass: number; origin: number; from: number; to: number }
+
+/** The unrolled timeline: the notes to sound, the steps to follow, the slices, and how long it is. */
+export interface Timeline { events: NoteEvent[]; steps: Step[]; slices: Slice[]; total: number }
+
+/**
+ * The passes laid end to end on one timeline (plan 0004; extracted whole and pure in plan 0007,
+ * step 2, so that the arithmetic can be tested without Tone or a rendered sheet — and so that the
+ * measure slice of step 5 has one place to live).
+ */
+export function layPasses(score: PrintedScore, passes: Pass[]): Timeline {
+  const events: NoteEvent[] = [];
+  const steps: Step[] = [];
+  const slices: Slice[] = [];
+  const EPS = 1e-9;
+  let t = 0;
+  let last = 0;
+  passes.forEach((pass, pi) => {
+    for (const r of pass.ranges) {
+      const first = Math.max(0, r.from), lastMeasure = Math.min(r.to, score.measureCount - 1);
+      for (let m = first; m <= lastMeasure; m++) {
+        const duration = score.measureDuration[m];
+        // the part of this measure that is played: the whole of it, unless the range enters or
+        // leaves it on a beat of its own
+        const from = m === r.from ? Math.max(0, Math.min(r.fromOnset ?? 0, duration)) : 0;
+        const to = m === r.to && r.toOnset !== undefined ? Math.max(from, Math.min(r.toOnset, duration)) : duration;
+        if (to - from <= EPS) continue; // a slice with nothing in it is not played at all
+        // Inside a range the measures run on, so a note longer than its measure keeps ringing as it
+        // always has; it is cut only where the section is left early.
+        const cut = m === r.to && r.toOnset !== undefined ? to : Infinity;
+        const origin = t - from;
+        slices.push({ measure: m, pass: pi, origin, from, to });
+        const start = score.measureStart[m];
+        score.printed.forEach((step, si) => {
+          if (step.measure !== m) return;
+          const at = step.time - start;                    // the step's beat within the measure
+          const time = origin + at;
+          if (at >= from - EPS && at < to - EPS) {
+            steps.push({ time, printed: si, measure: m, pass: pi });
+            for (const n of step.notes) {
+              const length = Math.min(n.length, cut - at);  // a note is cut where the section is left
+              events.push({ time, midi: n.midi, length, track: "melody", velocity: 0.9 });
+              last = Math.max(last, time + length);
+            }
+            return;
+          }
+          // a note begun before this slice but still sounding into it is heard from the edge
+          if (at < from - EPS) {
+            for (const n of step.notes) {
+              if (at + n.length <= from + EPS) continue;
+              const length = Math.min(at + n.length, cut) - from;
+              events.push({ time: t, midi: n.midi, length, track: "melody", velocity: 0.9 });
+              last = Math.max(last, t + length);
+            }
+          }
+        });
+        for (const a of score.accompByMeasure[m]) {
+          if (a.at + a.length <= from + EPS || a.at >= to - EPS) continue;
+          const at = Math.max(a.at, from);
+          const length = Math.min(a.at + a.length, cut) - at;
+          events.push({ time: origin + at, midi: a.midi, length, track: "accompaniment", velocity: a.velocity });
+          last = Math.max(last, origin + at + length);
+        }
+        t += to - from;
+      }
+    }
+  });
+  events.sort((a, b) => a.time - b.time);
+  return { events, steps, slices, total: Math.max(t, last) };
+}
 
 const SAMPLES: Record<string, string> = {
   A1: "A1.mp3", C2: "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3", A2: "A2.mp3", C3: "C3.mp3", "D#3": "Ds3.mp3",
@@ -51,6 +139,7 @@ export class Player {
   // unrolled timeline
   private events: NoteEvent[] = [];
   private steps: Step[] = [];
+  private slices: Slice[] = [];
   private totalWholeNotes = 0;
 
   private sampler: Tone.Sampler | null = null;
@@ -81,6 +170,7 @@ export class Player {
   }
 
   /** Read the sheet again after it was edited and re-rendered; the piano stays loaded. */
+  /** A new document: collect it again and stop, as the re-render has already moved the sheet. */
   rebuild(passes?: Pass[]): void {
     this.stop();
     this.collect();
@@ -144,31 +234,61 @@ export class Player {
     return null;
   }
 
-  /** Lay the passes end to end. Stops playback, since every position changes meaning. */
-  setPasses(passes: Pass[]): void {
-    this.stop();
+  /**
+   * Lay the passes end to end. `keep` carries the playback across the rebuild (plan 0007, step 2):
+   * the position stays where it is when the new list plays the same up to it, and otherwise moves to
+   * the start of the first pass that differs — the one the user has just edited — so that building a
+   * form by ear does not stop the music. Without it every position changes meaning and playback
+   * stops, which is what a new document or a new score needs.
+   */
+  setPasses(passes: Pass[], keep = false): void {
+    const state = this.state;
+    const carry = keep && this.steps.length > 0 && state !== "stopped";
+    const from = carry ? this.here() : 0;
+    const fromPass = carry ? this.steps[this.stepIndex(from)]?.pass ?? 0 : 0;
+    // Stopped, the cursor is not a position but a note the user is looking at — and often the one
+    // the next edit is about, since the panel's edges are taken from it. Keep it on that note.
+    const note = keep && state === "stopped" ? this.at() : null;
+    const common = samePrefix(this.passes, passes);
+    if (keep) { this.clearTimers(); this.endPreview(false); this.sampler?.releaseAll(); } else { this.stop(); }
     this.passes = passes;
-    this.events = [];
-    this.steps = [];
-    let t = 0;
-    let last = 0;
-    passes.forEach((pass, pi) => {
-      for (const r of pass.ranges) {
-        for (let m = Math.max(0, r.from); m <= Math.min(r.to, this.measureCount - 1); m++) {
-          const start = this.measureStart[m];
-          this.printed.forEach((step, si) => {
-            if (step.measure !== m) return;
-            const time = t + (step.time - start);
-            this.steps.push({ time, printed: si, measure: m, pass: pi });
-            for (const n of step.notes) { this.events.push({ time, midi: n.midi, length: n.length, track: "melody", velocity: 0.9 }); last = Math.max(last, time + n.length); }
-          });
-          for (const a of this.accompByMeasure[m]) { this.events.push({ time: t + a.at, midi: a.midi, length: a.length, track: "accompaniment", velocity: a.velocity }); last = Math.max(last, t + a.at + a.length); }
-          t += this.measureDuration[m];
-        }
-      }
-    });
-    this.events.sort((a, b) => a.time - b.time);
-    this.totalWholeNotes = Math.max(t, last);
+    const line = layPasses({
+      printed: this.printed, measureStart: this.measureStart, measureDuration: this.measureDuration,
+      accompByMeasure: this.accompByMeasure, measureCount: this.measureCount,
+    }, passes);
+    this.events = line.events;
+    this.steps = line.steps;
+    this.slices = line.slices;
+    this.totalWholeNotes = line.total;
+    if (!keep) return;
+    // where to stand on the new timeline
+    const target = carry && fromPass < common
+      ? Math.min(from, this.totalWholeNotes)
+      : (note && this.positionOf(note.measure, note.onset)) ?? this.passStart(Math.min(common, Math.max(0, passes.length - 1)));
+    if (this.winEnd <= 0 || this.winEnd > this.totalWholeNotes || target < this.winStart || target >= this.winEnd) {
+      this.winStart = 0;
+      this.winEnd = this.totalWholeNotes;
+    }
+    this.nextEvent = this.events.findIndex((e) => e.time >= target);
+    if (this.nextEvent === -1) this.nextEvent = this.events.length;
+    if (state === "playing") {
+      this.anchorCtx = Tone.now();
+      this.anchorPos = target;
+      this.moveTo(this.stepIndex(target));
+      this.lastTick = 0;
+      this.timer = window.setInterval(() => { this.tick(); this.followCursor(); }, TICK_MS);
+    } else if (state === "paused") {
+      this.pausedAt = target;
+      this.moveTo(this.stepIndex(target));
+    } else {
+      this.pending = target > 0 ? target : null;
+      this.moveTo(this.stepIndex(target));
+    }
+  }
+
+  /** The start of a pass on the unrolled timeline. */
+  private passStart(pass: number): number {
+    return this.steps.find((s) => s.pass >= pass)?.time ?? 0;
   }
 
   /** The unrolled step at a position, searched from the start. */
@@ -178,14 +298,9 @@ export class Player {
     return s;
   }
 
-  /** The start times of every occurrence of a printed measure on the timeline. */
-  private occurrences(measure: number): number[] {
-    const out: number[] = [];
-    let lastPass = -1;
-    for (const s of this.steps) {
-      if (s.measure === measure && s.pass !== lastPass) { out.push(s.time - (this.printed[s.printed].time - this.measureStart[measure])); lastPass = s.pass; }
-    }
-    return out;
+  /** Every stretch of a printed measure on the timeline, in the order it is played. */
+  private occurrences(measure: number): Slice[] {
+    return this.slices.filter((s) => s.measure === measure);
   }
 
   /** Where playback stands now, whatever the state. */
@@ -196,27 +311,41 @@ export class Player {
   }
 
   /**
-   * The playback position of a note: in the occurrence of its measure that holds the current
-   * position, else the next one, else the first; plus the onset. Null when the measure is not played.
+   * The playback position of a note: in the stretch of its measure that holds the current position,
+   * else the next one, else the first; plus the onset. A measure split between two sections has a
+   * stretch each, and only the one the note falls in can play it (plan 0007, step 5). Null when the
+   * measure, or that beat of it, is never played.
    */
   positionOf(measure: number, onset: number): number | null {
-    const occ = this.occurrences(measure);
+    const occ = this.occurrences(measure).filter((s) => onset >= s.from - 1e-9 && onset < s.to - 1e-9);
     if (occ.length === 0) return null;
     const now = this.here();
-    const duration = this.measureDuration[measure] ?? 0;
-    const start = occ.find((s) => s + duration > now + 1e-9) ?? occ[0];
-    const at = start + onset;
+    const slice = occ.find((s) => s.origin + s.to > now + 1e-9) ?? occ[0];
+    const at = slice.origin + onset;
     return this.steps[this.stepIndex(at)]?.time ?? at;
   }
 
-  /** Playback window [start, end) on the timeline for a range of printed measures. */
+  /** Where the cursor stands, as a printed measure and a beat in it; null when nothing is laid out. */
+  at(): { measure: number; onset: number } | null {
+    const step = this.steps[this.stepIndex(this.here())];
+    if (!step) return null;
+    return { measure: step.measure, onset: this.printed[step.printed].time - this.measureStart[step.measure] };
+  }
+
+  /**
+   * Playback window [start, end) on the timeline for a range of printed measures: from the first
+   * stretch of the first measure, to the end of the first stretch of the last measure after it. A
+   * loop is still asked for in whole measures, so a sliced measure is looped from where it is
+   * entered to where it is left (plan 0007, step 5).
+   */
   private window(range: LoopRange | null): { start: number; end: number } {
     if (!range || this.steps.length === 0) return { start: 0, end: this.totalWholeNotes };
     const from = Math.max(1, Math.min(range.from, this.measureCount)) - 1;
     const to = Math.max(from, Math.min(range.to, this.measureCount) - 1);
-    const start = this.occurrences(from)[0] ?? 0;
-    const endStart = this.occurrences(to).find((s) => s >= start - 1e-9);
-    const end = endStart === undefined ? this.totalWholeNotes : endStart + this.measureDuration[to];
+    const first = this.occurrences(from)[0];
+    const start = first ? first.origin + first.from : 0;
+    const endSlice = this.occurrences(to).find((s) => s.origin + s.from >= start - 1e-9);
+    const end = endSlice === undefined ? this.totalWholeNotes : endSlice.origin + endSlice.to;
     return { start, end: Math.min(end, this.totalWholeNotes) };
   }
 

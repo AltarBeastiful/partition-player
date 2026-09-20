@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { reviewImageUrl, type Form, type Layout } from "../api";
-import { describePasses, formFromPasses, preset, type Pass } from "../form";
+import { MAX_TIMES, describePasses, formFromPasses, parseForm, preset, type FormPass, type Pass } from "../form";
 import { TYPES, hasRepeat, tiedToNext, typeOf, type DurationType } from "../score/edit";
 import { find, type Event, type EventKey } from "../score/xml";
 import type { Commands } from "../editor/commands";
@@ -257,20 +257,75 @@ export function Lightbox({ jobId, onClose }: { jobId: string; onClose: () => voi
  * How the page is played (plan 0004): the pass list in words, and a panel to change it: presets,
  * sections over measure ranges, the passes in order with a verse each.
  */
-export function FormPanel({ form, passes, printed, measureCount, verseCount, currentPass, onChange }: {
-  form: Form | null; passes: Pass[]; printed: Pass[]; measureCount: number; verseCount: number; currentPass: number | null; onChange: (form: Form | null) => void;
+/** A section that begins and ends on the same beat of the same measure would never be heard. */
+function nothingIn(s: { from: number; to: number; fromOnset?: number; toOnset?: number }): boolean {
+  return s.from === s.to && s.toOnset !== undefined && s.toOnset <= (s.fromOnset ?? 0) + 1e-9;
+}
+
+/** An onset in whole notes as the beat a musician counts: quarters, or eighths in a compound meter. */
+function beatOf(onset: number, unit = 0.25): number {
+  const beat = onset / unit + 1;
+  return Math.round(beat * 10) / 10;
+}
+
+export function FormPanel({ form, passes, printed, measureCount, verseCount, currentPass, onChange, cursorAt, onOpen }: {
+  form: Form | null; passes: Pass[]; printed: Pass[]; measureCount: number; verseCount: number; currentPass: number | null;
+  onChange: (form: Form | null, coalesce?: string) => void;
+  /** Where the cursor stands on the sheet, for the edges taken from it (plan 0007, step 5). */
+  cursorAt?: () => { measure: number; onset: number; beat: number } | null;
+  /** The page draws the section bands while the panel is open. */
+  onOpen?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [verses, setVerses] = useState(verseCount);
+  const [twice, setTwice] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null);  // the chip a new pass lands after
+  const [line, setLine] = useState<string | null>(null);          // the form being typed as one line
+  const [lineError, setLineError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);          // what just happened, in one line
   useEffect(() => { setVerses(verseCount); }, [verseCount]);
   const summary = describePasses(passes, form);
   const current = form ?? formFromPasses(printed, measureCount);
-  const update = (f: Form) => onChange(f);
-  const setSection = (i: number, patch: Partial<Form["sections"][number]>) => {
+  // `coalesce` names the field being typed in, so a run of keystrokes in it is one undo step
+  // (plan 0007, step 1); a structural change passes nothing and gets its own step.
+  const update = (f: Form, coalesce?: string) => onChange(f, coalesce);
+  const setSection = (i: number, patch: Partial<Form["sections"][number]>, coalesce?: string) => {
     const sections = current.sections.map((s, k) => (k === i ? { ...s, ...patch } : s));
     const sec = sections[i];
     sec.from = Math.max(0, Math.min(sec.from, measureCount - 1)); sec.to = Math.max(sec.from, Math.min(sec.to, measureCount - 1));
+    if (nothingIn(sec)) { delete sec.fromOnset; delete sec.toOnset; } // the beats no longer make sense
+    update({ ...current, sections }, coalesce);
+  };
+  /** "Starts here" / "ends here": the boundary is the note the cursor stands on, which belongs to
+   *  the section that starts there. Clicking a note leads the playback to it, so the cursor is
+   *  already where the ear says the chorus begins (plan 0007, step 5). */
+  const edgeFromCursor = (i: number, edge: "from" | "to") => {
+    const at = cursorAt?.();
+    if (!at) { setNote("Click the note on the sheet where it starts, then press this again."); return; }
+    const s = current.sections[i];
+    const sections = current.sections.map((sec, k) => {
+      if (k !== i) return sec;
+      const next = { ...sec };
+      if (edge === "from") { next.from = at.measure; if (at.onset > 0) next.fromOnset = at.onset; else delete next.fromOnset; }
+      else { next.to = at.measure; if (at.onset > 0) next.toOnset = at.onset; else delete next.toOnset; }
+      return next;
+    });
+    const sec = sections[i];
+    if (sec.to < sec.from || nothingIn(sec)) {
+      setNote(`“${s.name || "This section"}” would end where it starts, with nothing in it. Put the cursor on the other edge first.`);
+      return;
+    }
+    setNote(`“${sec.name || "Section"}” ${edge === "from" ? "starts" : "ends"} at measure ${at.measure + 1}${at.onset > 0 ? `, beat ${at.beat}` : ""}.`);
     update({ ...current, sections });
+  };
+  const clearEdge = (i: number, edge: "from" | "to") => {
+    setNote(null);
+    update({ ...current, sections: current.sections.map((sec, k) => {
+      if (k !== i) return sec;
+      const next = { ...sec };
+      if (edge === "from") delete next.fromOnset; else delete next.toOnset;
+      return next;
+    }) });
   };
   const removeSection = (i: number) => {
     update({ sections: current.sections.filter((_, k) => k !== i), passes: current.passes.filter((p) => p.section !== i).map((p) => ({ ...p, section: p.section > i ? p.section - 1 : p.section })) });
@@ -280,27 +335,67 @@ export function FormPanel({ form, passes, printed, measureCount, verseCount, cur
     const from = last ? Math.min(last.to + 1, measureCount - 1) : 0;
     update({ ...current, sections: [...current.sections, { name: "Part " + String.fromCharCode(65 + current.sections.length), from, to: measureCount - 1 }] });
   };
+  // A new pass lands after the chip last touched, not always at the end (plan 0007, step 4).
+  const insertAt = (ps: FormPass[], pass: FormPass): FormPass[] => {
+    const at = selected === null || selected >= ps.length ? ps.length : selected + 1;
+    const out = [...ps.slice(0, at), pass, ...ps.slice(at)];
+    setSelected(at);
+    return out;
+  };
   const addPass = (section: number) => {
     const before = current.passes.filter((p) => p.section === section);
     const verse = before.some((p) => p.verse !== null) ? Math.max(...before.map((p) => p.verse ?? 0)) + 1 : null;
-    update({ ...current, passes: [...current.passes, { section, verse }] });
+    update({ ...current, passes: insertAt(current.passes, { section, verse }) });
   };
-  const setPass = (i: number, verse: number | null) => update({ ...current, passes: current.passes.map((p, k) => (k === i ? { ...p, verse } : p)) });
-  const removePass = (i: number) => update({ ...current, passes: current.passes.filter((_, k) => k !== i) });
+  const duplicatePass = (i: number) => {
+    const p = current.passes[i];
+    if (!p) return;
+    setSelected(i);
+    update({ ...current, passes: [...current.passes.slice(0, i + 1), { ...p }, ...current.passes.slice(i + 1)] });
+    setSelected(i + 1);
+  };
+  const setPass = (i: number, verse: number | null) => update({ ...current, passes: current.passes.map((p, k) => (k === i ? { ...p, verse } : p)) }, `verse:${i}`);
+  /** The chip's count goes 1, 2, 3, 4 and back to 1: a misclick is three clicks from undone, and a
+   *  count past four (rare) is written in the line below (plan 0007, step 5). */
+  const setTimes = (i: number, times: number) => {
+    const n = times > 4 ? 1 : Math.max(1, Math.min(times, MAX_TIMES));
+    update({ ...current, passes: current.passes.map((p, k) => (k === i ? (n === 1 ? { section: p.section, verse: p.verse } : { ...p, times: n }) : p)) });
+  };
+  const removePass = (i: number) => {
+    setSelected(i > 0 ? i - 1 : null);
+    update({ ...current, passes: current.passes.filter((_, k) => k !== i) });
+  };
   const movePass = (i: number, d: -1 | 1) => {
     const ps = [...current.passes]; const j = i + d; if (j < 0 || j >= ps.length) return;
-    [ps[i], ps[j]] = [ps[j], ps[i]]; update({ ...current, passes: ps });
+    [ps[i], ps[j]] = [ps[j], ps[i]]; setSelected(j); update({ ...current, passes: ps });
   };
+  /** 1, 2, 3 … over the passes that carry a verse, in the order they are played. */
+  const numberVerses = () => {
+    let n = 0;
+    update({ ...current, passes: current.passes.map((p) => (p.verse === null ? p : { ...p, verse: ++n })) });
+  };
+  const applyLine = () => {
+    if (line === null) return;
+    const read = parseForm(line, current.sections);
+    if (read.passes === null) { setLineError(read.error); return; }
+    setLineError(null);
+    setLine(null);
+    update({ ...current, passes: read.passes });
+  };
+  // `currentPass` counts the passes as they are played; a chip can stand for several (plan 0007).
+  const chipOfPlayed: number[] = [];
+  current.passes.forEach((p, i) => { for (let k = 0; k < Math.max(1, p.times ?? 1); k++) chipOfPlayed.push(i); });
+  const nowChip = currentPass === null ? null : chipOfPlayed[currentPass] ?? null;
   return (
     <div className={"form" + (open ? " open" : "")}>
       <div className="form-head">
         <span className="label">Played as</span>
         <span className="summary">
-          {summary.split(" · ").map((label, i) => passes.length > 0 && <span key={i} className={"pass" + (i === currentPass ? " now" : "")}>{label}</span>)}
+          {summary.split(" · ").map((label, i) => passes.length > 0 && <span key={i} className={"pass" + (i === nowChip ? " now" : "")}>{label}</span>)}
           {passes.length === 0 && <span className="muted">once through</span>}
         </span>
         <span className="muted">{form ? "your form" : "from the repeat signs and the verses"}</span>
-        <button className="quiet" onClick={() => setOpen(!open)}>{open ? "Close" : "Change"}</button>
+        <button className="quiet" onClick={() => { setOpen(!open); onOpen?.(!open); }}>{open ? "Close" : "Change"}</button>
       </div>
       {open && (
         <div className="form-body">
@@ -308,17 +403,22 @@ export function FormPanel({ form, passes, printed, measureCount, verseCount, cur
             <span className="label">Presets</span>
             <button onClick={() => onChange(null)} disabled={!form}>Automatic</button>
             <button onClick={() => update(preset("printed", printed, verses, measureCount))}>As printed</button>
-            <button onClick={() => update(preset("verses", printed, verses, measureCount))}>Once per verse</button>
-            <button onClick={() => update(preset("chorus", printed, verses, measureCount))}>Chorus after every verse</button>
+            <button onClick={() => update(preset("verses", printed, verses, measureCount, { current: form }))}>Once per verse</button>
+            <button onClick={() => update(preset("chorus", printed, verses, measureCount, { current: form, chorusTwice: twice }))}>Chorus after every verse</button>
             <label>verses <input type="number" min={1} max={20} value={verses} onChange={(e) => setVerses(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} /></label>
+            <label title="The chorus sung twice each time round"><input type="checkbox" checked={twice} onChange={(e) => setTwice(e.target.checked)} /> chorus twice</label>
           </div>
           <div className="row sections">
             <span className="label">Sections</span>
             {current.sections.map((s, i) => (
               <span key={i} className="section">
-                <input className="name" value={s.name} maxLength={20} onChange={(e) => setSection(i, { name: e.target.value })} aria-label="Section name" />
-                <label>m. <input type="number" min={1} max={measureCount} value={s.from + 1} onChange={(e) => setSection(i, { from: Number(e.target.value) - 1 })} /></label>
-                <label>to <input type="number" min={1} max={measureCount} value={s.to + 1} onChange={(e) => setSection(i, { to: Number(e.target.value) - 1 })} /></label>
+                <input className="name" value={s.name} maxLength={20} onChange={(e) => setSection(i, { name: e.target.value }, `name:${i}`)} aria-label="Section name" />
+                <label>m. <input type="number" min={1} max={measureCount} value={s.from + 1} onChange={(e) => setSection(i, { from: Number(e.target.value) - 1 }, `from:${i}`)} /></label>
+                {s.fromOnset ? <button className="quiet edge" onClick={() => clearEdge(i, "from")} title="From the start of the measure instead">beat {beatOf(s.fromOnset)} ×</button> : null}
+                <label>to <input type="number" min={1} max={measureCount} value={s.to + 1} onChange={(e) => setSection(i, { to: Number(e.target.value) - 1 }, `to:${i}`)} /></label>
+                {s.toOnset !== undefined ? <button className="quiet edge" onClick={() => clearEdge(i, "to")} title="To the end of the measure instead">before beat {beatOf(s.toOnset)} ×</button> : null}
+                <button className="quiet" onClick={() => edgeFromCursor(i, "from")} title="Starts at the note the cursor is on — click that note on the sheet first">starts here</button>
+                <button className="quiet" onClick={() => edgeFromCursor(i, "to")} title="Ends just before the note the cursor is on — that note belongs to the next section">ends here</button>
                 <button className="quiet" onClick={() => addPass(i)} title="Add a pass through this section">+ pass</button>
                 <button className="quiet" onClick={() => removeSection(i)} title="Remove this section" disabled={current.sections.length < 2}>×</button>
               </span>
@@ -328,18 +428,37 @@ export function FormPanel({ form, passes, printed, measureCount, verseCount, cur
           <div className="row passes">
             <span className="label">Order</span>
             {current.passes.map((p, i) => (
-              <span key={i} className={"chip" + (i === currentPass ? " now" : "")}>
+              <span key={i} className={"chip" + (i === nowChip ? " now" : "") + (i === selected ? " picked" : "")} onClick={() => setSelected(i)}>
                 <button className="quiet" onClick={() => movePass(i, -1)} disabled={i === 0} title="Earlier">‹</button>
                 {current.sections[p.section]?.name || "?"}
                 <input type="number" min={1} max={20} placeholder="–" value={p.verse ?? ""} title="The verse sung on this pass; empty for none"
                   onChange={(e) => setPass(i, e.target.value === "" ? null : Math.max(1, Math.min(20, Number(e.target.value))))} />
+                <button className="quiet times" onClick={() => setTimes(i, (p.times ?? 1) + 1)} onContextMenu={(e) => { e.preventDefault(); setTimes(i, (p.times ?? 1) - 1); }}
+                  title="How often this section is played here: click for once more, and after four times it goes back to once">×{p.times ?? 1}</button>
+                <button className="quiet" onClick={() => duplicatePass(i)} title="One more pass through this section, here">+</button>
                 <button className="quiet" onClick={() => movePass(i, 1)} disabled={i === current.passes.length - 1} title="Later">›</button>
                 <button className="quiet" onClick={() => removePass(i)} title="Remove this pass">×</button>
               </span>
             ))}
             {current.passes.length === 0 && <span className="muted">no pass: nothing plays. Add one with "+ pass" on a section.</span>}
+            {current.passes.some((p) => p.verse !== null) && <button className="quiet" onClick={numberVerses}>number the verses</button>}
           </div>
-          <div className="muted">A pass plays its section once; the verse number says which words are sung, the others are dimmed while it plays. Measure numbers are the printed ones.</div>
+          <div className="row">
+            <span className="label">In words</span>
+            <input className="line" value={line ?? summary} spellCheck={false} aria-label="The form as one line"
+              placeholder="Verse 1 · Chorus ×2 · Verse 2"
+              onChange={(e) => { setLine(e.target.value); setLineError(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") applyLine(); if (e.key === "Escape") { setLine(null); setLineError(null); } }} />
+            <button onClick={applyLine} disabled={line === null}>Use it</button>
+            {line !== null && <button className="quiet" onClick={() => { setLine(null); setLineError(null); }}>Cancel</button>}
+          </div>
+          {lineError && <div className="row error-text">{lineError}</div>}
+          {note && !lineError && <div className="row muted">{note}</div>}
+          <div className="muted">
+            A pass plays its section once; ×2 plays it twice over. The verse number says which words are sung, the others are
+            dimmed while it plays. Measure numbers are the printed ones. The line above names the sections in the order they
+            are sung — a section's first letters are enough — and it cannot make a new section.
+          </div>
         </div>
       )}
     </div>

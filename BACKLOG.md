@@ -56,6 +56,11 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Falling-notes / piano-roll view
 - Web MIDI output to a connected digital piano, MIDI file download
 - Practice tools: mute one hand (loop and tempo done)
-- Form of a song, next steps (plan 0004 done to step 3): voltas are never read by the engine (8 of 30 songs) and must be entered by hand; verse rows are under-read on 6 of 25 songs (the lyrics stage); a volta editor (endings on a measure) and D.C./Fine/Coda words are not in the editor; multi-page songs
+- Form of a song, next steps (plan 0004 done to step 3; plan 0007 done: pass counts, the form as one
+  line, section bands, beat-precise edges, the undo and playback fixes): voltas are never read by the
+  engine (8 of 30 songs) and must be entered by hand; verse rows are under-read on 6 of 25 songs (the
+  lyrics stage); a volta editor (endings on a measure) and D.C./Fine/Coda words are not in the editor;
+  looping one pass rather than a measure range; a verse of words that covers one section instead of
+  the whole page; multi-page songs
 - Handwritten score support
 - User accounts and saved score library

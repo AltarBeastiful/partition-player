@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
-import { defaultPasses, expandForm, versesByMeasure, type Pass } from "../form";
+import { defaultPasses, expandForm, formFromPasses, samePasses, versesByMeasure, type Pass } from "../form";
 import { clearVerses, dimVerses } from "../verses";
 import { commands, shortcut } from "../editor/commands";
 import { EditorSession } from "../editor/session";
-import { drawOverlay, hitTest, keepOverlay, rectOf } from "../editor/sheet";
+import { clearSections, drawOverlay, drawSections, hitTest, keepOverlay, rectOf } from "../editor/sheet";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
 import type { EventKey } from "../score/xml";
@@ -63,6 +63,9 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const [verseCount, setVerseCount] = useState(1);
   const [currentPass, setCurrentPass] = useState<number | null>(null);
   const lastForm = useRef<Form | null | undefined>(undefined);
+  const playing = useRef<Pass[]>([]);   // the list the player holds, to tell a rename from a real change
+  const [showSections, setShowSections] = useState(false); // the bands, while the form panel is open
+  const clicked = useRef<{ measure: number; onset: number } | null>(null); // the note last clicked on the sheet
   const verseRef = useRef<number | null>(null);
 
   const subscribe = useCallback((fn: () => void) => (session ? session.subscribe(fn) : () => {}), [session]);
@@ -100,6 +103,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         const auto = defaultPasses(osmd);
         const played = s.form ? expandForm(s.form, player.measureCount) : auto;
         player.setPasses(played);
+        playing.current = played;
         lastForm.current = s.form;
         setPrinted(auto); setPasses(played);
         setVerseCount(Math.max(1, ...versesByMeasure(osmd).flat()));
@@ -139,7 +143,10 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     if (!osmd || !session) return;
     drawOverlay(osmd, session.places(), session.selected);
     if (verseRef.current !== null) dimVerses(osmd, verseRef.current); else clearVerses(osmd);
-  }, [session]);
+    // plan 0007: the sections over the measures they cover, while the panel that edits them is open
+    if (showSections) drawSections(osmd, (session.form ?? formFromPasses(printed, measureCount)).sections);
+    else clearSections(osmd);
+  }, [session, showSections, printed, measureCount]);
 
   // The document changed (an edit, undo, redo): render it again and read the events again.
   useEffect(() => {
@@ -157,6 +164,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         const auto = defaultPasses(osmd);
         const played = session.form ? expandForm(session.form, player.measureCount) : auto;
         player.setPasses(played);
+        playing.current = played;
         // The re-render stopped the playback: put it back on the edited note, so Space replays it.
         if (session.selected) {
           const at = player.positionOf(session.selected.measure, session.selected.onset);
@@ -185,7 +193,11 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     if (loading || !session || !player || lastForm.current === session.form) return;
     lastForm.current = session.form;
     const played = session.form ? expandForm(session.form, player.measureCount) : printed;
-    player.setPasses(played);
+    // A rename or a recoloured chip leaves the played list alone: rebuilding it would stop the
+    // sound and reset the cursor for nothing (plan 0007, step 1).
+    if (samePasses(played, playing.current)) return;
+    playing.current = played;
+    player.setPasses(played, true); // keep the music going: the form is built by ear (plan 0007)
     setPasses(played);
   }, [session, session?.version, loading, printed]);
 
@@ -262,6 +274,9 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     if (!osmd || !session) return;
     const key = hitTest(osmd, e.clientX, e.clientY);
     if (editing) session.select(key);
+    // the note last put a finger on: what the form panel's edges are taken from, since an edge the
+    // panel has just applied can leave that note out of the form and so off the playback (plan 0007)
+    if (key) clicked.current = { measure: key.measure, onset: key.onset };
     if (!key || !player) return;
     const at = player.positionOf(key.measure, key.onset);
     if (at !== null) player.seek(at);
@@ -392,7 +407,13 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
       )}
       {session && !loading && (
         <FormPanel form={session.form} passes={passes} printed={printed} measureCount={measureCount} verseCount={verseCount} currentPass={currentPass}
-          onChange={(f) => session.setForm(f)} />
+          onChange={(f, coalesce) => session.setForm(f, coalesce)}
+          onOpen={setShowSections}
+          cursorAt={() => {
+            const at = clicked.current ?? playerRef.current?.at() ?? null;
+            if (!at) return null;
+            return { ...at, beat: at.onset / 0.25 + 1 };
+          }} />
       )}
       {session && showPhoto && editing && session.layout && (
         <PrintedStrip jobId={job.id} layout={session.layout} measure={session.selected?.measure ?? null} onOpen={() => setLightbox(true)} />

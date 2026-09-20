@@ -195,11 +195,38 @@ being played highlighted.
 - **The words of the pass.** While verse 3 plays, the other rows of words are dimmed; a note with a
   single row (the chorus) keeps it.
 - **Your form.** *Change* opens the panel: presets (*As printed*, *Once per verse*, *Chorus after
-  every verse*, with the verse count), sections over printed measure ranges, and the passes in
-  order, each with the verse it sings. It is saved with the score under the same revision as the
-  notes, follows the measures when one is split, merged, inserted or deleted, and *Automatic* puts
-  the derived form back. In edit mode the Measure group has two repeat-sign toggles, so a sign the
-  engine missed can be put on the page.
+  every verse*, with the verse count and a *chorus twice* box), sections over printed measure ranges,
+  and the passes in order, each with the verse it sings. A preset builds on the sections already
+  there rather than replacing them. It is saved with the score under the same revision as the notes,
+  follows the measures when one is split, merged, inserted or deleted, and *Automatic* puts the
+  derived form back. In edit mode the Measure group has two repeat-sign toggles, so a sign the engine
+  missed can be put on the page.
+- **A pass played several times.** The chip's `×1` counts up on a click and back to once after four:
+  a chorus sung twice each time round is one chip, `Chorus ×2`, not two.
+- **The form in words.** The summary line is also an input: `V1 C×2 V2 C×2 V3 C V4 C×2 V5 C×2` is a
+  whole song (a section's first letters are enough, quotes for a name with a space in it). It orders
+  the sections that exist; it cannot make a new one, and nothing is applied until the line parses.
+- **Sections on the sheet.** While the panel is open a coloured band runs over the measures of each
+  section, named at its start, so a boundary is seen rather than counted. *Starts here* and *ends
+  here* put a section's edge on the note last clicked — including inside a measure, for a chorus that
+  begins on an upbeat: in *Anton, Yvan, Boris et moi* the chorus starts on beat 2 of measure 11, and
+  every repeat of it then begins on that "An-", not on the downbeat after it.
+- **Worked example — *Anton, Yvan, Boris et moi*, as it is sung** (five verses, the chorus twice
+  between them except between verses 3 and 4, and twice again at the end; the chorus starts on the
+  upbeat at the end of measure 11). On the score page, seven actions:
+  1. *Change* on the "Played as" bar.
+  2. Set *verses* to `5` and tick *chorus twice*.
+  3. *Chorus after every verse* — two sections and the ten passes at once, the measures still guessed.
+  4. In *In words*, type `V1 C×2 V2 C×2 V3 C V4 C×2 V5 C×2` and press Enter — the chorus between
+     verses 3 and 4 is sung once.
+  5. Click the "An-" note on the sheet (measure 11, beat 2: the first note of "Anton").
+  6. *starts here* on the Chorus row, then *ends here* on the Verse row — both read that one note, so
+     the verse ends on "…tourterelles." and every chorus begins on its upbeat.
+  7. Check it by ear: Play. The "Played as" line reads
+     `Verse 1 · Chorus ×2 · Verse 2 · Chorus ×2 · Verse 3 · Chorus · Verse 4 · Chorus ×2 · Verse 5 · Chorus ×2`.
+- **Undo.** Changing the form is an ordinary undo step (a run of keystrokes in one field is one
+  step), and the music does not stop while the form is edited: the playback carries over when the
+  new list plays the same up to it, and otherwise moves to the pass just changed.
 - **Playback on the unrolled timeline.** A click on a note plays the occurrence of its measure
   that holds the current position, else the next one; the loop range runs from the first occurrence
   of its first measure to the following occurrence of its last; the accompaniment follows the passes.
