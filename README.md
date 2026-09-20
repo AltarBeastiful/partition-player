@@ -228,8 +228,10 @@ being played highlighted.
   step), and the music does not stop while the form is edited: the playback carries over when the
   new list plays the same up to it, and otherwise moves to the pass just changed.
 - **Playback on the unrolled timeline.** A click on a note plays the occurrence of its measure
-  that holds the current position, else the next one; the loop range runs from the first occurrence
-  of its first measure to the following occurrence of its last; the accompaniment follows the passes.
+  that holds the current position, else the next one; the accompaniment follows the passes. The
+  measure range runs to the end of the form when its last measure is the last of the page (so Play
+  plays the whole song, every verse and every chorus), and stops at the first stretch of that
+  measure when the range is narrowed, which is what practising a passage asks for.
 
 ## Score library
 

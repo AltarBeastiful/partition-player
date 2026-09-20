@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { samePrefix, type Pass } from "./form";
-import { layPasses, type PrintedScore } from "./player";
+import { layPasses, windowOf, type PrintedScore } from "./player";
 
 /** Four 4/4 measures, one whole note a measure (C4, D4, E4, F4), a chord on the downbeat of each. */
 function score(): PrintedScore {
@@ -127,6 +127,38 @@ describe("layPasses with a section that starts or ends inside a measure (plan 00
     const past = { ranges: [{ from: 0, to: 1, fromOnset: 9 }], verse: null };
     const { steps } = layPasses(anton(), [past]); // the whole of measure 1 is skipped, measure 2 plays
     expect(steps.map((s) => s.measure)).toEqual([1]);
+  });
+});
+
+describe("windowOf: what Play actually plays", () => {
+  // the page sung verse, chorus, verse, chorus — the shape the form panel makes easy
+  const form = [pass(0, 1, 1), pass(2, 3), pass(0, 1, 2), pass(2, 3)];
+  const line = () => layPasses(score(), form);
+
+  it("plays the whole form when the range covers the page", () => {
+    const { slices, total } = line();
+    expect(total).toBe(8);
+    expect(windowOf(slices, { from: 1, to: 4 }, 4, total)).toEqual({ start: 0, end: 8 });
+  });
+
+  it("plays to the end of the form from a measure in the middle", () => {
+    const { slices, total } = line();
+    expect(windowOf(slices, { from: 3, to: 4 }, 4, total)).toEqual({ start: 2, end: 8 }); // "play from here"
+  });
+
+  it("stops at the first stretch of a narrowed end, for practising a passage", () => {
+    const { slices, total } = line();
+    expect(windowOf(slices, { from: 1, to: 2 }, 4, total)).toEqual({ start: 0, end: 2 });
+  });
+
+  it("takes a sliced measure from where its section is entered to where it is left", () => {
+    const sliced = layPasses(score(), [{ ranges: [{ from: 0, to: 1, fromOnset: 0.5 }], verse: null }]);
+    expect(windowOf(sliced.slices, { from: 1, to: 4 }, 4, sliced.total)).toEqual({ start: 0, end: 1.5 });
+  });
+
+  it("gives the whole timeline when there is no range at all", () => {
+    const { slices, total } = line();
+    expect(windowOf(slices, null, 4, total)).toEqual({ start: 0, end: 8 });
   });
 });
 

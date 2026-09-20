@@ -45,6 +45,30 @@ export interface PrintedScore {
  */
 export interface Slice { measure: number; pass: number; origin: number; from: number; to: number }
 
+/**
+ * Playback window [start, end) on the timeline for a range of printed measures.
+ *
+ * The range is given in printed measures and always applies, with or without the loop. A range that
+ * runs to the last measure of the page means "to the end of the form": everything after the first
+ * pass is played too. Only a range whose end is narrowed stops at the first stretch of that measure,
+ * which is what practising a passage asks for. Before this, "measures 1 to 19" of a page sung
+ * verse, chorus, verse, chorus stopped at the end of the first chorus — the page played once and
+ * the rest of the form never came (plan 0007, the form panel made this easy to hit).
+ *
+ * A sliced measure is entered and left where its section says (plan 0007, step 5).
+ */
+export function windowOf(slices: Slice[], range: LoopRange | null, measureCount: number, total: number): { start: number; end: number } {
+  if (!range || slices.length === 0) return { start: 0, end: total };
+  const from = Math.max(1, Math.min(range.from, measureCount)) - 1;
+  const to = Math.max(from, Math.min(range.to, measureCount) - 1);
+  const first = slices.find((s) => s.measure === from);
+  const start = first ? first.origin + first.from : 0;
+  if (to >= measureCount - 1) return { start, end: total };
+  const endSlice = slices.find((s) => s.measure === to && s.origin + s.from >= start - 1e-9);
+  const end = endSlice === undefined ? total : endSlice.origin + endSlice.to;
+  return { start, end: Math.min(end, total) };
+}
+
 /** The unrolled timeline: the notes to sound, the steps to follow, the slices, and how long it is. */
 export interface Timeline { events: NoteEvent[]; steps: Step[]; slices: Slice[]; total: number }
 
@@ -332,21 +356,8 @@ export class Player {
     return { measure: step.measure, onset: this.printed[step.printed].time - this.measureStart[step.measure] };
   }
 
-  /**
-   * Playback window [start, end) on the timeline for a range of printed measures: from the first
-   * stretch of the first measure, to the end of the first stretch of the last measure after it. A
-   * loop is still asked for in whole measures, so a sliced measure is looped from where it is
-   * entered to where it is left (plan 0007, step 5).
-   */
   private window(range: LoopRange | null): { start: number; end: number } {
-    if (!range || this.steps.length === 0) return { start: 0, end: this.totalWholeNotes };
-    const from = Math.max(1, Math.min(range.from, this.measureCount)) - 1;
-    const to = Math.max(from, Math.min(range.to, this.measureCount) - 1);
-    const first = this.occurrences(from)[0];
-    const start = first ? first.origin + first.from : 0;
-    const endSlice = this.occurrences(to).find((s) => s.origin + s.from >= start - 1e-9);
-    const end = endSlice === undefined ? this.totalWholeNotes : endSlice.origin + endSlice.to;
-    return { start, end: Math.min(end, this.totalWholeNotes) };
+    return windowOf(this.slices, range, this.measureCount, this.totalWholeNotes);
   }
 
   private secondsPerWhole(): number {
