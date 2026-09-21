@@ -135,6 +135,15 @@ Recognition is not perfect, so the score page says where to look and lets you fi
   counted in the review bar ("4 places to check", previous, next, mark checked), and explained in
   words ("shorter than 3/4 by an eighth: a rest was added at the end"). A measure you edit counts
   as checked; the live check keeps flagging any measure that still does not add up.
+- **How sure we are.** That flag is arithmetic, so it is blind to anything that changes no duration:
+  a wrong pitch, a notehead too many inside a chord. A second, independent reading of the same print
+  exists and used to be thrown away — the noteheads the segmentation stage finds, kept now in
+  `evidence.json` — and where the two readings disagree the measure is marked at the quieter level
+  **check**: a broken amber outline, no fill, and the disagreement in words. It is deliberately hard
+  to earn. One reader disagreeing is worth nothing on its own; a stacked notehead off the staff grid,
+  a page that is monophonic everywhere else, or a measure whose boundaries had to be estimated all
+  argue against the doubt and silence it. There is no quieter level than `check`, because a mark
+  allowed to be wrong is a mark that cries wolf (plan 0008, and `bench/RESULTS.md`, "How sure").
 - **The photo.** A copy of the upload is kept at 2400 px on its longest side and under 300 KB
   (`review.webp`), with the position of every measure on it (`layout.json`, from the driver's
   staff geometry and barlines). With **Photo** on, the strip of the print the selected measure was

@@ -84,10 +84,14 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .editor-layer rect.place.doubt { fill: rgba(245, 158, 11, 0.16); stroke: rgba(217, 119, 6, 0.8); }
 .editor-layer rect.place.info { fill: rgba(56, 189, 248, 0.10); stroke: rgba(14, 116, 144, 0.35); }
 .editor-layer rect.place.checked { fill: rgba(34, 197, 94, 0.08); stroke: rgba(22, 163, 74, 0.45); stroke-dasharray: 4 3; }
+/* plan 0008: a measure that adds up but where a second reading of the print disagrees. Same amber
+   family as a doubt, no fill and a broken outline, so it reads as "worth a look", not "wrong". */
+.editor-layer rect.place.check { fill: none; stroke: rgba(217, 119, 6, 0.55); stroke-dasharray: 3 3; }
 .editor-layer rect.selected-measure { fill: none; stroke: #0e7490; stroke-width: 1.5; }
 .editor-layer rect.selected-note { fill: rgba(14, 116, 144, 0.28); stroke: #0e7490; stroke-width: 1.2; }
 .editor-layer text.badge { font: 700 11px system-ui, sans-serif; fill: #b45309; }
 .editor-layer text.badge.info { fill: #0e7490; }
+.editor-layer text.badge.quiet { fill: rgba(180, 83, 9, 0.6); font-weight: 400; }
 
 .review { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 .review .ok { color: var(--ok); }

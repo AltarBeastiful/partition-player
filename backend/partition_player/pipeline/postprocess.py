@@ -41,8 +41,13 @@ class ScoreStats:
 
 def doubt(measure: int, kind: str, text: str, part: int = 0, **detail) -> dict:
     """One thing to check. `measure` is the 0-based index in its part; kinds: padded, overfull,
-    rest_chord, pickup (information, not an error), underfull (a live check, never from recognition)."""
-    return {"measure": measure, "part": part, "kind": kind, "text": text, **detail}
+    rest_chord, pickup (information, not an error), underfull (a live check, never from recognition).
+
+    The level (plan 0008) says how sure we are that something is wrong: `wrong` for these, because a
+    measure that does not add up cannot be right, `info` for what is only worth knowing. The rating
+    of a second reading adds `check` from `evidence.py`; there is deliberately no quieter level."""
+    return {"measure": measure, "part": part, "kind": kind, "text": text,
+            "level": "info" if detail.get("info") else "wrong", **detail}
 
 
 NAMES = {Fraction(4): "a whole note", Fraction(3): "a dotted half", Fraction(2): "a half note", Fraction(3, 2): "a dotted quarter",

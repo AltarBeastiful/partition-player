@@ -33,7 +33,8 @@ The script ends with `free -m` and `docker stats` so the memory picture is in fr
   PocketBase win contention.
 - Disk: the image is about 1.5 GB (models included). A finished score keeps `score.musicxml`,
   `original.musicxml`, `review.webp` (the photo at 2400 px, under 300 KB, ADR 0005), `thumb.jpg` and
-  four small JSON files (about 350 KB in all, so 500 scores are under 200 MB); the full-size photo
+  five small JSON files (about 350 KB in all, so 500 scores are under 200 MB) — the fifth is
+  `evidence.json`, what the pixel stage read, about 3 KB on a lead sheet (plan 0008); the full-size photo
   and the engine's intermediate files are deleted as soon as the job ends. Failed jobs keep their photo and
   logs for `PP_JOB_TTL_DAYS` (7) and are then removed. `PP_MAX_SCORES` (500) drops the oldest
   scores beyond that count. Old images are pruned on each deploy.

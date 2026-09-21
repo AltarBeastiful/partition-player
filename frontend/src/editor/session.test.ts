@@ -36,6 +36,39 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("how sure a place is (plan 0008)", () => {
+  const withDoubts = (doubts: ReviewState["doubts"]) => new EditorSession("t", GROUND_TRUTH, { ...review, doubts });
+
+  it("takes the level the pipeline wrote", () => {
+    const s = withDoubts([
+      { measure: 0, kind: "overfull", text: "longer", level: "wrong" },
+      { measure: 1, kind: "heads_more", text: "5 noteheads were detected here, the score has 4", level: "check" },
+      { measure: 2, kind: "pickup", text: "a pickup", level: "info", info: true },
+    ]);
+    expect(s.places().map((p) => [p.measure, p.level])).toEqual([[0, "wrong"], [1, "check"], [2, "info"]]);
+    expect(s.places()[1].info).toBe(false);   // a check is still a place to look at
+    s.dispose();
+  });
+
+  it("reads a doubt saved before levels existed", () => {
+    const s = withDoubts([
+      { measure: 0, kind: "overfull", text: "longer" },
+      { measure: 1, kind: "pickup", text: "a pickup", info: true },
+    ]);
+    expect(s.places().map((p) => p.level)).toEqual(["wrong", "info"]);
+    s.dispose();
+  });
+
+  it("lets the louder of two doubts on one measure decide", () => {
+    const s = withDoubts([
+      { measure: 3, kind: "heads_more", text: "a second reading disagrees", level: "check" },
+      { measure: 3, kind: "overfull", text: "longer", level: "wrong" },
+    ]);
+    expect(s.places()[0].level).toBe("wrong");
+    s.dispose();
+  });
+});
+
 describe("the form in the undo timeline", () => {
   it("keeps a form built after a note edit when that edit is undone", () => {
     const clean = session.xml;

@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 TERMINAL = {"done", "failed"}
 MAX_NAME = 120
 KEEP_DONE = {"status.json", "result.json", "score.musicxml", "thumb.jpg", "lyrics.json",
-             "original.musicxml", "review.json", "review.webp", "layout.json"}
+             "original.musicxml", "review.json", "review.webp", "layout.json", "evidence.json"}
 KEEP_FAILED_SUFFIXES = (".error.log",)
 
 

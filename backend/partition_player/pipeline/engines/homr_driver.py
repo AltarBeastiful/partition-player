@@ -277,7 +277,11 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
             staves.append({
                 "index": n, "system": i, "voice": v, "unit": unit, "min_x": float(staff.min_x), "max_x": float(staff.max_x),
                 "top_y": float(staff.min_y), "bottom_y": float(staff.max_y),
-                "noteheads": sorted([float(nt.center[0]), float(nt.center[1])] for nt in staff.get_notes()),
+                # x, y, the notehead's height in pixels, and the staff position the detector read
+                # (half interlines above the staff's reference line): the pixel stage's own reading
+                # of this note, kept so a doubt can be rated rather than raised (plan 0008).
+                "noteheads": sorted([float(nt.center[0]), float(nt.center[1]),
+                                     round(float(nt.box.size[1]), 2), int(nt.position)] for nt in staff.get_notes()),
                 "band": band_file.name, "band_x0": x0, "band_top_units": LYRICS_TOP_UNITS, "band_bottom_units": bottom_units, "unit_px": unit_px,
                 "words": [{"text": w.text, "confidence": round(w.confidence, 3),
                            "x_left": x0 + w.x_left / chain.k, "x_right": x0 + w.x_right / chain.k,

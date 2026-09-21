@@ -174,7 +174,7 @@ def place_lyrics(tree: ET.ElementTree, geometry: dict) -> LyricsResult:
     for st in staves:
         if st["voice"] >= len(parts) or st["system"] >= len(systems):
             continue
-        heads_x = [x for x, _ in st["noteheads"]]
+        heads_x = [x for x, *_ in st["noteheads"]]
         note_range = (min(heads_x), max(heads_x)) if len(heads_x) >= 2 else None
         bottom = st.get("band_bottom_units", 12.0)
         chord_zone = bottom - CHORD_ZONE_UNITS if bottom < 11.9 else None   # a next staff cut the band short
@@ -197,7 +197,7 @@ def place_lyrics(tree: ET.ElementTree, geometry: dict) -> LyricsResult:
         system = systems[st["system"]]
         if st["system"] >= len(runs):
             continue
-        onsets = onsets_for_system(dict(system, min_x=st["min_x"], max_x=st["max_x"]), [x for x, _ in st["noteheads"]], infos, runs[st["system"]], result.warnings)
+        onsets = onsets_for_system(dict(system, min_x=st["min_x"], max_x=st["max_x"]), [x for x, *_ in st["noteheads"]], infos, runs[st["system"]], result.warnings)
         if not onsets:
             continue
         unit = system["unit"]

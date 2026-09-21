@@ -1,9 +1,32 @@
 # Plan 0008: How sure we are — rating a doubt instead of raising one
 
-Status 2026-09-21: in progress. Written 2026-09-20 with three levels; cut to two on the user's
-call — `hint` is gone, because a level that is allowed to be wrong is a level that cries wolf, and
-the worked example below is exactly a case where the one disagreeing source was wrong. A place where
-only one source speaks is now **silent**.
+Status 2026-09-21: done. Written 2026-09-20 with three levels; cut to two on the user's call —
+`hint` is gone, because a level that is allowed to be wrong is a level that cries wolf, and the
+worked example below is exactly a case where the one disagreeing source was wrong. A place where
+only one source speaks is now silent.
+
+Built and calibrated. Backend 83 tests, frontend 71, the whole pipeline run end to end on the page
+the plan is named after: `evidence.json` written, **zero doubts**, the blot on measure 8 found and
+silenced. Checked in the browser at 1280×800 with one doubt of each level injected: `info` blue and
+filled, `check` a broken amber outline with no fill and a faint badge, `wrong` solid amber — and the
+review bar counts the two loud ones, not the information.
+
+Three things the benchmark changed, none of which the tests could have (step 4 is in
+`bench/RESULTS.md`, "How sure"):
+
+1. **The first rule was circular.** Demoting on "the measure adds up" made the rating speak only
+   where the arithmetic flag already speaks — 48 of 48 marks on measures that were flagged anyway,
+   which is the one thing the plan exists not to do. A head stacked on an existing stem adds no
+   duration, so a sound measure is no evidence about it; the demotion now applies only to a note
+   gained or lost in sequence.
+2. **The position source does not work and is gone.** See the last bullet of the results section:
+   2 wrong in 36, then 0 in 8 with the detector's own dewarped position, at three normalisations.
+   Measuring it properly needed a benchmark re-run with a patched driver, which is why the driver
+   now records the position and the size of every notehead.
+3. **On lead sheets the feature is silent, and that is the right answer** — the raw sources are worth
+   0.05 to 0.14 there, and only 3 wrong measures in 1505 are invisible to the arithmetic anyway. It
+   earns its place on the voice-and-piano pages: 68 marks at 0.78 precision, 14 wrong measures the
+   arithmetic cannot see, and not one mark on a page that came back right.
 
 ## The problem
 
@@ -64,7 +87,7 @@ is to **rate** them, and to say no more than the rating deserves.
 | 2 | notehead count, segmentation vs transformer | `geometry.json` (`homr_driver.py:280`) vs the MusicXML | a system today; a measure with the barlines; a **note** with the x | compare two arrays |
 | 3 | notehead shape | `avg_head`, the median notehead height (`homr_driver.py:70`) | a note | compare to the median |
 | 4 | barline count vs measures | already a warning string under the sheet | a system | promote to evidence |
-| 5 | lyric alignment | the ordered DP of ADR 0004 | a note | count syllables against note positions |
+| 5 | ~~lyric alignment~~ | the ordered DP of ADR 0004 | a note | **not independent** — `lyrics.json` carries syllables already assigned to `(measure, onset)` by the DP, i.e. onto the transformer's own notes, so its count agrees with the transformer by construction. Only the raw OCR word boxes would be a second reader, and they are not kept. Dropped. |
 | 6 | the transformer's own confidence | **discarded**: `decoder_inference.py` takes `argmax` over the per-head logits and keeps only the token (`homr/transformer/utils.py` even defines a `softmax` nothing calls) | a note, continuous | capture the logits inside the vendored decode loop |
 
 1–5 are comparisons of arrays the pipeline already builds. Only 6 needs new code inside homr, which
@@ -82,23 +105,34 @@ is why it comes last.
 
    - **`wrong`** — the measure does not add up. We do not think the output may be wrong, we know it
      cannot be right. This is today's flag, unchanged, and keeps today's presentation.
-   - **`check`** — **two or more independent sources** disagree with what was emitted at the same
-     place, and no demotion applies.
-   - **nothing** — anything less. One source disagreeing on its own is not enough to spend the
-     user's attention on.
+   - **`check`** — the evidence against the reading, net of what supports it, reaches **2**.
+   - **nothing** — anything less.
+
+   Counted as follows, per place:
+
+   | | |
+   |---|---|
+   | **+1** | each independent reader that disagrees with what was emitted |
+   | **+1** | the disagreement is of a *strong* kind: a stacked notehead that **is** on the staff grid, on a page that already has chords; or the mirror of it, the score stacking notes on a stem the print does not show stacked |
+   | **−1** | each demotion that applies (below) |
+
+   There is only one independent reader today — the segmentation stage — so without the strong-kind
+   bonus nothing could ever reach 2, and the feature would be vacuous. That is the honest shape of
+   it: the rule is "one reader, but only when it disagrees *loudly* and nothing argues back", until
+   source 6 gives a genuine second opinion.
 
    There is deliberately no third, quieter level. A mark that is allowed to be wrong still costs a
    look, and the page that prompted this plan is precisely a page where the single disagreeing source
    was the one in error. **Anton measure 8 will show nothing at all**, and that is the correct
    outcome: we read it right, and nothing else on the page supported the doubt.
 
-   The cost of this choice, stated plainly: a real error that only one source can see will pass in
-   silence. Step 4 measures how many of those there are; if it is a large number, the answer is a
-   better source (step 6), not a quieter level.
+   The cost of this choice, stated plainly: a real error that only one source can see *quietly* will
+   pass in silence. Step 4 measures how many of those there are; if it is a large number, the answer
+   is a better source (step 6), not a quieter level.
 
 3. **Agreement demotes to silence.** A source that agrees is evidence *for* the reading, and a place
    where the rest of the page agrees is weaker than the same disagreement on a page that is falling
-   apart. Three demotions to start with, all of which apply to Anton measure 8:
+   apart. Four demotions to start with, three of which apply to Anton measure 8:
 
    - the measure adds up (source 1 silent) — the reading is at least arithmetically whole;
    - a **chord proposed on a page that is monophonic everywhere else**. Anton is 55 notes, 55 lyric
@@ -109,6 +143,14 @@ is why it comes last.
      interlines apart — 1.64 steps, neither a second nor a third. Ink does not land on the grid;
      engraving does. This is the cheapest discriminator of the three and it should be measured
      first.
+   - **the measure's boundaries were estimated.** When a system's detected barlines do not match its
+     measure count, `layout.measure_bounds` splits the system evenly, so which measure a notehead
+     falls in is a guess and a count per measure cannot be trusted. Anton's measure 8 is in exactly
+     such a system — one barline was not detected, which the pipeline already records as a chord
+     warning.
+
+   Worked out for Anton measure 8: one reader disagrees (+1), the kind is not strong — the stack is
+   off-grid (+0), and three demotions apply (−3). Net −2, comfortably silent.
 
    Be honest about what source 5 can and cannot do: the syllable count constrains the number of note
    *positions*, not the number of noteheads. It tells a **missing or extra note in sequence** from a
@@ -170,7 +212,7 @@ Per source and per combination: how often it fires, and of those, how often the 
 
 3. **The rating function.** Pure, in the backend, taking the sources and returning
    `level` + `text` + `sources`, where the level is `wrong`, `check`, or nothing at all. Tested on
-   hand-written cases, including all three demotions and the two-source case that does fire.
+   hand-written cases, including all four demotions, the strong-kind bonus, and Anton measure 8.
 
 4. **Calibrate.** Re-run the song benchmark with the evidence kept, add `bench/songs/rating.py`
    alongside `doubts.py`, and write a table per source and per level into `bench/RESULTS.md`. Set the
@@ -181,10 +223,12 @@ Per source and per combination: how often it fires, and of those, how often the 
    nothing anywhere, the count still 0 — and on a page the benchmark says has a corroborated error,
    the mark on the right notehead.
 
-6. **The transformer's confidence, only if step 4 says a gap remains.** Capture the per-head softmax
-   of the chosen token in `ScoreDecoder.generate`, carry it out through the driver as a per-note
-   number, add it as a source, recalibrate. It is last because it is the only step that reaches into
-   vendored code, and because 1–5 may already be enough.
+6. **The transformer's confidence — not done, and step 4 says it is what remains.** Capture the
+   per-head softmax of the chosen token in `ScoreDecoder.generate`, carry it out through the driver
+   as a per-note number, add it as a source, recalibrate. It is the only genuinely second opinion
+   left: the pixel stage is one reader, and 122 wrong measures on the piano pages plus 3 on the
+   lead sheets are still silent. It is last because it is the only step that reaches into vendored
+   code.
 
 ## Rejected
 

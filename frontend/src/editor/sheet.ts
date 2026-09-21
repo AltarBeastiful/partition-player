@@ -213,7 +213,10 @@ export function drawOverlay(osmd: OpenSheetMusicDisplay, places: Place[], select
   for (const place of places) {
     const box = measureBox(osmd, place.measure);
     if (!box) continue;
-    const level = place.info && !place.live ? "info" : place.checked && !place.live ? "checked" : "doubt";
+    const level = place.info && !place.live ? "info"
+      : place.checked && !place.live ? "checked"
+      : place.level === "check" ? "check"   // a second reading disagrees; the measure still adds up
+      : "doubt";
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("x", px(box.x)); rect.setAttribute("y", px(box.y));
     rect.setAttribute("width", px(box.w)); rect.setAttribute("height", px(box.h));
@@ -228,6 +231,7 @@ export function drawOverlay(osmd: OpenSheetMusicDisplay, places: Place[], select
       badge.setAttribute("x", px(box.x + 0.4)); badge.setAttribute("y", px(box.y - 0.4));
       badge.setAttribute("class", `badge ${level}`);
       badge.textContent = level === "info" ? "i" : "?";
+      if (level === "check") badge.classList.add("quiet");
       layer.appendChild(badge);
     }
   }

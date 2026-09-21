@@ -16,6 +16,7 @@ from .lyrics import inject as lyrics_inject
 from .lyrics.align import place_lyrics
 from .lyrics.polish import polish
 from .engines import EngineError, get_engine
+from .evidence import collect, compare, emitted_by_measure, rate
 from .layout import make_layout
 from .postprocess import PostprocessError, postprocess
 from .preprocess import preprocess, review_image, thumbnail
@@ -92,6 +93,8 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
         stats.lyrics_read = lyrics_info["read"]
         stats.lyric_warnings = lyrics_info["warnings"]
         stats.lyrics_seen = lyrics_info["seen"]
+    notify("postprocessing", "Weighing what the pixel stage saw")
+    add_evidence(out_dir, out_dir / info["engine"] / "geometry.json", final, stats)
     info["stats"] = dataclasses.asdict(stats)
     (out_dir / "result.json").write_text(json.dumps(info, indent=2))
     write_review(out_dir, info["engine"], stats, review)
@@ -111,6 +114,29 @@ def write_review(out_dir: Path, engine: str, stats, review: dict | None) -> None
             (out_dir / "layout.json").write_text(json.dumps(layout))
         except Exception:  # noqa: BLE001  (the strip is a convenience; the editor works without it)
             log.exception("layout failed")
+
+
+ARITHMETIC = {"padded", "overfull", "underfull", "empty"}
+
+
+def add_evidence(out_dir: Path, geometry_file: Path, final: Path, stats) -> None:
+    """The pixel stage's own reading, kept as `evidence.json`, and the places where it disagrees
+    loudly enough with the score to be worth saying (plan 0008). Never changes a note; a failure
+    here costs the rating, not the score."""
+    if not geometry_file.exists():
+        return
+    try:
+        part = ET.parse(final).getroot().find("part")
+        if part is None:
+            return
+        emitted = emitted_by_measure(part)
+        evidence = collect(json.loads(geometry_file.read_text()), len(emitted))
+        (out_dir / "evidence.json").write_text(json.dumps(evidence))
+        unsound = {d["measure"] for d in stats.doubts if d.get("kind") in ARITHMETIC}
+        adds_up = [m not in unsound for m in range(len(emitted))]
+        stats.doubts.extend(rate(compare(evidence, emitted, adds_up=adds_up)))
+    except Exception:  # noqa: BLE001  (the rating is a convenience; the score stands without it)
+        log.exception("evidence failed")
 
 
 def add_chords(engine_xml: Path, geometry_file: Path, dst: Path) -> dict | None:

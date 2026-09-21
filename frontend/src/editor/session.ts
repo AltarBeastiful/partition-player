@@ -14,7 +14,19 @@ export type SaveStatus = "saved" | "unsaved" | "saving" | "error" | "stale";
 interface Snapshot { xml: string; doubts: Doubt[]; checked: number[]; selected: EventKey | null; form: Form | null }
 
 /** One measure with something to look at: the recognition's doubts and the live check, together. */
-export interface Place { measure: number; texts: string[]; info: boolean; live: boolean; checked: boolean }
+/**
+ * A measure worth looking at. `level` is how sure we are that something is wrong (plan 0008):
+ * `wrong` for a measure that does not add up, which cannot be right; `check` where a second reading
+ * of the print disagrees loudly enough to be worth a look; `info` for what is only worth knowing.
+ */
+export type Level = "wrong" | "check" | "info";
+export interface Place { measure: number; texts: string[]; level: Level; info: boolean; live: boolean; checked: boolean }
+
+const RANK: Record<Level, number> = { info: 0, check: 1, wrong: 2 };
+/** A doubt saved before levels existed: informational, or a measure that does not add up. */
+function levelOf(d: { level?: unknown; info?: unknown }): Level {
+  return d.level === "check" || d.level === "wrong" || d.level === "info" ? d.level : d.info ? "info" : "wrong";
+}
 
 const SAVE_DELAY_MS = 1200;
 
@@ -92,13 +104,16 @@ export class EditorSession {
     const by = new Map<number, Place>();
     const get = (m: number) => {
       let p = by.get(m);
-      if (!p) { p = { measure: m, texts: [], info: true, live: false, checked: this.checked.has(m) }; by.set(m, p); }
+      if (!p) { p = { measure: m, texts: [], level: "info", info: true, live: false, checked: this.checked.has(m) }; by.set(m, p); }
       return p;
     };
+    const raise = (p: Place, level: Level) => { if (RANK[level] > RANK[p.level]) p.level = level; };
     for (const d of this.doubts) {
       const p = get(d.measure);
       p.texts.push(d.text);
-      if (!d.info) p.info = false;
+      const level = levelOf(d);
+      raise(p, level);
+      if (level !== "info") p.info = false;
     }
     for (const c of this.checks) {
       if (c.status === "ok") continue;
@@ -106,6 +121,7 @@ export class EditorSession {
       const t = checkText(c);
       if (!p.texts.some((x) => x.startsWith(t.split(" by ")[0]))) p.texts.push(t);
       p.info = false;
+      p.level = "wrong";   // the live check is arithmetic: it knows the measure cannot be right
       p.live = true;
     }
     return [...by.values()].sort((a, b) => a.measure - b.measure);

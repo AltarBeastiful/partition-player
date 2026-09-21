@@ -381,6 +381,57 @@ Reproduce:
 .venv-oemer/bin/python bench/songs/doubts.py          # needs the run outputs of run_bench.py, both sets
 ```
 
+## How sure: rating a second reading of the print (plan 0008)
+
+Date: 2026-09-21. The doubt of ADR 0005 is arithmetic, so it cannot see an error that changes no
+duration. The segmentation net's noteheads are an independent reading of the same ink; `evidence.py`
+compares them with the notes the transformer emitted and rates the disagreement, marking only what
+reaches `check`. Scored like the doubts above: against `bench/score.py`'s alignment, per measure, on
+the pages whose measure count came back right (`bench/songs/rating.py`).
+
+| set | pages | measures | findings | marked `check` | of which wrong | precision | wrong measures the arithmetic flag cannot see, caught | marks on pages that came back exactly right |
+|---|---|---|---|---|---|---|---|---|
+| lead sheets | 57 | 1505 | 116 | 0 | 0 | — | 0 | **0** |
+| voice and piano | 58 | 1073 | 1022 | 68 | 53 | **0.78** | **14** | **0** |
+
+What each source is worth before the rating, so the rating's work is visible:
+
+| set | source | fires | wrong | precision |
+|---|---|---|---|---|
+| lead sheets | notehead count, more | 78 | 11 | 0.14 |
+| lead sheets | notehead count, fewer | 38 | 2 | 0.05 |
+| voice and piano | notehead count, more | 989 | 558 | 0.56 |
+| voice and piano | notehead count, fewer | 33 | 20 | 0.61 |
+
+- **The rating is the whole of it.** On the piano pages it turns 1022 raw findings at 0.56 into 68
+  marks at 0.78, and it catches 14 wrong measures that no arithmetic flag can reach. The price is
+  recall: 122 wrong measures there stay silent. That is the trade the two levels ask for — a mark
+  allowed to be wrong is a mark that cries wolf.
+- **On lead sheets it says nothing at all, and should.** The raw sources are worth 0.05 to 0.14
+  there, and the demotions silence every one of the 116 findings: a lead sheet is monophonic, so a
+  stacked head is ink, and a measure that adds up argues against a note gained in sequence. There is
+  also almost nothing left to find — the arithmetic flag already reaches 95 of the 98 wrong
+  measures, and only 3 in 1505 are invisible to it.
+- **Nothing lands on a page that came back right**, in either set: 0 of 19 perfect lead sheets and 0
+  of 7 perfect piano pages carry a mark. This was the bar the plan set, and the page it was written
+  for passes it — `anton`, where an ink blot makes the pixel stage read six heads in measure 8 where
+  the score has four, ends with zero doubts, because the boundaries of that system were estimated,
+  the page is monophonic, and the extra head sits 1.64 steps off the staff grid.
+- **A source that was built, measured and removed.** The detected staff position of each head against
+  the pitch the score gives should catch a wrong pitch, the commonest error the arithmetic cannot
+  see. It does not: on a photographed page it is noise. Landing on a wrong measure 2 times in 36 with
+  the position read off the staff lines, and **0 times in 8** with homr's own dewarped position (22
+  lead-sheet pages re-run with a patched driver), at every normalisation tried — raw, one constant
+  per staff, and the median of each head's nine nearest neighbours. It is out of the code; the
+  position is still written to `evidence.json`, where it costs nothing.
+
+Reproduce:
+
+```
+.venv-oemer/bin/python bench/songs/rating.py                  # needs the run outputs of run_bench.py
+.venv-oemer/bin/python bench/songs/rating.py --geo DIR        # with geometry from a patched driver
+```
+
 ## Form: repeats, verses and the order a song is sung in (plan 0004)
 
 Date: 2026-09-19. A songbook page is not played in the order it is printed: verses are stacked under
