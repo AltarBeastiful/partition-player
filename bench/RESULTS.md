@@ -450,6 +450,36 @@ What each source is worth before the rating, so the rating's work is visible:
   per staff, and the median of each head's nine nearest neighbours. It is out of the code; the
   position is still written to `evidence.json`, where it costs nothing.
 
+### Could the readings dialog rate its proposals? (measured 2026-09-21)
+
+The dialog of ADR 0006 lists what a note might have been and ranks the change that makes a short or
+long measure add up first. The question is whether the second reading can rate the rest — and for a
+**pitch** alternative the answer is a flat no, because the two stages are not independent about
+pitch at all. Over 43 lead-sheet pages, pairing each detected notehead with the note it became:
+
+| where the score's pitch is | notes | the detector reads the same | |
+|---|---|---|---|
+| right | 3896 | 3815 | 0.98 |
+| **wrong** | **97** | **96** | **0.99** |
+
+The detector agrees with the transformer whether the transformer is right or wrong; in 96 of the 97
+misread pitches it repeats the same wrong answer, and in the 97th it gives a third answer rather
+than the truth. It picks the true pitch **0 times out of 97**. So it carries nothing the transformer
+does not already have, and it cannot rank a pitch. This is also why the position source failed as a
+doubt (above): not because it is noisy, but because it is a copy.
+
+What is left to rate a proposal with, all of it independent of pitch:
+
+- **the arithmetic** — whether the change makes the measure add up. Already the ranking, and worth
+  *saying* rather than only ordering by;
+- **the notehead count** — the one signal that does work (0.76 precision as a doubt), and it bears
+  directly on the "two notes instead of one", "no note" and rest proposals;
+- **the lyrics** — a syllable placed under the note argues against a rest or no note.
+
+A rating there is also a much cheaper thing to get wrong than a mark on the sheet: the user has
+already chosen to look, and a mis-ordered list costs an extra glance, not a false alarm. The bar
+that governs `check` does not apply — but zero information is still zero.
+
 ### The transformer's own confidence — measured, and it does not pay (`bench/songs/confidence.py`)
 
 The gap the notehead reader leaves is real: 122 wrong measures on the piano pages and 3 on the lead

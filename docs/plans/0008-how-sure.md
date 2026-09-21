@@ -243,6 +243,22 @@ Per source and per combination: how often it fires, and of those, how often the 
    with their photo strips, both already in `BACKLOG.md`. The confidence was worth measuring first
    because it was free at run time; it is now measured, and it is not the answer.
 
+## What this also settles, for the readings dialog
+
+Could the dialog of ADR 0006 put a rating on the readings it proposes? For a **pitch** it cannot,
+and the measurement is the same one that killed the position source, seen from the other side: over
+43 pages the notehead detector reads the same pitch as the transformer 0.98 of the time when the
+transformer is right and **0.99 of the time when it is wrong** — 96 of 97 misread pitches repeated
+exactly. It is not a second opinion about pitch, it is a copy, so it can neither raise a doubt nor
+rank an alternative.
+
+What could rate a proposal, none of it about pitch: whether the change makes the measure add up
+(already the ranking, and worth *saying* rather than only ordering by), the detected notehead count
+for the "two notes", "no note" and rest proposals, and the lyric syllable under the note, which
+argues against a rest. Worth noting that the bar there is far lower than for a mark on the sheet —
+the user has already chosen to look, and a mis-ordered list costs a glance, not a false alarm — but
+a signal with no information is still no use.
+
 ## Rejected
 
 - **Promote the notehead mismatch straight to a doubt.** 46 of 302 systems, mostly correct output.
