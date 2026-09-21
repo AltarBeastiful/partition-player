@@ -247,7 +247,8 @@ export class Player {
     this.chords = chords;
     for (const m of measures) { this.measureStart.push(m.start); this.measureDuration.push(m.duration); this.accompByMeasure.push([]); }
     this.measureCount = measures.length;
-    for (const e of accompaniment(chords, measures)) {
+    const sung = this.printed.flatMap((step) => step.notes.map((n) => ({ time: step.time, length: n.length })));
+    for (const e of accompaniment(chords, measures, sung)) {
       const m = this.printedMeasureAt(e.time);
       if (m !== null) this.accompByMeasure[m].push({ at: e.time - this.measureStart[m], midi: e.midi, length: e.length, velocity: e.velocity });
     }
