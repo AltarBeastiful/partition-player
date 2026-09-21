@@ -125,18 +125,19 @@ def test_adding_up_silences_a_note_gained_in_sequence_but_says_nothing_about_a_s
     stacked = geometry([[head(200, 330), head(200, 340)], [head(300, 730)]])
     out = rate(compare(collect(stacked, 4), emitted, adds_up=[True, False, False, False]))
     assert [d["measure"] for d in out] == [0]
-def test_a_chord_the_print_does_not_show_stacked_is_worth_a_check():
-    """The mirror of an extra head: the score stacks two notes on a stem where the detector saw one
-    head, so the transformer may have invented the chord member (plan 0008, step 4)."""
+def test_a_notehead_short_speaks_too_when_nothing_argues_back():
+    """A head fewer than the score has: the transformer may have invented a note. One reader is
+    enough here, because nothing demotes it — measured at 0.62 precision on the increment it buys,
+    with no mark on any page that came back right (plan 0008, the threshold question)."""
     g = geometry([[head(200, 330)], [head(300, 730)]])
     emitted = [Emitted(2, 1, [0, 2]), Emitted(0, 0, []), Emitted(1, 0, [0]), Emitted(0, 0, [])]
     out = rate(compare(collect(g, 4), emitted, adds_up=[False] * 4))
     assert [d["kind"] for d in out] == ["heads_fewer"]
     assert (out[0]["heads"], out[0]["notes"]) == (1, 2)
+    assert out[0]["text"] == "1 notehead was detected here, the score has 2"
 
-    # ... but not where the score has no chord to doubt: one head short in sequence, nothing more
-    plain = [Emitted(2, 0, [0, 2]), Emitted(0, 0, []), Emitted(1, 0, [0]), Emitted(0, 0, [])]
-    assert rate(compare(collect(g, 4), plain, adds_up=[False] * 4)) == []
+    # ... but a measure that adds up argues a note lost in sequence back down to silence
+    assert rate(compare(collect(g, 4), emitted, adds_up=[True] * 4)) == []
 
 
 def test_estimated_boundaries_silence_a_count_that_cannot_be_trusted():

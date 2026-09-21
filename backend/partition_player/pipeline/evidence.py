@@ -158,13 +158,20 @@ class Finding:
     measure: int
     kind: str                            # heads_more | heads_fewer
     text: str
-    strong: bool = False
     demotions: list[str] = field(default_factory=list)
-    detail: dict = field(default_factory=dict)
+    detail: dict = field(default_factory=dict)     # shown to the user, saved with the doubt
+    features: dict = field(default_factory=dict)   # for the benchmark only, never saved
 
     @property
     def score(self) -> int:
-        return 1 + (1 if self.strong else 0) - len(self.demotions)
+        """Readers that disagree, less what argues back. One reader is enough when nothing does.
+
+        Measured (plan 0008, `bench/RESULTS.md`): one reader with nothing against it is right 0.76
+        of the time on the piano pages and 2 times in 2 on the lead sheets, and marks no page that
+        came back right. The two loosenings tried are both worse — letting a sound measure through
+        buys 18 marks at 0.44 and 15 cry-wolf marks on lead sheets, and no magnitude of the count
+        difference discriminates at all (precision is flat from |delta| 1 to 4)."""
+        return 1 - len(self.demotions)
 
 
 def compare(evidence: dict, emitted: list[Emitted], *, adds_up: list[bool]) -> list[Finding]:
@@ -191,26 +198,26 @@ def compare(evidence: dict, emitted: list[Emitted], *, adds_up: list[bool]) -> l
             # benchmark showed it doing: 48 of 48 marks on measures that were flagged already.
             if sound and not (more and surplus):
                 d.append("the measure adds up")
-            strong = False
             if more and surplus:
                 if monophonic:
                     d.append("the page is monophonic everywhere else")
                 if any(off_grid(g, unit) for g in surplus):
                     d.append("the extra head is not on the staff grid")
-                elif not monophonic:
-                    strong = True
-            elif not more and e.chords and len(surplus) < e.chords:
-                strong = True   # the score stacks notes here that the print does not show stacked
             findings.append(Finding(
                 m, "heads_more" if more else "heads_fewer",
-                f"{len(heads)} noteheads were detected here, the score has {e.count}",
-                strong=strong, demotions=d, detail={"heads": len(heads), "notes": e.count}))
+                f"{len(heads)} notehead{'' if len(heads) == 1 else 's'} {'was' if len(heads) == 1 else 'were'} "
+                f"detected here, the score has {e.count}",
+                demotions=d, detail={"heads": len(heads), "notes": e.count},
+                features={"delta": len(heads) - e.count, "estimated": m in estimated, "sound": sound,
+                          "monophonic": monophonic, "stacked": len(surplus),
+                          "on_grid": bool(surplus) and not any(off_grid(g, unit) for g in surplus),
+                          "notes": e.count, "chords": e.chords}))
     return findings
 
 
 # --- the rating -----------------------------------------------------------------------------------
 
-CHECK = 2  # the evidence against a reading, net of what supports it, at which we say something
+CHECK = 1  # the evidence against a reading, net of what supports it, at which we say something
 
 
 def rate(findings: list[Finding]) -> list[dict]:

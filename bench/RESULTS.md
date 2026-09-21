@@ -391,8 +391,32 @@ the pages whose measure count came back right (`bench/songs/rating.py`).
 
 | set | pages | measures | findings | marked `check` | of which wrong | precision | wrong measures the arithmetic flag cannot see, caught | marks on pages that came back exactly right |
 |---|---|---|---|---|---|---|---|---|
-| lead sheets | 57 | 1505 | 116 | 0 | 0 | — | 0 | **0** |
-| voice and piano | 58 | 1073 | 1022 | 68 | 53 | **0.78** | **14** | **0** |
+| lead sheets | 57 | 1505 | 116 | 2 | 2 | **1.00** | 0 | **0** |
+| voice and piano | 58 | 1073 | 1022 | 76 | 58 | **0.76** | **14** | **0** |
+
+### Can one reader be enough on its own? (`bench/songs/thresholds.py`)
+
+Yes, and the threshold is not a magnitude. Sliced every way, **how far the counts differ does not
+discriminate at all** — on the piano pages precision is 0.76, 0.76, 0.72, 0.70 at `|delta|` 1, 2, 3,
+4. What separates a finding worth showing from one worth ignoring is whether anything argues against
+it, so the rule is simply *readers that disagree, less the demotions, at least one*:
+
+| rule | marks | precision | adds | cry wolf |
+|---|---|---|---|---|
+| lead sheets, nothing argues back | 2 | 1.00 | 0 | 0 |
+| lead sheets, also allowing a sound measure | 33 | 0.09 | 1 | **15** |
+| piano, nothing argues back | 76 | 0.76 | 14 | 0 |
+| piano, also allowing a sound measure | 86 | 0.71 | 17 | 0 |
+
+Both loosenings were rejected on the margin, not the total: the 18 extra marks that a sound measure
+buys on the piano pages are right only **0.44** of the time, below the bar, and the same loosening
+costs 15 cry-wolf marks on lead sheets. Going the other way, an earlier rule also demanded the
+disagreement be of a "strong" kind; dropping that requirement is what lets a lead sheet speak at all,
+and its increment is right 0.62 of the time on the piano pages and 2 times in 2 on the lead sheets.
+
+Every demotion was checked this way. Three earn their keep. The fourth, "the measure's boundaries
+were estimated", does **not** change precision on its own (0.56 against 0.58) but removes 30 of the
+104 cry-wolf marks, so it is kept for that.
 
 What each source is worth before the rating, so the rating's work is visible:
 
@@ -403,15 +427,16 @@ What each source is worth before the rating, so the rating's work is visible:
 | voice and piano | notehead count, more | 989 | 558 | 0.56 |
 | voice and piano | notehead count, fewer | 33 | 20 | 0.61 |
 
-- **The rating is the whole of it.** On the piano pages it turns 1022 raw findings at 0.56 into 68
-  marks at 0.78, and it catches 14 wrong measures that no arithmetic flag can reach. The price is
+- **The rating is the whole of it.** On the piano pages it turns 1022 raw findings at 0.56 into 76
+  marks at 0.76, and it catches 14 wrong measures that no arithmetic flag can reach. The price is
   recall: 122 wrong measures there stay silent. That is the trade the two levels ask for — a mark
   allowed to be wrong is a mark that cries wolf.
-- **On lead sheets it says nothing at all, and should.** The raw sources are worth 0.05 to 0.14
-  there, and the demotions silence every one of the 116 findings: a lead sheet is monophonic, so a
-  stacked head is ink, and a measure that adds up argues against a note gained in sequence. There is
-  also almost nothing left to find — the arithmetic flag already reaches 95 of the 98 wrong
-  measures, and only 3 in 1505 are invisible to it.
+- **On lead sheets it says almost nothing, and should.** The raw sources are worth 0.05 to 0.14
+  there, and the demotions silence 114 of the 116 findings: a lead sheet is monophonic, so a stacked
+  head is ink, and a measure that adds up argues against a note gained in sequence. The two that
+  survive are both on measures that really are wrong. There is also almost nothing left to find —
+  the arithmetic flag already reaches 95 of the 98 wrong measures, and only 3 in 1505 are invisible
+  to it.
 - **Nothing lands on a page that came back right**, in either set: 0 of 19 perfect lead sheets and 0
   of 7 perfect piano pages carry a mark. This was the bar the plan set, and the page it was written
   for passes it — `anton`, where an ink blot makes the pixel stage read six heads in measure 8 where

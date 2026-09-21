@@ -100,31 +100,30 @@ is why it comes last.
    localises to one note, absent when it is only about the measure. `sources` names what spoke, so
    the text can say *why* and the benchmark can score each source on its own.
 
-2. **Two levels, and the level never comes from one source alone** — except the one source that is
-   not an opinion:
+2. **Two levels, and a reader speaks only when nothing argues against it:**
 
    - **`wrong`** — the measure does not add up. We do not think the output may be wrong, we know it
      cannot be right. This is today's flag, unchanged, and keeps today's presentation.
-   - **`check`** — the evidence against the reading, net of what supports it, reaches **2**.
+   - **`check`** — the evidence against the reading, net of what supports it, reaches **1**.
    - **nothing** — anything less.
 
-   Counted as follows, per place:
+   Counted as follows, per place: **+1 for each independent reader that disagrees, −1 for each
+   demotion that applies**, and `check` at 1 or more. One reader is therefore enough exactly when
+   nothing argues against it.
 
-   | | |
-   |---|---|
-   | **+1** | each independent reader that disagrees with what was emitted |
-   | **+1** | the disagreement is of a *strong* kind: a stacked notehead that **is** on the staff grid, on a page that already has chords; or the mirror of it, the score stacking notes on a stem the print does not show stacked |
-   | **−1** | each demotion that applies (below) |
-
-   There is only one independent reader today — the segmentation stage — so without the strong-kind
-   bonus nothing could ever reach 2, and the feature would be vacuous. That is the honest shape of
-   it: the rule is "one reader, but only when it disagrees *loudly* and nothing argues back", until
-   source 6 gives a genuine second opinion.
+   That threshold was looked for in the data rather than chosen (`bench/songs/thresholds.py`, and
+   the results section). There is **no magnitude threshold**: how far the counts differ does not
+   discriminate at all, precision being 0.76, 0.76, 0.72, 0.70 at `|delta|` 1 to 4. What separates a
+   finding worth showing is whether anything argues back — and both ways of moving the line are
+   worse. Requiring the disagreement to be of a "strong" kind as well silences lead sheets
+   completely, and the increment it refuses is right 0.62 of the time. Allowing a sound measure
+   through buys 18 marks on the piano pages that are right only 0.44 of the time, and 15 cry-wolf
+   marks on lead sheets.
 
    There is deliberately no third, quieter level. A mark that is allowed to be wrong still costs a
    look, and the page that prompted this plan is precisely a page where the single disagreeing source
-   was the one in error. **Anton measure 8 will show nothing at all**, and that is the correct
-   outcome: we read it right, and nothing else on the page supported the doubt.
+   was the one in error. **Anton measure 8 shows nothing at all**, and that is the correct outcome:
+   we read it right, and three separate things argue against the doubt.
 
    The cost of this choice, stated plainly: a real error that only one source can see *quietly* will
    pass in silence. Step 4 measures how many of those there are; if it is a large number, the answer
