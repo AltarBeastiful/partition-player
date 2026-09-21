@@ -1,9 +1,9 @@
 # Plan 0008: How sure we are — rating a doubt instead of raising one
 
-Status 2026-09-21: done. Written 2026-09-20 with three levels; cut to two on the user's call —
-`hint` is gone, because a level that is allowed to be wrong is a level that cries wolf, and the
-worked example below is exactly a case where the one disagreeing source was wrong. A place where
-only one source speaks is now silent.
+Status 2026-09-21: done, including step 6, which was measured and rejected. Written 2026-09-20 with
+three levels; cut to two on the user's call — `hint` is gone, because a level that is allowed to be
+wrong is a level that cries wolf, and the worked example below is exactly a case where the one
+disagreeing source was wrong. A place where nothing but a demoted reader speaks is now silent.
 
 Built and calibrated. Backend 83 tests, frontend 71, the whole pipeline run end to end on the page
 the plan is named after: `evidence.json` written, **zero doubts**, the blot on measure 8 found and
@@ -23,10 +23,14 @@ Three things the benchmark changed, none of which the tests could have (step 4 i
    2 wrong in 36, then 0 in 8 with the detector's own dewarped position, at three normalisations.
    Measuring it properly needed a benchmark re-run with a patched driver, which is why the driver
    now records the position and the size of every notehead.
-3. **On lead sheets the feature is silent, and that is the right answer** — the raw sources are worth
-   0.05 to 0.14 there, and only 3 wrong measures in 1505 are invisible to the arithmetic anyway. It
-   earns its place on the voice-and-piano pages: 68 marks at 0.78 precision, 14 wrong measures the
-   arithmetic cannot see, and not one mark on a page that came back right.
+3. **The threshold is "nothing argues against it", and it was looked for, not chosen.** There is no
+   magnitude threshold at all — precision is flat as the count difference grows. Requiring a
+   "strong" kind on top of that made lead sheets permanently silent for no gain; dropping it is
+   what lets them speak. Lead sheets get 2 marks, both right; the piano pages 76 at 0.76 with 14
+   measures the arithmetic cannot see; no mark on a page that came back right, in either set.
+4. **The gap is not filled.** The model's own confidence, the one reader left, is saturated and
+   buys a measure per thousand (step 6). What remains needs a different reader, not a cleverer
+   reading of this one.
 
 ## The problem
 
@@ -222,12 +226,22 @@ Per source and per combination: how often it fires, and of those, how often the 
    nothing anywhere, the count still 0 — and on a page the benchmark says has a corroborated error,
    the mark on the right notehead.
 
-6. **The transformer's confidence — not done, and step 4 says it is what remains.** Capture the
-   per-head softmax of the chosen token in `ScoreDecoder.generate`, carry it out through the driver
-   as a per-note number, add it as a source, recalibrate. It is the only genuinely second opinion
-   left: the pixel stage is one reader, and 122 wrong measures on the piano pages plus 3 on the
-   lead sheets are still silent. It is last because it is the only step that reaches into vendored
-   code.
+6. **The transformer's confidence — built, measured, and not shipped.** Captured by wrapping the
+   inference session inside `ScoreDecoder.generate` (never reimplementing the decode loop), so every
+   symbol carries the probability of its own token, and aggregated per measure off the barline
+   symbols, which needs no geometry to line up. Scored on 40 lead-sheet pages: a real signal in the
+   extreme tail — 0.69 precision against a base rate of 0.073 — that still buys **one** measure in
+   1042 the arithmetic cannot see, marks a page that came back right, and is 0.33 precision as a
+   corroborating second reader. The cause is saturation: the pitch head answers 1.000 to almost
+   everything (minimum 0.973 over a whole page), so no function of it can say which pitch was read
+   wrongly. Taken back out — a monkeypatch on a vendored ONNX decode loop is a liability on every
+   job — with the hook and its indexing trap written down in `bench/songs/confidence.py`.
+
+   **So the gap is not filled.** 122 wrong measures on the piano pages and 3 on the lead sheets are
+   still invisible to everything we have. The next honest candidate is not a cleverer reading of
+   this model but a different reader: a second engine, or a language model on the flagged measures
+   with their photo strips, both already in `BACKLOG.md`. The confidence was worth measuring first
+   because it was free at run time; it is now measured, and it is not the answer.
 
 ## Rejected
 

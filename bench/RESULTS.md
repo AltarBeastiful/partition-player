@@ -450,6 +450,37 @@ What each source is worth before the rating, so the rating's work is visible:
   per staff, and the median of each head's nine nearest neighbours. It is out of the code; the
   position is still written to `evidence.json`, where it costs nothing.
 
+### The transformer's own confidence — measured, and it does not pay (`bench/songs/confidence.py`)
+
+The gap the notehead reader leaves is real: 122 wrong measures on the piano pages and 3 on the lead
+sheets are invisible to the arithmetic flag and carry no mark. The only genuinely independent reader
+left is the model itself, which decodes greedily and throws its logits away. Instrumented (the hook
+is recorded in the script's docstring) and scored on 40 lead-sheet pages, 1042 measures, 76 wrong:
+
+| confidence of the least sure note | marked | of which wrong | precision | catches what the arithmetic cannot | marks a page that came back right |
+|---|---|---|---|---|---|
+| <= 0.50 | 9 | 5 | 0.56 | 0 | 1 |
+| <= 0.60 | 13 | 9 | **0.69** | 1 | 1 |
+| <= 0.70 | 18 | 9 | 0.50 | 1 | 2 |
+| <= 0.85 | 37 | 10 | 0.27 | 2 | 5 |
+
+- **A real signal, far too small.** Against a base rate of 0.073, precision 0.69 in the extreme tail
+  is nine times better than chance. It still buys **one** measure in 1042 that the arithmetic cannot
+  already see, and it marks a page that came back exactly right — the one thing the rating exists not
+  to do. As a corroborating second reader, un-silencing a notehead finding that a demotion had
+  killed, it is 0.33 precision on 3 cases.
+- **The cause is saturation, and it is not fixable by a better threshold.** Over a whole page the
+  pitch head has median 1.000 and minimum 0.973; lift, position, articulation and slur likewise; the
+  rhythm head spans 0.871 to 0.910 outside the tail. A head that answers 1.000 for every token it
+  reads cannot say which pitch it read wrongly, whatever function of its distribution is taken.
+- **So it is not in the driver.** A monkeypatch wrapping a vendored ONNX decode loop runs on every
+  job and would break loudly if homr changed its decoding; that is not a price worth paying for a
+  measure per thousand. The hook and the indexing trap it hides (the decode runs voice-major, the
+  geometry writer enumerates staves system-major, and the two agree only while there is one voice)
+  are written down in `bench/songs/confidence.py` so the experiment is an hour's work, not a day's.
+- **Not measured on the voice-and-piano set**, where the gap is much larger (122 measures against 3).
+  That would need the same 90-minute re-run against that set.
+
 Reproduce:
 
 ```
