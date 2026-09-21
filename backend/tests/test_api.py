@@ -210,3 +210,16 @@ def test_editor_save_revert_and_revision(settings):
             assert client.put(f"/api/jobs/{jid}/score",
                               json={"musicxml": edited, "checked": [], "revision": rev, "form": bad_form}).status_code == 422
         assert client.get(f"/api/jobs/{jid}/review").json()["form"] == kept
+
+        # plan 0008: a rated doubt survives a save whole, level and sources included. The form's
+        # fields were silently stripped once by a validator that rebuilt the dict key by key; this
+        # pins that the doubts are not saved that way.
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        rated = [{"measure": 7, "part": 0, "kind": "heads_more", "level": "check", "sources": ["noteheads"],
+                  "text": "6 noteheads were detected here, the score has 4", "heads": 6, "notes": 4},
+                 {"measure": 3, "part": 0, "kind": "overfull", "level": "wrong", "text": "longer than 2/4"}]
+        r = client.put(f"/api/jobs/{jid}/score",
+                       json={"musicxml": edited, "checked": [], "revision": rev, "doubts": rated, "form": kept})
+        assert r.status_code == 200, r.text
+        assert r.json()["doubts"] == rated
+        assert client.get(f"/api/jobs/{jid}/review").json()["doubts"] == rated
