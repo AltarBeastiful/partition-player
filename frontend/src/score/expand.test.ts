@@ -308,3 +308,34 @@ ${[["A", "4"], ["B", "4"], ["C", "5"], ["D", "5"]].map(([step, octave], i) => ` 
     expect(measures[measures.length - 1].querySelector("barline bar-style")?.textContent).toBe("light-heavy");
   });
 });
+
+describe("the loop is re-barred onto the form's measures (plan 0011, step 7)", () => {
+  /** Four measures, the third in 6/4: the page that makes a loop counted in measures drift. */
+  const METER_CHANGE = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+<part id="P1">
+  <measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+    <note><pitch><step>A</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+  <measure number="2"><note><pitch><step>B</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+  <measure number="3"><attributes><time><beats>6</beats><beat-type>4</beat-type></time></attributes>
+    <note><pitch><step>C</step><octave>5</octave></pitch><duration>6</duration><type>whole</type><dot/></note></measure>
+  <measure number="4"><attributes><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+    <note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+</part></score-partwise>`;
+
+  it("gives the loop exactly the measures of the part beside it, of the same lengths", () => {
+    const doc = parse(METER_CHANGE);
+    const whole: Pass[] = [{ ranges: [{ from: 0, to: 3 }], verse: null }];
+    const loop: Under = { line: 0, from: 0, to: 1, startAt: 1, instrument: "flute" };
+    const out = parse(expandScore(doc, whole, passNames(whole, null, 4), [loop], ["Melody"]).xml);
+    const [main, under] = children(out.documentElement, "part");
+    const lengths = (p: Element) => children(p, "measure").map((m) => children(m, "note")
+      .filter((n) => children(n, "chord").length === 0)
+      .reduce((sum, n) => sum + Number(text(n, "duration", "0")), 0));
+    expect(children(under, "measure")).toHaveLength(children(main, "measure").length);
+    expect(lengths(under)).toEqual(lengths(main));           // 4, 4, 6, 4 — the 6/4 bar included
+    // the loop is two 4/4 measures, so under the 6/4 bar it holds a whole measure and a piece of the next
+    const third = children(under, "measure")[2];
+    expect(children(third, "note").length).toBeGreaterThan(1);
+  });
+});

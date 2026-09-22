@@ -374,45 +374,72 @@ function oneStaffAttributes(src: Element, staff: number): Element {
 /**
  * The part a line going on underneath becomes in the written-out score (ADR 0008, decision 8).
  *
- * Its measures are the tiles the player sounds — the same `underSlices` arithmetic — so the file
- * holds what was heard, tile for tile, with the last one cut where the form ends and written
- * `implicit="yes"` like every other measure that is not a bar of its own. Before it starts there is
- * silence: one rest per measure of the form, so the part stays in step with the others.
+ * The loop is tiled on time (decision 6), so its tiles do not fall on the form's barlines — this
+ * page turns 6/4 for a bar and the flute goes on in 4/4 underneath it. A part whose measures were
+ * the tiles would therefore have more measures than the part beside it, which is not a score any
+ * reader can lay out. So the tiles are **re-barred onto the form's own measures**: one measure here
+ * for one measure there, of the same length, holding whatever the loop is sounding in it — several
+ * pieces of the loop where a tile ends inside the measure, and a measure rest where the loop has not
+ * come in yet or has run out.
+ *
+ * Nothing is tied across a piece boundary, and nothing needs to be: a note is only cut where the
+ * loop wraps, and what follows the wrap is the loop beginning again, not the same note going on.
  */
 function writeUnderPart(out: XMLDocument, srcPart: Element, under: Under, slices: Slice[], durations: number[], id: string, name: string): { part: Element; scorePart: Element } {
   const part = make(out, "part", undefined, { id });
   const srcMeasures = children(srcPart, "measure");
   const divisions = divisionsByMeasure(srcPart);
+  const staff = staffOf(under.line, srcPart);
   const total = slices.reduce((t, s) => t + (s.to - s.from), 0);
   const tiles = underSlices(under, durations, durations.length, slices, total);
-  const started = tiles.length ? tiles[0].origin : total;
-  // the silence before it comes in, one measure of the form at a time
-  let t = 0;
   const written: Element[] = [];
+  let at = 0;
   for (const s of slices) {
     const length = s.to - s.from;
-    if (t + length > started + EPS) break;
+    const window = { from: at, to: at + length };
+    at += length;
     const per = divisions[s.measure];
     const m = make(out, "measure");
-    const note = make(out, "note");
-    note.appendChild(make(out, "rest", undefined, { measure: "yes" }));
-    note.appendChild(make(out, "duration", String(Math.round(length * 4 * per))));
-    m.appendChild(note);
-    m.setAttribute("implicit", "no");
+    const pieces: Element[] = [];
+    let held = 0;
+    for (const tile of tiles) {
+      const tileLength = tile.to - tile.from;
+      const from = Math.max(tile.origin, window.from);
+      const to = Math.min(tile.origin + tileLength, window.to);
+      if (to - from <= EPS) continue;
+      const source = srcMeasures[tile.measure];
+      if (!source) continue;
+      const tilePer = divisions[tile.measure];
+      const full = Math.round(durations[tile.measure] * 4 * tilePer);
+      const single = staffMeasure(source, staff, full);
+      const fromDiv = Math.round((tile.from + (from - tile.origin)) * 4 * tilePer);
+      const toDiv = Math.round((tile.from + (to - tile.origin)) * 4 * tilePer);
+      const cut = to < tile.origin + tileLength - EPS || tile.cut;
+      const piece = writeSlice(out, out.importNode(single, true) as Element, tilePer, fromDiv, toDiv, cut, null);
+      const scale = per / tilePer;
+      for (const el of Array.from(piece.children)) {
+        if (Number.isFinite(scale) && Math.abs(scale - 1) > EPS) scaleDurations(el, scale);
+        pieces.push(el);
+      }
+      held += to - from;
+    }
+    for (const el of pieces) m.appendChild(el);
+    if (held <= EPS) {
+      const rest = make(out, "note");
+      rest.appendChild(make(out, "rest", undefined, { measure: "yes" }));
+      rest.appendChild(make(out, "duration", String(Math.round(length * 4 * per))));
+      m.appendChild(rest);
+    } else if (length - held > EPS) {
+      const rest = make(out, "note");
+      rest.appendChild(make(out, "rest"));
+      rest.appendChild(make(out, "duration", String(Math.round((length - held) * 4 * per))));
+      m.appendChild(rest);
+    }
+    // the same measures as the part beside it, marked the same way
+    m.setAttribute("implicit", s.from > EPS || s.to < durations[s.measure] - EPS ? "yes" : "no");
     written.push(m);
-    t += length;
+    part.appendChild(m);
   }
-  for (const tile of tiles) {
-    const src = srcMeasures[tile.measure];
-    if (!src) continue;
-    const per = divisions[tile.measure];
-    const length = Math.round(durations[tile.measure] * 4 * per);
-    const single = staffMeasure(src, staffOf(under.line, srcPart), length);
-    const m = writeSlice(out, out.importNode(single, true) as Element, per, Math.round(tile.from * 4 * per), Math.round(tile.to * 4 * per), tile.cut, null);
-    m.setAttribute("implicit", tile.cut || tile.from > EPS ? "yes" : "no");
-    written.push(m);
-  }
-  for (const m of written) part.appendChild(m);
   const last = written[written.length - 1];
   if (last) {
     for (const n of tailNotes(last)) dropTie(n, "start");
@@ -424,6 +451,18 @@ function writeUnderPart(out: XMLDocument, srcPart: Element, under: Under, slices
   const scorePart = make(out, "score-part", undefined, { id });
   scorePart.appendChild(make(out, "part-name", name));
   return { part, scorePart };
+}
+
+/** Every duration under an element multiplied, for a piece written in another measure's divisions. */
+function scaleDurations(el: Element, by: number): void {
+  const walkOn = (node: Element) => {
+    for (const child of Array.from(node.children)) {
+      if (child.tagName === "duration") child.textContent = String(Math.round(Number(child.textContent) * by));
+      else walkOn(child);
+    }
+  };
+  if (el.tagName === "duration") el.textContent = String(Math.round(Number(el.textContent) * by));
+  else walkOn(el);
 }
 
 /**

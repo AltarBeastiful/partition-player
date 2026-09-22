@@ -1,6 +1,38 @@
 # Plan 0011: An instrument for each line, and a line that goes on underneath
 
-Status 2026-09-22: written, not started. Decisions in ADR 0008.
+Status 2026-09-22: **done**, all eight steps. Frontend 122 tests (14 new: `lines.test.ts`,
+`voices.test.ts`, the player's lines and under-line cases, the expansion's loop part), backend 100
+(the sound round trip and its six rejections inside the editor's API test), `tsc` clean.
+Checked in the browser on the page that asked for it — the photograph of *Auprès du ruisseau*, read
+by homr as one part with two staves, 20 measures, 87 notes, 5 chords. With the top staff set to
+flute over measures 1–8 and piano after, and the flute told to go on from measure 9, the timeline
+holds 22 flute events in the printed eight measures, 36 more under the voices, and 245 piano ones;
+both sample sets load from the CDN with no failure; the choice survives a reload (the panel comes
+back reading *Top staff: flute, then piano · Bottom staff: piano · flute goes on under m. 9*), and
+*Duplicate as played* writes a second part, `Top staff, going on`, of exactly the main part's twenty
+measures.
+
+What the building changed, from the decisions below:
+
+- **The loop had to be re-barred.** Written as its own tiles, the loop part came out with 21 measures
+  against the page's 20 — because the tiles are laid on time and this page's measure 19 holds seven
+  quarters. A part with its own bar count is not a score any reader can lay out, so the export lays
+  the tiles **into the form's own measures**: one measure here for one measure there, of the same
+  length, holding the pieces of the loop that fall in it, and a measure rest before it comes in.
+  Nothing is tied across a piece boundary, because a note is only cut where the loop wraps, and what
+  follows a wrap is the loop beginning again.
+- **The as-played export hid itself.** It is offered only when the form writes more measures than the
+  page has, which is exactly false for a page played straight through — the canon page. With a line
+  going on underneath, the file differs from the printed page whatever the form does, so the button
+  now appears for that too.
+- **An under-line has its own switch.** It carries the index of its record, not just the staff it is
+  printed on: silencing the top staff to hear the lower voice alone must not take the flute away,
+  since on this page they are the same staff.
+- **`review.load()` names the new keys in the same commit that writes them**, and the round trip
+  asserts they come back — the lesson of plan 0008, and the other session working on plan 0012
+  flagged the same trap from its side the same hour.
+
+Decisions in ADR 0008.
 
 ## The problem
 

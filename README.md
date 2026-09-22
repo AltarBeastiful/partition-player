@@ -63,6 +63,26 @@ All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_E
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
+## Lines: an instrument each, and one that goes on underneath
+
+Every staff of the page is a **line** (ADR 0008), and the *Played on* panel gives each one an
+instrument over a stretch of measures — the same staff can be a flute for eight measures and a voice
+after it, which is how a page that introduces its tune on a flute is engraved. The sounds are sample
+sets fetched when they are first chosen (flute, clarinet, saxophone, trumpet, french horn, violin,
+cello, harp, nylon guitar, organ, harmonium, xylophone), pinned at one commit of
+[tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments) and thinned to at most sixteen
+samples each; nothing is in the bundle or the image. The piano — the Salamander set the app has
+always played — stays the default, the fallback when a set will not load, and what the chord
+accompaniment plays. Both collections are CC-BY 3.0 and credited in the panel.
+
+A line can also be told to **go on playing underneath the form**: *the flute goes on playing measures
+1–8, from measure 9 to the end*. Its notes are tiled across the timeline on time rather than on
+measures (a page that turns 6/4 for a bar would drift otherwise) and merged into the one timeline the
+cursor, the practice loop and click-to-seek already follow, exactly as the chord accompaniment is.
+The written-out score (*as played*) gains a part for it, re-barred onto the form's own measures, so
+the file holds what was heard. The instruments and the loop are saved in `review.json` beside the
+form; they are playback only and never touch the document.
+
 ## Chord symbols and accompaniment
 
 On a lead sheet the chord names printed above the staff (Cm, F#m7, G7/B) are read after recognition

@@ -47,6 +47,13 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Make it work on a phone: the photo is taken there, so the score is read there too. The control rows wrap badly at that
   width and the sheet needs the vertical space.
 
+## Lines and sounds (ADR 0008, plan 0011: done)
+- Follow-ups: no voice or choir sample set exists in the collection, so a sung line gets the piano or
+  the harmonium as a stand-in; per-set gains are by ear on one page; a line is a staff, so two voices
+  in one staff are one line and cross-staff piano writing is one line per staff; only one line going
+  on underneath has been tried, though the shape allows several; and what goes on underneath is heard
+  and exported but never drawn on the sheet.
+
 ## Other deferred features
 - Editor follow-ups (the editor itself is done, ADR 0005): tuplet entry, a second voice, beaming (plan 0006), moving a note
   between staves, a doubt from a second engine's disagreement, a language-model second opinion on the flagged measures

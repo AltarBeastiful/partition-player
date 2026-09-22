@@ -375,15 +375,18 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
 
   const fileBase = (job.name || "score").replace(/[^\w.-]+/g, "_");
 
-  // How long the page is when the form is written out; 0 when there is nothing to write out — a page
-  // played once, straight through, is already the page as played (plan 0009, step 4).
-  const playedMeasures = useMemo(() => {
-    if (!session || loading || passes.length === 0 || measureCount === 0) return 0;
+  // How long the page is when the form is written out, and whether writing it out says anything the
+  // printed page does not. A page played once, straight through, is already the page as played
+  // (plan 0009, step 4) — unless a line goes on playing underneath it, which no printed measure
+  // holds and which the expansion writes as a part of its own (plan 0011, step 7).
+  const played = useMemo(() => {
+    const none = { measures: 0, offer: false };
+    if (!session || loading || passes.length === 0 || measureCount === 0) return none;
     try {
       const n = slicesOf(session.doc, passes).length;
-      return n > measureCount ? n : 0;
-    } catch { return 0; }
-  }, [session, session?.docVersion, passes, loading, measureCount]); // eslint-disable-line react-hooks/exhaustive-deps
+      return { measures: n, offer: n > measureCount || session.unders.length > 0 };
+    } catch { return none; }
+  }, [session, session?.docVersion, session?.version, passes, loading, measureCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The expanded score is written in the browser from the document on screen and handed over as a
   // file; it is never loaded back (plan 0009, decision 1), so there is nothing to save or to reload.
@@ -450,18 +453,18 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         <span className="downloads">
           Download MusicXML
           <a href={scoreUrl(job.id)} download={`${fileBase}.musicxml`} title="The page as it is printed: the measures in the order they are engraved, as the server holds them">as printed</a>
-          {playedMeasures > 0 && (
+          {played.offer && (
             <>
               <span className="sep">·</span>
-              <button onClick={downloadPlayed} title={`The page as the form says it is sung: ${playedMeasures} measures, each verse's words under its own notes, no repeat sign to obey. Written here, so it includes changes not yet saved.`}>
-                as played ({playedMeasures} measures)
+              <button onClick={downloadPlayed} title={`The page as the form says it is sung: ${played.measures} measures, each verse's words under its own notes, no repeat sign to obey. Written here, so it includes changes not yet saved.`}>
+                as played ({played.measures} measures)
               </button>
             </>
           )}
         </span>
-        {playedMeasures > 0 && (
+        {played.offer && (
           <button onClick={duplicatePlayed} disabled={duplicating}
-            title={`Keep the page as it is sung — ${playedMeasures} measures — as a score of its own in the library, and open it. This one is left as it is.`}>
+            title={`Keep the page as it is sung — ${played.measures} measures — as a score of its own in the library, and open it. This one is left as it is.`}>
             {duplicating ? "Duplicating…" : "Duplicate as played"}
           </button>
         )}
