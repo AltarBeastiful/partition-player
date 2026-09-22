@@ -91,8 +91,7 @@ def apply(geometry_file: Path, layer: TextLayer) -> dict:
             continue
         x0, y0 = to_working(chain, layer.dpi, span.x0, span.y0)
         x1, y1 = to_working(chain, layer.dpi, span.x1, span.y1)
-        placed.append(Placed(text=span.text.strip(), size=span.size, x_left=x0, x_right=x1,
-                             y_center=(y0 + y1) / 2, height=abs(y1 - y0)))
+        placed.extend(_words_of(span.text, x0, x1, (y0 + y1) / 2, abs(y1 - y0), span.size))
     marks = [
         (to_working(chain, layer.dpi, m.x0, m.y0), to_working(chain, layer.dpi, m.x1, m.y1))
         for m in layer.marks if m.kind == "thin"
@@ -156,6 +155,31 @@ def apply(geometry_file: Path, layer: TextLayer) -> dict:
     ]
     geometry_file.write_text(json.dumps(geometry, indent=1))
     return {"syllables": syllables, "chords": chords, "dropped": dropped, "beams": len(geometry["beams"])}
+
+
+def _words_of(text: str, x_left: float, x_right: float, y_center: float, height: float, size: float) -> list[Placed]:
+    """A span cut into the words it holds, each keeping its share of the box.
+
+    An engraver's text layer is not cut like a reading of it: LilyPond hands a whole footer line as
+    one object, where the OCR path would have handed a dozen words. Everything downstream — the
+    prose rule that throws out a paragraph printed under the last staff, the alignment that walks
+    syllables — was written against words, so the span is cut the same way here. The boxes are shared
+    out by character count, which is close enough for rules that only ask what is left of what.
+    """
+    pieces = text.split()
+    if len(pieces) <= 1:
+        return [Placed(text=text.strip(), x_left=x_left, x_right=x_right, y_center=y_center, height=height, size=size)]
+    total = sum(len(piece) for piece in pieces) + len(pieces) - 1
+    width = x_right - x_left
+    out: list[Placed] = []
+    at = 0
+    for piece in pieces:
+        start = x_left + width * at / total
+        at += len(piece)
+        out.append(Placed(text=piece, x_left=start, x_right=x_left + width * at / total,
+                          y_center=y_center, height=height, size=size))
+        at += 1   # the space that follows it
+    return out
 
 
 def _below(staff: dict, p: Placed) -> float | None:

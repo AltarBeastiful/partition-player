@@ -236,3 +236,17 @@ def test_the_beams_of_the_page_are_kept_for_when_they_are_wanted(tmp_path: Path)
     placed = pdf_words.apply(file, layer)
     assert placed["beams"] == 1
     assert json.loads(file.read_text())["beams"][0]["x0"] == pytest.approx(100.0)
+
+
+def test_a_span_holding_a_whole_line_is_cut_into_its_words(tmp_path: Path):
+    """LilyPond hands a footer line as one object; the rules downstream were written against words."""
+    file = geometry(tmp_path)
+    prose = "Placed in the public domain by the typesetter free to distribute and perform"
+    layer = pdf_words.TextLayer(spans=[span(prose, 100, 160, width=600)], marks=[], dpi=72)
+    placed = pdf_words.apply(file, layer)
+    words = json.loads(file.read_text())["staves"][0]["words"]
+    assert len(words) == len(prose.split()) == placed["syllables"]
+    assert words[0]["text"] == "Placed" and words[-1]["text"] == "perform"
+    assert words[0]["x_left"] == pytest.approx(100.0)
+    assert words[-1]["x_right"] == pytest.approx(700.0)
+    assert all(a["x_right"] <= b["x_left"] + 1e-9 for a, b in zip(words, words[1:]))

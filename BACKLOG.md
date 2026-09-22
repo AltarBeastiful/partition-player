@@ -58,7 +58,8 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Editor follow-ups (the editor itself is done, ADR 0005): tuplet entry, a second voice, beaming (plan 0006), moving a note
   between staves, a doubt from a second engine's disagreement, a language-model second opinion on the flagged measures
   (the flags and the photo strips are what it would plug into).
-- Multi-page pieces: several photos merged into one MusicXML (the join is plan 0012, step 3)
+- Multi-page pieces: several photos merged into one MusicXML (a PDF of several pages is done, plan
+  0012; the same join would serve several photos) (the join is plan 0012, step 3)
 - Multi-page PDF input, split server-side: written up as ADR 0009 and plan 0012, not started. A PDF is
   the obvious next file to accept after MusicXML (plan 0010), and the four Anton exports show why: the
   user has the PDF and the `.mxl` side by side. What the write-up measured: an engraved PDF holds its

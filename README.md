@@ -63,6 +63,24 @@ All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_E
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
+## PDF in, and a score of several pages
+
+A PDF comes in at the same door as a photo and a MusicXML file, decided by its bytes (ADR 0009).
+Its pages are rendered at 300 dpi and read one by one, and the results are joined into one score:
+measures appended and renumbered, what is in force carried across the seam so a restated key or
+brace is not drawn as a change, durations scaled where two pages count a quarter differently, and
+the doubts, the layout and the pixel stage's evidence shifted by the pages before them. Up to 20
+pages; each page keeps its own `review-N.webp` for the editor's photo strip.
+
+What kind of PDF it is decides how its **words** are read, and the marks decide that, not the text —
+a scan with an OCR layer glued under it looks like an engraving until you count its drawings. A
+**scan** or an **outlined** page is rasterized and goes down the camera path. A **born-digital** page
+keeps its objects, so no OCR model is loaded at all: the syllables are the file's own text, cut where
+the engraver cut them, the hyphens and extenders are its thin rectangles, and the beams are recorded
+for later. They are written into the same `geometry.json` the OCR would have filled, so the lyrics
+and chord stages are untouched. Measured on a LilyPond page: 66 syllables, identical to the raster
+path's, in 9.3 s against 14.2 s.
+
 ## Lines: an instrument each, and one that goes on underneath
 
 Every staff of the page is a **line** (ADR 0008), and the *Played on* panel gives each one an

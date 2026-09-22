@@ -152,3 +152,20 @@ def test_a_text_file_is_still_refused_at_the_door(settings):
     with TestClient(create_app(settings)) as client:
         r = client.post("/api/jobs", files={"file": ("x.txt", b"hello", "text/plain")})
         assert r.status_code == 415 and "PDF" in r.json()["error"]
+
+
+def test_a_piano_page_does_not_restate_its_braces_at_the_seam():
+    """`staves` and `part-symbol` are restated at the top of page 2 exactly as the key is."""
+    def grand(note: str) -> ET.ElementTree:
+        return ET.ElementTree(ET.fromstring(f"""<score-partwise version="4.0">
+          <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+          <part id="P1"><measure number="1">
+            <attributes><divisions>1</divisions><key><fifths>0</fifths></key>
+              <time><beats>3</beats><beat-type>4</beat-type></time><staves>2</staves>
+              <part-symbol>brace</part-symbol><clef number="1"><sign>G</sign><line>2</line></clef>
+              <clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+            <note><pitch><step>{note}</step><octave>4</octave></pitch><duration>3</duration><type>half</type><dot/></note>
+          </measure></part></score-partwise>"""))
+
+    joined = pages.join_scores([grand("C"), grand("D")])
+    assert measures(joined)[1].find("attributes") is None

@@ -1,9 +1,45 @@
 # Plan 0012: PDF in, and a score that is several pages
 
-Status 2026-09-22: proposed, nothing built. Decisions in ADR 0009. Numbering agreed with the session
-writing ADR 0008 / plan 0011 (per-line instruments), which touches `review.json` and
-`ScoreView.tsx`; this plan leaves `review.json` alone and keeps its `ScoreView.tsx` diff to one line
-of statistics.
+Status 2026-09-22: **built, steps 1 to 7**, by the session that wrote ADR 0008 / plan 0011, after
+its user asked for both plans; the session that wrote this plan had not started it. Backend 127
+tests (16 new: `tests/test_pdf.py`, `tests/test_pages.py`), frontend 122, `tsc` clean.
+
+Checked on this box, end to end through the running app:
+
+| file | pages | read as | out | time |
+|---|---|---|---|---|
+| *Dans le port de Lorient* (LilyPond) | 1 | `digital`, words from the file | 40 measures, 73 notes, 66 syllables, 1 verse | 9.3 s |
+| *Gymnopédie no. 1* (LilyPond) | 2 | `digital`, words from the file | 47 measures, 289 notes, joined at the seam | 21.2 s |
+| IMSLP scan (2 pages of a songbook) | 2 | `scan`, words from the pixels | 34 measures, 661 notes | 37.3 s |
+
+What the building changed, and what it found:
+
+- **The raster path was not losing the hyphens.** This plan's case for the text layer named
+  `Lo ri-` as a defect of the pixel path on the Lorient page. It does not reproduce: both paths
+  place 66 syllables with identical text and identical hyphens. What the file path actually buys on
+  this page is **time** — 9.3 s against 14.2 s for the same pixels, because no OCR model is loaded —
+  and a title, a composer and five measure numbers that are named and dropped instead of being
+  offered to the grammars.
+- **A span is not a word.** LilyPond hands a whole line as one text object, so the Mutopia footer
+  under the last staff arrived as a single "syllable" and sailed past the prose rule that exists to
+  throw such rows out. Spans are now cut into words, boxes shared by character count, and the footer
+  lands in *seen but not used* where it belongs.
+- **Which staff a span belongs to is decided by distance, not by order.** The gap between two
+  systems is under one staff and over the next at the same time: a syllable of the upper row and a
+  measure number of the lower system both fall in both bands. Nearest edge wins. Before this rule,
+  the Lorient page offered 59 syllables to the chord grammar as chord candidates.
+- **`staves` and `part-symbol` join the key and the clef** in what is carried across a seam: a piano
+  page states its brace again on page 2, and stating it again mid-part is a change that never
+  happened.
+- **Step 5 is half done on purpose.** Hyphens and extenders are read from the file's thin rectangles
+  and placed; the 8 beams of the Lorient page are recorded in `geometry.json`, but nothing places
+  them on notes, because plan 0006 is on hold (the user means to try OSMD's `autoBeam` first).
+
+Not done: nothing measures this against a PDF benchmark, because no PDF can be engraved on this box
+(no MuseScore, no LilyPond), and the numbers above are three files, not a corpus.
+
+Decisions in ADR 0009. Numbering agreed with the session writing ADR 0008 / plan 0011 (per-line
+instruments), which touches `review.json` and `ScoreView.tsx`.
 
 ## The problem
 

@@ -41,7 +41,10 @@ from .run import Progress, recognize
 log = logging.getLogger(__name__)
 
 RENDER_DPI = 300           # what the camera path is measured on; the scale is exact (points * dpi / 72)
-IN_FORCE = ("key", "time", "clef")   # restated at the top of every page, and dropped where unchanged
+# Restated at the top of every page, and dropped where unchanged. `staves` and `part-symbol` are here
+# for the same reason as the key: a piano page says them again on page 2, and saying them again in
+# the middle of a part is a change that never happened.
+IN_FORCE = ("key", "time", "clef", "staves", "part-symbol")
 
 
 class PageError(ValueError):
