@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .config import Settings
 from .pipeline.musicxml import ingest
+from .pipeline.pages import read_pdf
 from .pipeline.run import recognize
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ TERMINAL = {"done", "failed"}
 MAX_NAME = 120
 KEEP_DONE = {"status.json", "result.json", "score.musicxml", "thumb.jpg", "lyrics.json",
              "original.musicxml", "review.json", "review.webp", "layout.json", "evidence.json"}
+# A PDF job keeps one review image and one thumbnail per page beside those (plan 0012, step 3).
+KEEP_DONE_PATTERNS = ("review-", "thumb-")
 KEEP_FAILED_SUFFIXES = (".error.log",)
 
 
@@ -51,7 +54,7 @@ class Job:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     input_name: str = ""
-    source: str = "image"  # image (a photo to read) | musicxml (a file to open); jobs written before this are photos
+    source: str = "image"  # image (a photo to read) | musicxml (a file to open) | pdf (pages to render and read); jobs written before this are photos
     name: str = ""  # user-facing title, editable; defaults to the upload's file name
     error: str | None = None
     result: dict | None = None
@@ -145,7 +148,7 @@ class JobStore:
         d = self.dir(job.id)
         for p in list(d.iterdir()):
             if job.status == "done":
-                keep = p.name in KEEP_DONE
+                keep = p.name in KEEP_DONE or p.name.startswith(KEEP_DONE_PATTERNS)
             else:
                 keep = p.name == "status.json" or p.name.startswith("input.") or p.name.endswith(KEEP_FAILED_SUFFIXES)
             if keep:
@@ -224,6 +227,8 @@ class Worker:
             out = self.store.dir(job_id)
             if job.source == "musicxml":
                 ingest(source_file, out, progress)
+            elif job.source == "pdf":
+                read_pdf(source_file, out, self.settings, progress)
             else:
                 recognize(source_file, out, self.settings, progress)
             info = json.loads((out / "result.json").read_text())

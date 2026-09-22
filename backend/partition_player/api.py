@@ -15,13 +15,13 @@ from pydantic import BaseModel, Field
 from . import __version__, review
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
-from .pipeline import musicxml
+from .pipeline import musicxml, pdf
 from .pipeline.lyrics import edit as lyrics_edit
 from .pipeline.lyrics import inject as lyrics_inject
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp"}
-UNSUPPORTED = ("unsupported file {kind}; send a photo of one page (JPEG, PNG or WebP) "
-               "or a MusicXML file (.musicxml, .xml or .mxl)")
+UNSUPPORTED = ("unsupported file {kind}; send a photo of one page (JPEG, PNG or WebP), "
+               "a PDF, or a MusicXML file (.musicxml, .xml or .mxl)")
 
 
 class Rename(BaseModel):
@@ -90,6 +90,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400, "empty upload")
         if musicxml.looks_like_musicxml(filename, data[:64]):
             source = "musicxml"
+        elif pdf.looks_like_pdf(data[:8]):
+            source = "pdf"      # by the bytes, as the MusicXML door decides (plan 0010, decision 7)
         elif file.content_type in ALLOWED_TYPES:
             source = "image"
         else:
