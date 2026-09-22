@@ -13,8 +13,10 @@
  */
 import * as Tone from "tone";
 import { accompaniment, collectChords, type ChordSymbol } from "./chords";
-import { samePrefix, type Pass } from "./form";
+import { samePrefix, sliceRanges, type Pass, type Slice } from "./form";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
+
+export type { Slice } from "./form";
 
 export type PlaybackState = "stopped" | "playing" | "paused";
 export interface LoopRange { from: number; to: number } // 1-based printed measure numbers, inclusive
@@ -35,15 +37,6 @@ export interface PrintedScore {
   accompByMeasure: AccompPulse[][];
   measureCount: number;
 }
-
-/**
- * One stretch of one printed measure as it is played, in timeline order: where its beat 0 would
- * fall (`origin`, which is before the slice when the measure is entered on an upbeat) and which
- * part of it is actually played, in whole notes from the measure's start. A whole measure is
- * `from: 0, to: its duration`. Recorded rather than recomputed, because subtracting a step's
- * in-measure offset cannot tell a sliced measure from a whole one (plan 0007, step 5).
- */
-export interface Slice { measure: number; pass: number; origin: number; from: number; to: number }
 
 /**
  * Playback window [start, end) on the timeline for a range of printed measures.
@@ -75,67 +68,57 @@ export interface Timeline { events: NoteEvent[]; steps: Step[]; slices: Slice[];
 /**
  * The passes laid end to end on one timeline (plan 0004; extracted whole and pure in plan 0007,
  * step 2, so that the arithmetic can be tested without Tone or a rendered sheet — and so that the
- * measure slice of step 5 has one place to live).
+ * measure slice of step 5 has one place to live). The slicing itself is `sliceRanges` in `form.ts`
+ * since plan 0009: sound is laid on the slices here, measures are written out from the same slices
+ * in `score/expand.ts`.
  */
 export function layPasses(score: PrintedScore, passes: Pass[]): Timeline {
   const events: NoteEvent[] = [];
   const steps: Step[] = [];
-  const slices: Slice[] = [];
   const EPS = 1e-9;
-  let t = 0;
+  const slices = sliceRanges(passes, score.measureDuration, score.measureCount);
   let last = 0;
-  passes.forEach((pass, pi) => {
-    for (const r of pass.ranges) {
-      const first = Math.max(0, r.from), lastMeasure = Math.min(r.to, score.measureCount - 1);
-      for (let m = first; m <= lastMeasure; m++) {
-        const duration = score.measureDuration[m];
-        // the part of this measure that is played: the whole of it, unless the range enters or
-        // leaves it on a beat of its own
-        const from = m === r.from ? Math.max(0, Math.min(r.fromOnset ?? 0, duration)) : 0;
-        const to = m === r.to && r.toOnset !== undefined ? Math.max(from, Math.min(r.toOnset, duration)) : duration;
-        if (to - from <= EPS) continue; // a slice with nothing in it is not played at all
-        // Inside a range the measures run on, so a note longer than its measure keeps ringing as it
-        // always has; it is cut only where the section is left early.
-        const cut = m === r.to && r.toOnset !== undefined ? to : Infinity;
-        const origin = t - from;
-        slices.push({ measure: m, pass: pi, origin, from, to });
-        const start = score.measureStart[m];
-        score.printed.forEach((step, si) => {
-          if (step.measure !== m) return;
-          const at = step.time - start;                    // the step's beat within the measure
-          const time = origin + at;
-          if (at >= from - EPS && at < to - EPS) {
-            steps.push({ time, printed: si, measure: m, pass: pi });
-            for (const n of step.notes) {
-              const length = Math.min(n.length, cut - at);  // a note is cut where the section is left
-              events.push({ time, midi: n.midi, length, track: "melody", velocity: 0.9 });
-              last = Math.max(last, time + length);
-            }
-            return;
-          }
-          // a note begun before this slice but still sounding into it is heard from the edge
-          if (at < from - EPS) {
-            for (const n of step.notes) {
-              if (at + n.length <= from + EPS) continue;
-              const length = Math.min(at + n.length, cut) - from;
-              events.push({ time: t, midi: n.midi, length, track: "melody", velocity: 0.9 });
-              last = Math.max(last, t + length);
-            }
-          }
-        });
-        for (const a of score.accompByMeasure[m]) {
-          if (a.at + a.length <= from + EPS || a.at >= to - EPS) continue;
-          const at = Math.max(a.at, from);
-          const length = Math.min(a.at + a.length, cut) - at;
-          events.push({ time: origin + at, midi: a.midi, length, track: "accompaniment", velocity: a.velocity });
-          last = Math.max(last, origin + at + length);
+  for (const slice of slices) {
+    const { measure: m, pass: pi, origin, from, to } = slice;
+    // Inside a range the measures run on, so a note longer than its measure keeps ringing as it
+    // always has; it is cut only where the section is left early.
+    const cut = slice.cut ? to : Infinity;
+    const t = origin + from;
+    const start = score.measureStart[m];
+    score.printed.forEach((step, si) => {
+      if (step.measure !== m) return;
+      const at = step.time - start;                    // the step's beat within the measure
+      const time = origin + at;
+      if (at >= from - EPS && at < to - EPS) {
+        steps.push({ time, printed: si, measure: m, pass: pi });
+        for (const n of step.notes) {
+          const length = Math.min(n.length, cut - at);  // a note is cut where the section is left
+          events.push({ time, midi: n.midi, length, track: "melody", velocity: 0.9 });
+          last = Math.max(last, time + length);
         }
-        t += to - from;
+        return;
       }
+      // a note begun before this slice but still sounding into it is heard from the edge
+      if (at < from - EPS) {
+        for (const n of step.notes) {
+          if (at + n.length <= from + EPS) continue;
+          const length = Math.min(at + n.length, cut) - from;
+          events.push({ time: t, midi: n.midi, length, track: "melody", velocity: 0.9 });
+          last = Math.max(last, t + length);
+        }
+      }
+    });
+    for (const a of score.accompByMeasure[m]) {
+      if (a.at + a.length <= from + EPS || a.at >= to - EPS) continue;
+      const at = Math.max(a.at, from);
+      const length = Math.min(a.at + a.length, cut) - at;
+      events.push({ time: origin + at, midi: a.midi, length, track: "accompaniment", velocity: a.velocity });
+      last = Math.max(last, origin + at + length);
     }
-  });
+  }
   events.sort((a, b) => a.time - b.time);
-  return { events, steps, slices, total: Math.max(t, last) };
+  const end = slices.length ? slices[slices.length - 1].origin + slices[slices.length - 1].to : 0;
+  return { events, steps, slices, total: Math.max(end, last) };
 }
 
 const SAMPLES: Record<string, string> = {

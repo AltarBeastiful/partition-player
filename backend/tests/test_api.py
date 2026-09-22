@@ -2,7 +2,9 @@ import time
 
 from fastapi.testclient import TestClient
 
-from conftest import PHOTO
+from conftest import GROUND_TRUTH, PHOTO, ROOT
+
+CLEMENTINE = ROOT / "bench" / "songs" / "leadsheets" / "en_clementine.mxl"
 
 
 def wait_done(client: TestClient, job_id: str, timeout: float = 30.0) -> dict:
@@ -34,8 +36,68 @@ def test_rejects_non_images(settings):
 
     with TestClient(create_app(settings)) as client:
         r = client.post("/api/jobs", files={"file": ("x.txt", b"hello", "text/plain")})
-        assert r.status_code == 415
+        assert r.status_code == 415 and ".mxl" in r.json()["error"]
         assert client.get("/api/jobs/nope").status_code == 404
+        assert client.post("/api/jobs", files={"file": ("empty.musicxml", b"", "application/octet-stream")}).status_code == 400
+
+
+def test_opens_a_musicxml_file(settings):
+    """The other door (plan 0010): a file the user already has, read with no engine at all."""
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("en_clementine.mxl", CLEMENTINE.read_bytes(), "application/octet-stream")})
+        assert r.status_code == 202 and r.json()["source"] == "musicxml"
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "done", job
+        assert job["name"] == "Clementine"  # the file's own title, not "en clementine"
+        assert job["result"]["engine"] == "import"
+        assert job["result"]["stats"]["measures"] == 18 and job["result"]["stats"]["doubts"] == []
+
+        score = client.get(f"/api/jobs/{job['id']}/score.musicxml")
+        assert score.status_code == 200 and b"<score-partwise" in score.content
+        review = client.get(f"/api/jobs/{job['id']}/review").json()
+        assert review["has_image"] is False and review["layout"] is None and review["has_original"] is True
+        assert client.get(f"/api/jobs/{job['id']}/thumb.jpg").status_code == 404
+        assert client.get(f"/api/jobs/{job['id']}/review.webp").status_code == 404
+        assert client.get(f"/api/jobs/{job['id']}/lyrics").json()["verses"][0].startswith("v1 In")
+
+        # a photo still goes to the engine, and the two live side by side in the library
+        client.post("/api/jobs", files={"file": ("photo.jpg", PHOTO.read_bytes(), "image/jpeg")})
+        assert {j["source"] for j in client.get("/api/jobs").json()} == {"image", "musicxml"}
+
+
+def test_an_upload_may_name_itself(settings):
+    """The browser duplicating a score as it is played knows the name it wants; the file's own title
+    must not take it back (plan 0010)."""
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("en_clementine.mxl", CLEMENTINE.read_bytes(), "application/octet-stream")},
+                        data={"name": "  Clementine (as played)  "})
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "done" and job["name"] == "Clementine (as played)"
+
+
+def test_a_broken_score_file_fails_with_its_reason(settings):
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("nope.musicxml", b"<html><body>hello</body></html>", "text/xml")})
+        assert r.status_code == 202  # it looks like a score file; only reading it can tell
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "failed" and "not MusicXML" in job["error"]
+        assert job["message"] == "This file could not be opened"
+
+
+def test_an_uncompressed_score_file_keeps_its_own_name(settings):
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("truth.musicxml", GROUND_TRUTH.read_bytes(), "")})
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "done" and job["result"]["stats"]["measures"] == 19
+        assert job["name"] == "Anton, Yvan, Boris et moi"  # <work-title>, not "truth"
 
 
 def test_library_list_rename_delete(settings):

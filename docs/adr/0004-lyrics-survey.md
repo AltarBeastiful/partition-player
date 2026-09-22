@@ -6,9 +6,9 @@ Scope: what exists to add lyric recognition (text, syllable-to-note assignment, 
 
 ## Summary
 
-- No public OMR model outputs lyrics for modern printed notation. SMT/SMT++/Zeus/Legato/LEGATO 2/Transcoda all strip or replace lyrics; homr's only lyrics PR (#65) was closed unmerged. We will have to build the lyric stage ourselves.
-- The only research that solves aligned music+lyrics end to end (AMNLT, ICDAR 2023 and Pattern Recognition 2026, MIT code) is on Gregorian chant only; its *encoding idea* (music tokens with a prefix interleaved with syllable text, plus syllable-level post-alignment metrics AMLER/AlER) is reusable for a benchmark, its models are not.
-- The strongest open reference implementation of the whole lyric stack is Audiveris (Java, AGPL): Tesseract words -> `TextRole` guess (position below staff, not italic, not chord) -> `LyricLineInter` -> `LyricItemInter` kinds (syllable/hyphen/extension/elision/number) -> `mapToChord` by nearest x with tolerance `maxItemDx = 3` staff spaces and conflict resolution -> `SyllabicType` from neighbouring hyphens. Copy the algorithm, not the code.
+- No public OMR model outputs lyrics for modern printed notation. SMT/SMT++/Zeus/Legato/LEGATO 2/Transcoda strip or replace lyrics; homr's only lyrics PR (#65) was closed unmerged. We build the lyric stage ourselves.
+- The only research solving aligned music+lyrics end to end (AMNLT, ICDAR 2023 and Pattern Recognition 2026, MIT code) covers Gregorian chant only; its encoding (prefixed music tokens interleaved with syllable text) and metrics (AMLER/AlER) are reusable for a benchmark, its models are not.
+- The strongest open reference for the whole lyric stack is Audiveris (Java, AGPL): Tesseract words -> `TextRole` guess -> `LyricLineInter` -> `LyricItemInter` kinds -> `mapToChord` by nearest x within 3 staff spaces with conflict resolution -> `SyllabicType` from neighbouring hyphens. Copy the algorithm, not the code.
 - RapidOCR with `Rec.lang_type=LangDet.LATIN`, `Rec.ocr_version=OCRVersion.PPOCRV5` (rapidocr >= 3.3.0, mobile model only) and `return_word_box=True` gives per-word quads via CTC alignment on CPU: this is the natural text front end and already in the stack.
 - Best ground-truth sources with lyrics: OpenScore Lieder (1,300+ MuseScore songs, CC0, lyrics in mscx and as .txt) and PDMX (250K MusicXML from MuseScore, lyrics present but "uncommon"); render them with MuseScore or verovio to get pixel-exact syllable positions for synthetic training/benchmark pages. CPDL and Mutopia add choral/hymn material with lyrics but no bulk dump.
 - Only one public *scanned* set has lyrics ground truth aligned to notes in modern notation: Sheet Music Benchmark (685 KernScores pages, `**kern` with lyric syllables scored by OMR-NED). License conflict: paper says CC BY 4.0, HF card says CC BY-NC 4.0.
@@ -69,15 +69,14 @@ GitHub searches for "OMR lyrics", "sheet music lyrics OCR", "lyrics syllable not
 
 | Engine | French accents | Boxes | CPU cost / size | Note |
 |---|---|---|---|---|
-| RapidOCR (PP-OCRv5 latin mobile rec + PP-OCRv4/v5 det) | Yes, `latin` dictionary covers fr/de/es/it | Line quads from DBNet; `return_word_box=True` yields `word_results` = (text, conf, quad) per word via CTC alignment | det ~5 MB, rec ~10 MB ONNX; sub-second per page on CPU | Already in the stack; needs `rapidocr>=3.3.0`, `Rec.lang_type=LangDet.LATIN`, `Rec.ocr_version=OCRVersion.PPOCRV5`. Server variant not available for latin v5. Issue #400 reports word boxes failing in some configurations |
-| Tesseract 5 `fra` | Yes | Word boxes + confidences (hOCR/TSV/ALTO) | ~15 MB traineddata, a few seconds per page, ARM64 packages available | What Audiveris uses; weaker than PP-OCR on photos, fine on scans |
-| docTR (Mindee) | Yes, `french` vocab, CRNN/PARSeq heads | Word boxes | ~60-100 MB per model, ONNX export available, CPU ok | Solid fallback; heavier than RapidOCR *(sizes approximate)* |
-| EasyOCR | Yes (`fr`, latin_g2) | Word/line boxes | ~90 MB rec + ~80 MB CRAFT det, PyTorch, slow on CPU | No advantage |
-| Surya | Yes (90+ languages) | Char/word/line boxes | ~650M params total, GPU-oriented | Too heavy for 3 GB |
-| PARSeq (pretrained) | English charset only; French needs retraining | Recognizer only, no det | 23M params | Use only via docTR's French-trained variant |
-| TrOCR | Printed English; multilingual by fine-tune | Recognizer only | 330M-560M params | Too heavy, no French |
-| Florence-2 | Limited, `<OCR_WITH_REGION>` returns boxes | Yes | 230M/770M, ~1.5 GB weights, ~1 s on T4 | Too heavy on CPU |
-| Vision LLM APIs | Excellent on accents and on reading verse structure | Boxes unreliable | per-call cost, latency, privacy | Good for a "fix the words" pass in the editor, not for placement |
+| RapidOCR (PP-OCRv5 latin mobile rec + DBNet det) | Yes, `latin` charset covers fr/de/es/it | Line quads; `return_word_box=True` yields `word_results` = (text, conf, quad) per word via CTC alignment | det ~5 MB, rec ~10 MB ONNX; sub-second per page | Already in the stack; needs `rapidocr>=3.3.0`, `Rec.lang_type=LangDet.LATIN`, `Rec.ocr_version=OCRVersion.PPOCRV5`; no server variant for latin v5; issue #400 reports word boxes failing in some configs |
+| Tesseract 5 `fra` | Yes | Word boxes + confidences (hOCR/TSV) | ~15 MB, seconds per page, ARM64 packages | What Audiveris uses; weaker than PP-OCR on photos |
+| docTR | Yes, `french` vocab, CRNN/PARSeq heads | Word boxes | ~60-100 MB per model, ONNX export, CPU ok *(sizes approximate)* | Solid fallback |
+| EasyOCR | Yes (`fr`) | Word/line boxes | ~170 MB PyTorch, slow on CPU | No advantage |
+| Surya | Yes | Char/word/line boxes | ~650M params, GPU-oriented | Too heavy for 3 GB |
+| PARSeq / TrOCR | English charsets; French needs retraining | Recognizer only | 23M / 330M+ params | Only via docTR's French PARSeq |
+| Florence-2 | Limited; `<OCR_WITH_REGION>` gives boxes | Yes | 230M/770M, ~1.5 GB | Too heavy on CPU |
+| Vision LLM APIs | Excellent on accents and verse structure | Boxes unreliable | per-call cost, latency, privacy | "Fix the words" pass in the editor, not placement |
 
 ## 4. Syllabification and lyric-entry conventions
 
@@ -85,22 +84,22 @@ GitHub searches for "OMR lyrics", "sheet music lyrics OCR", "lyrics syllable not
 - PyHyphen: https://github.com/dr-leo/PyHyphen, C libhyphen binding, `syllables()` helper, same dictionaries.
 - `syllables` (PyPI): English syllable *counter* only, GPLv3. Not useful.
 - French phonetic syllabifiers: https://github.com/LuisAVasquez/french_syllabification, https://github.com/ian-nai/french-syllabification, https://github.com/psawa/syllable_splitter (WIP), https://github.com/UrielCh/syllabify-fr (JS). Small rule-based projects, no licence/maintenance guarantees.
-- Typographic vs sung: hyphenation dictionaries are typographic (line-break points), not phonetic. For singing the differences matter in French for schwa/mute e (`ta-ble` sung as two syllables vs one), for liaison/elision across words (`l'a-mour`, `que je` sung as one note: MusicXML `<elision>`), and for diaeresis (`li-on` vs `lion`). English hyphenation (`-ing`, `-tion`) is closer to sung practice but still splits on morphology. Consequence: use the hyphens printed on the page as truth; call pyphen only as a suggestion when the user retypes a word in the editor, and let the user override.
+- Typographic vs sung: hyphenation dictionaries give line-break points, not phonetic syllables. In French the differences matter for the mute e (`ta-ble` sung on two notes or one), elision across words (`que je` on one note: MusicXML `<elision>`) and diaeresis (`li-on`). English splits on morphology (`-tion`) and is closer to sung practice. Consequence: the hyphens printed on the page are the truth; call pyphen only to suggest a split when the user retypes a word, and let the user override.
 - Notation conventions to mirror in the editor: MuseScore (https://handbook.musescore.org/text/lyrics): `-` moves to the next note and inserts a hyphen; `_` adds a melisma extender; Space ends a word; `Ctrl+-`/`Ctrl+_`/`Ctrl+Space` insert literal characters; elision slur via Special Characters. LilyPond (https://lilypond.org/doc/v2.24/Documentation/notation/common-notation-for-vocal-music): `" -- "` hyphen, `" __ "` extender, `_` skip one note, `~` lyric tie (elision), `\lyricsto` auto-aligns syllables to notes and treats slurs/ties as melismata (`melismaBusyProperties`). MusicXML 4.0 `<lyric number="1">` with `<syllabic>`, `<text>`, `<elision>`, `<extend type="start|continue|stop">`, `<end-line>`, `<end-paragraph>` (https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/lyric/).
 - The MuseScore-community online hyphenator (hyphenator.glitch.me) is gone (HTTP 410).
 
 ## 5. Benchmark rendering
 
-Verovio (Python wheel `verovio`, LGPL) renders MusicXML/MEI to SVG where each MEI element becomes a `<g>` with `class` = element name and `id` = xml:id, so a note is `<g class="note" id="...">` and its lyric syllable is a `<g class="syl" id="..."><text>` nested under `<g class="verse">` inside that note; hyphens and extender lines are separate groups, and `svgAdditionalAttribute` can expose extra MEI attributes (e.g. `verse@n`). Parsing the SVG gives syllable boxes plus the owning note id for free; there is no PNG output in verovio, so rasterise the SVG with cairosvg/resvg before augmenting. MuseScore 4 CLI (`mscore score.mxl -o page.svg` or `page.png`, `--trim-image`) renders with MuseScore's own engraving (closer to typical lead sheets) but the SVG carries no element ids, so positions must be recovered by matching text runs. Recommendation: verovio for GT positions, MuseScore for visual variety.
+Verovio (Python wheel `verovio`, LGPL) renders MusicXML/MEI to SVG where each MEI element becomes a `<g>` with `class` = element name and `id` = xml:id: a note is `<g class="note" id="...">` and its syllable a `<g class="syl" id="..."><text>` under `<g class="verse">` inside that note; hyphens and extenders are separate groups; `svgAdditionalAttribute` exposes extra MEI attributes (e.g. `verse@n`). Parsing the SVG gives syllable boxes and the owning note for free; verovio has no PNG output, so rasterise with cairosvg/resvg before augmenting. MuseScore 4 CLI (`mscore score.mxl -o page.svg|page.png`, `--trim-image`) engraves closer to typical lead sheets but its SVG has no element ids, so positions must be recovered by matching text runs. Use verovio for GT positions, MuseScore for visual variety.
 
 ## Gaps and risks
 
 - No dataset of photographed lead sheets with lyric GT; building one (synthetic + a few dozen hand-checked photos) is on the critical path.
-- No CPU-runnable neural model does syllable-to-note assignment for modern notation; the realistic v1 is RapidOCR words + a small alignment model or DP over homr note x-positions, Audiveris-style, with hyphen/extender tokens from OCR.
-- OCR failure modes specific to lyrics: single-vowel syllables, isolated hyphens and underscores (DBNet often drops them), verse numbers, French apostrophes and elisions, chord symbols on the line above being read as words.
-- Verse count and chorus/refrain lines vary; text under the last system is often not lyrics (Audiveris issue #334).
+- No CPU-runnable neural model assigns syllables to notes in modern notation; realistic v1 is RapidOCR words + a small alignment model or DP over homr note x-positions, Audiveris-style, with hyphen/extender tokens from OCR.
+- Lyric-specific OCR failures: single-vowel syllables, isolated hyphens and underscores (DBNet drops them), verse numbers, French apostrophes/elisions, chord symbols read as words.
+- Text under the last system is often not lyrics (Audiveris issue #334); verse and refrain layouts vary.
 - Licences: SMB may be CC BY-NC; AMNLT data is CC BY-NC; homr and Audiveris are AGPL; pyphen dictionaries are LGPL/MPL (fine to vendor).
-- Word-box support in RapidOCR has had regressions (issue #400); pin a version and test.
+- RapidOCR word boxes have regressed before (issue #400); pin a version and test.
 
 ## Sources
 

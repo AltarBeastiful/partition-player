@@ -1,4 +1,6 @@
-export type JobStatus = "queued" | "preprocessing" | "recognizing" | "postprocessing" | "done" | "failed";
+export type JobStatus = "queued" | "preprocessing" | "recognizing" | "importing" | "postprocessing" | "done" | "failed";
+/** Where the page came from (plan 0010): a photo the engine read, or a MusicXML file opened as it is. */
+export type JobSource = "image" | "musicxml";
 
 export interface Job {
   id: string;
@@ -7,6 +9,7 @@ export interface Job {
   created_at: string;
   updated_at: string;
   input_name: string;
+  source: JobSource;
   name: string;
   error: string | null;
   result: { engine: string; seconds: number; stats: Stats } | null;
@@ -36,9 +39,11 @@ async function check<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export async function createJob(file: File): Promise<Job> {
+/** `name` is for a caller that already knows the score's name: the file's own title does not override it. */
+export async function createJob(file: File, name?: string): Promise<Job> {
   const body = new FormData();
   body.append("file", file, file.name);
+  if (name) body.append("name", name);
   return check<Job>(await fetch("/api/jobs", { method: "POST", body }));
 }
 

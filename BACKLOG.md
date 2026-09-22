@@ -30,7 +30,7 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 - Ties across bar lines: homr places the tied note a beat late and overfills the measure (Gymnopédie m26, m31). Detect overfull measures with a tie and shift the tied note.
 
 ## Rendering polish
-- homr writes no <beam> elements, so OSMD shows separate flags instead of beams. Add beaming in post-processing (group eighths and sixteenths within a beat) or via music21's beam maker.
+- Beams: planned (ADR 0007, plan 0006): read from the print's pixels in the driver, placed on the notes by the chord stage's mapping, beaming by the beat as the fallback, joined or broken with one key in the editor. homr writes no <beam> and its masks hold none, so music21's beam maker is not the path.
 - homr's title OCR ends up as the score title ("Marie Lafor t"). Strip or clean it in post-processing.
 - Frontend bundle is 1.6 MB minified (OSMD + Tone.js). Lazy-load the score view.
 
@@ -48,17 +48,25 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
   width and the sheet needs the vertical space.
 
 ## Other deferred features
-- Editor follow-ups (the editor itself is done, ADR 0005): tuplet entry, a second voice, beaming, moving a note
+- Editor follow-ups (the editor itself is done, ADR 0005): tuplet entry, a second voice, beaming (plan 0006), moving a note
   between staves, a doubt from a second engine's disagreement, a language-model second opinion on the flagged measures
   (the flags and the photo strips are what it would plug into).
 - Multi-page pieces: several photos merged into one MusicXML
-- Multi-page PDF input, split server-side
+- Multi-page PDF input, split server-side. A PDF is the obvious next file to accept after MusicXML
+  (plan 0010), and the four Anton exports show why: the user has the PDF and the `.mxl` side by side.
+- MusicXML in is done (plan 0010). Follow-ups: nothing is promised beyond the one and two-staff pages
+  the app is built for — a transposing part is played at written pitch, and a long orchestral score
+  will render slowly; a file whose measures the editor renumbers (`implicit` pickups) has not been
+  through the editor's insert and delete; and an imported file's own `<beam>` elements are drawn but
+  the beam editor of plan 0006 is still not built.
 - Falling-notes / piano-roll view
 - Web MIDI output to a connected digital piano, MIDI file download
 - Practice tools: mute one hand (loop and tempo done)
 - Form of a song, next steps (plan 0004 done to step 3; plan 0007 done: pass counts, the form as one
-  line, section bands, beat-precise edges, the undo and playback fixes): voltas are never read by the
-  engine (8 of 30 songs) and must be entered by hand; verse rows are under-read on 6 of 25 songs (the
+  line, section bands, beat-precise edges, the undo and playback fixes; plan 0009 done: the page
+  written out in the order it is sung, downloadable beside the printed one): voltas are never read by
+  the engine (8 of 30 songs) and must be entered by hand, unless the page came in as a file
+  (plan 0010), where OSMD expands the endings the file already carries; verse rows are under-read on 6 of 25 songs (the
   lyrics stage); a volta editor (endings on a measure) and D.C./Fine/Coda words are not in the editor;
   looping one pass rather than a measure range; a verse of words that covers one section instead of
   the whole page; multi-page songs

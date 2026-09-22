@@ -23,10 +23,10 @@ const ATTRIBUTES_ORDER = ["footnote", "level", "divisions", "key", "time", "stav
 
 // ---- the excerpt: one passage as a standalone score ----------------------------------------------
 
-interface InForce { divisions: Element | null; key: Element | null; time: Element | null; staves: Element | null; clefs: Map<string, Element> }
+export interface InForce { divisions: Element | null; key: Element | null; time: Element | null; staves: Element | null; clefs: Map<string, Element> }
 
-/** The attributes in force at the start of measure `upto`: the latest of each seen from the first measure on. */
-function inForce(partEl: Element, upto: number): InForce {
+/** The attributes in force at the end of measure `upto`: the latest of each seen from the first measure on. */
+export function inForce(partEl: Element, upto: number): InForce {
   const out: InForce = { divisions: null, key: null, time: null, staves: null, clefs: new Map() };
   for (const m of children(partEl, "measure").slice(0, upto + 1)) {
     for (const attrs of children(m, "attributes")) {
@@ -40,8 +40,8 @@ function inForce(partEl: Element, upto: number): InForce {
   return out;
 }
 
-/** The page layout of the whole score means nothing to a one-measure sheet. */
-function stripLayout(el: Element): void {
+/** The page layout of the whole score means nothing to a one-measure sheet, nor to an expanded one. */
+export function stripLayout(el: Element): void {
   for (const c of Array.from(el.children)) {
     if (c.tagName === "print") { el.removeChild(c); continue; }
     stripLayout(c);

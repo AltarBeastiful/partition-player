@@ -116,7 +116,7 @@ export class EditorSession {
       if (level !== "info") p.info = false;
     }
     for (const c of this.checks) {
-      if (c.status === "ok") continue;
+      if (c.status === "ok" || c.upbeat) continue;  // a measure meant to be short is not a doubt (plan 0010)
       const p = get(c.index);
       const t = checkText(c);
       if (!p.texts.some((x) => x.startsWith(t.split(" by ")[0]))) p.texts.push(t);

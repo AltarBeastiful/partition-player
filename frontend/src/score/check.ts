@@ -7,7 +7,8 @@
 import { children, text, type MeasureInfo } from "./xml";
 
 export type Status = "ok" | "underfull" | "overfull" | "empty";
-export interface MeasureCheck { index: number; status: Status; expected: number; filled: number; time: string; diff: number }
+/** `upbeat` is a short measure that is meant to be short (plan 0010): it is not a doubt. */
+export interface MeasureCheck { index: number; status: Status; expected: number; filled: number; time: string; diff: number; upbeat: boolean }
 
 /** Length of the longest voice in quarters, like `_measure_filled`. */
 export function filledQuarters(m: Element, divisions: number): number {
@@ -24,13 +25,41 @@ export function filledQuarters(m: Element, divisions: number): number {
   return end / divisions;
 }
 
+/**
+ * The short measures that are an upbeat and not a mistake (plan 0010), by index. The same two shapes
+ * as the Python `upbeats`: a first measure the document marks `implicit="yes"`, which is how
+ * MusicXML writes a pickup, and a short measure completed exactly by a short neighbour — or, for the
+ * page's first and last measures, by each other — which is one bar written in two pieces, the way a
+ * songbook writes a section that begins mid-bar.
+ *
+ * Safe here because this check never sees raw engine output: a recognized page has been padded
+ * before anyone looks at it (`postprocess`), so a short measure is either an authored upbeat or an
+ * edit made a moment ago.
+ */
+function upbeats(lengths: { filled: number; expected: number }[], implicitFirst: boolean): Set<number> {
+  const n = lengths.length;
+  const short = (i: number) => i >= 0 && i < n && lengths[i].filled > 0 && lengths[i].filled < lengths[i].expected;
+  const out = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    if (!short(i)) continue;
+    if (i === 0 && implicitFirst) { out.add(i); continue; }
+    const ends = [...(i === 0 ? [n - 1] : []), ...(i === n - 1 ? [0] : [])];
+    for (const j of [i - 1, i + 1, ...ends]) {
+      if (j === i || !short(j)) continue;
+      if (Math.abs(lengths[i].filled + lengths[j].filled - lengths[i].expected) < 1e-9) { out.add(i); break; }
+    }
+  }
+  return out;
+}
+
 export function checkMeasures(measures: MeasureInfo[]): MeasureCheck[] {
-  return measures.map((m) => {
-    const expected = (m.beats * 4) / m.beatType;
-    const filled = filledQuarters(m.el, m.divisions);
+  const lengths = measures.map((m) => ({ filled: filledQuarters(m.el, m.divisions), expected: (m.beats * 4) / m.beatType }));
+  const excused = upbeats(lengths, measures[0]?.el.getAttribute("implicit") === "yes");
+  return measures.map((m, i) => {
+    const { filled, expected } = lengths[i];
     const diff = filled - expected;
     const status: Status = filled === 0 ? "empty" : Math.abs(diff) < 1e-9 ? "ok" : diff < 0 ? "underfull" : "overfull";
-    return { index: m.index, status, expected, filled, time: `${m.beats}/${m.beatType}`, diff };
+    return { index: m.index, status, expected, filled, time: `${m.beats}/${m.beatType}`, diff, upbeat: excused.has(i) };
   });
 }
 

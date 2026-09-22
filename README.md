@@ -1,7 +1,8 @@
 # partition-player
 
 Photograph a page of printed sheet music, get it back as MusicXML, and play it on a piano in the
-browser with the cursor following the notes. CPU only, built to run on a small ARM VPS.
+browser with the cursor following the notes. CPU only, built to run on a small ARM VPS. A MusicXML
+file you already have comes in through the same door and skips the reading entirely (plan 0010).
 
 Decisions are recorded in `docs/adr/`. The engine benchmark that picked homr is in `bench/`.
 
@@ -9,7 +10,7 @@ Decisions are recorded in `docs/adr/`. The engine benchmark that picked homr is 
 
 - `backend/` Python package `partition_player`: FastAPI API, a one-thread job runner, and the
   pipeline (preprocess, OMR engine, postprocess). CLI entry point `partition-player`.
-- `frontend/` React + Vite + TypeScript: upload or camera capture, progress, score view with
+- `frontend/` React + Vite + TypeScript: upload a photo, a camera capture or a MusicXML file, progress, score view with
   OpenSheetMusicDisplay rendering and piano playback (Tone.js sampler, own look-ahead scheduler)
   with tempo control, a loop over a measure range, a switch that writes the French note names
   (do, ré, mi…) over the staff, and the score editor (`src/score/` for the document and its
@@ -38,10 +39,11 @@ npm run dev      # http://localhost:5173, proxies /api to :8000
 npm run build    # writes dist/, which the backend serves at / when present
 ```
 
-CLI, one image in, MusicXML out:
+CLI, one page in, MusicXML out — a photo to read, or a file to open:
 
 ```
 backend/.venv/bin/partition-player recognize photo.jpg -o out/
+backend/.venv/bin/partition-player recognize song.mxl -o out/
 ```
 
 ## Docker
@@ -91,6 +93,27 @@ note, `*` skips a note). Saving rewrites only the lyric elements of the score, k
 re-renders the sheet. With `PP_ANTHROPIC_API_KEY` set, the recognized text of each line is also sent
 with its band image to Claude Haiku for a spelling pass; the answer is used only when it keeps the
 same syllables in the same places. The benchmark is `bench/lyrics/` (see `bench/RESULTS.md`).
+
+## MusicXML in
+
+Beside the camera there is a second door (plan 0010): a `.musicxml`, `.xml` or `.mxl` file is
+opened as it is, with no engine, no chord OCR and no lyric OCR — the chords, the words, the voltas
+and the beams are already in it. Which kind of upload it is, is decided by the bytes and the suffix,
+not by the content type the browser guesses; a `.mxl` container is unwrapped through its
+`META-INF/container.xml`; the score's name comes from the file's own title rather than its file name.
+
+Nothing is repaired. Padding a short measure, unmerging a rest from a chord and moving a repeat
+barline all answer something an engine does to a page and an author does not, so an imported document
+is stored exactly as it arrived, and a measure that does not add up is recorded as information rather
+than as a doubt. A measure shorter than its time signature is usually not an error at all: over the 60
+authored files of the two song benchmarks, every short measure but two is either a pickup the file
+marks `implicit="yes"` or one bar written in two pieces (`en_clementine` holds 2 + 1 quarters over its
+measures 9 and 10 of 3/4). The live check in the editor knows both shapes and stays quiet about them —
+it never sees raw engine output, which `postprocess` has already padded.
+
+What an imported page has that a photographed one cannot: repeat endings. `es_alfonsina_y_el_mar`
+arrives with its two voltas, and the automatic form plays *intro, verse 1, verse 2* without anyone
+entering a section by hand — 34 printed measures, 45 as played.
 
 ## Song benchmark
 
@@ -241,6 +264,21 @@ being played highlighted.
   measure range runs to the end of the form when its last measure is the last of the page (so Play
   plays the whole song, every verse and every chorus), and stops at the first stretch of that
   measure when the range is narrowed, which is what practising a passage asks for.
+- **The page as played.** Beside `Download MusicXML — as printed` there is a second link, *as played
+  (N measures)*, shown once the form makes the song longer than the page: the score written out in
+  the order it is sung, with each verse's words under its own notes and no repeat sign left to obey.
+  Anton's 19 measures come out as 145, fifteen of them one beat long, since its verse leaves measure
+  11 on beat 2 and its chorus enters it there. Each pass opens a new system under its name ("Verse
+  3", "Chorus"). It is written in the browser from the score on screen, so it carries changes that
+  are not saved yet; it is an export and never becomes the score being edited, which stays the page
+  the photo was read from (plan 0009).
+- **Duplicate as played.** The same written-out score, kept instead of downloaded: the button beside
+  those links saves it as a score of its own — *"<name> (as played)"* — and opens it. It goes back in
+  through the MusicXML door (plan 0010), so the copy is read by the same code that reads anyone
+  else's file, and it arrives with its own link, its own name, its own lyrics panel and a form of its
+  own to play with; the page it was made from is left exactly as it is. Alfonsina's 34 measures
+  become a 45-measure score with no repeat sign in it. A copy of a copy is already written out, so
+  the button is not offered there.
 
 ## Score library
 
@@ -249,13 +287,17 @@ thumbnail and an editable name. There is no login: anyone who can reach the app 
 and delete. To keep the disk flat, a finished job keeps the MusicXML, the recognized version, the
 review copy of the photo (under 300 KB), the measure layout, the doubts, a small thumbnail and its
 metadata (about 350 KB in all); the full-size upload and the engine's intermediate files are deleted
-when the job ends.
+when the job ends. An imported score keeps the same files minus everything that needs a photo, so it
+costs a few tens of kilobytes and its row in the library shows a ruled tile instead of a thumbnail.
 
 ## API
 
-- `POST /api/jobs` multipart `file` (JPEG, PNG, WebP): returns the job, status `queued`.
-- `GET /api/jobs/{id}`: status is `queued`, `preprocessing`, `recognizing`, `postprocessing`,
-  `done` or `failed`, with a `message`, and `result` or `error`.
+- `POST /api/jobs` multipart `file` (JPEG, PNG, WebP, or MusicXML as `.musicxml`, `.xml`, `.mxl`)
+  and optional `name` (for a client that already knows what the score is called, such as the browser
+  duplicating a page as played; the file's own title does not override it): returns the job, status
+  `queued`. `source` says which door it came through, `image` or `musicxml`.
+- `GET /api/jobs/{id}`: status is `queued`, `preprocessing`, `recognizing`, `importing`,
+  `postprocessing`, `done` or `failed`, with a `message`, and `result` or `error`.
 - `GET /api/jobs/{id}/score.musicxml`: the result once `done`.
 - `GET /api/jobs?limit=50`: the library, newest first. `PATCH /api/jobs/{id}` with `{"name": ...}`
   renames; `DELETE /api/jobs/{id}` removes; `GET /api/jobs/{id}/thumb.jpg` is the list thumbnail.

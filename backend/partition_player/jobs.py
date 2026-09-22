@@ -1,5 +1,8 @@
 """Filesystem-backed job store and a single worker thread (ADR 0001).
 
+A job is one page in: a photograph to be read by the engine, or a MusicXML file to be opened as it
+is (plan 0010). `Job.source` says which, and the worker picks the path.
+
 Layout while running: <data>/jobs/<id>/{input.<ext>, status.json, preprocessed.png, <engine>/..., score.musicxml}
 After success only {status.json, result.json, score.musicxml, thumb.jpg, lyrics.json} and the editor's files
 {original.musicxml, review.json, review.webp, layout.json} are kept (about 350 KB instead of 20 MB, ADR 0005);
@@ -19,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import Settings
+from .pipeline.musicxml import ingest
 from .pipeline.run import recognize
 
 log = logging.getLogger(__name__)
@@ -42,11 +46,12 @@ def clean_name(name: str) -> str:
 @dataclass
 class Job:
     id: str
-    status: str = "queued"  # queued | preprocessing | recognizing | postprocessing | done | failed
+    status: str = "queued"  # queued | preprocessing | recognizing | importing | postprocessing | done | failed
     message: str = "Waiting for a free worker"
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     input_name: str = ""
+    source: str = "image"  # image (a photo to read) | musicxml (a file to open); jobs written before this are photos
     name: str = ""  # user-facing title, editable; defaults to the upload's file name
     error: str | None = None
     result: dict | None = None
@@ -71,13 +76,13 @@ class JobStore:
         """Guards status.json writes and, for the lyrics editor, the score rewrite."""
         return self._lock
 
-    def create(self, input_name: str, data: bytes) -> Job:
+    def create(self, input_name: str, data: bytes, source: str = "image", name: str = "") -> Job:
         job_id = uuid.uuid4().hex[:12]
         d = self.dir(job_id)
         d.mkdir(parents=True)
         ext = Path(input_name).suffix.lower() or ".bin"
         (d / f"input{ext}").write_bytes(data)
-        job = Job(id=job_id, input_name=input_name, name=default_name(input_name))
+        job = Job(id=job_id, input_name=input_name, source=source, name=clean_name(name) or default_name(input_name))
         self.save(job)
         return job
 
@@ -206,8 +211,8 @@ class Worker:
 
     def _process(self, job_id: str) -> None:
         job = self.store.get(job_id)
-        image = self.store.input_path(job_id)
-        if job is None or image is None:
+        source_file = self.store.input_path(job_id)
+        if job is None or source_file is None:
             return
 
         def progress(stage: str, message: str) -> None:
@@ -216,13 +221,23 @@ class Worker:
 
         started = time.monotonic()
         try:
-            recognize(image, self.store.dir(job_id), self.settings, progress)
-            info = json.loads((self.store.dir(job_id) / "result.json").read_text())
+            out = self.store.dir(job_id)
+            if job.source == "musicxml":
+                ingest(source_file, out, progress)
+            else:
+                recognize(source_file, out, self.settings, progress)
+            info = json.loads((out / "result.json").read_text())
             job.status, job.message = "done", "Score ready"
             job.result = {"engine": info.get("engine"), "stats": info.get("stats"), "seconds": round(time.monotonic() - started, 1)}
+            title = clean_name(info.get("title") or "")
+            if title and job.name == default_name(job.input_name):
+                # an imported file knows its own name better than its file name does — but not better
+                # than a name the upload asked for, or one the user typed while the job ran
+                job.name = title
         except Exception as e:  # noqa: BLE001  (the job must record any failure)
             log.exception("job %s failed", job_id)
-            job.status, job.message, job.error = "failed", "Recognition failed", str(e)
+            failed = "This file could not be opened" if job.source == "musicxml" else "Recognition failed"
+            job.status, job.message, job.error = "failed", failed, str(e)
         self.store.save(job)
         self.store.clean(job)
         self.store.prune(self.settings.job_ttl_days)

@@ -197,3 +197,62 @@ def test_inspect_reports_without_changing(tmp_path: Path):
     assert (stats.measures, stats.notes, stats.rests) == (3, 7, 0)
     assert [(d["measure"], d["kind"]) for d in stats.doubts] == [(1, "underfull"), (2, "overfull")]
     assert describe(Fraction(5, 2)) == "five eighths" and describe(Fraction(1, 3)) == "0.333333 quarters"
+
+
+UPBEATS = """<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>12</duration><type>half</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>8</duration><type>half</type></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="5">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>12</duration><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>
+"""
+
+
+def test_an_upbeat_pair_is_not_a_doubt(tmp_path: Path):
+    """Plan 0010: measures 3 and 4 hold 2 + 1 quarters of 3/4, which is one bar written in two
+    pieces, and measure 1 is a pickup with no partner. Only the pickup shape needs the document to
+    say so; the pair speaks for itself."""
+    from partition_player.pipeline.postprocess import inspect, upbeats
+
+    tree = ET.ElementTree(ET.fromstring(UPBEATS))
+    part = tree.getroot().find("part")
+    assert upbeats(part) == {2, 3}
+    assert [(d["measure"], d["kind"]) for d in inspect(tree).doubts] == [(0, "underfull")]
+
+    part.find("measure").set("implicit", "yes")  # the file says measure 1 is a pickup
+    assert upbeats(part) == {0, 2, 3}
+    assert inspect(tree).doubts == []
+
+
+def test_reading_a_file_repairs_nothing(tmp_path: Path):
+    """`repair=False` is the imported-file path: the short measure keeps its length, the rest-chord
+    is left alone, and what does not add up is information."""
+    src = tmp_path / "in.musicxml"; src.write_text(SHORT_MEASURE)
+    dst = tmp_path / "out.musicxml"
+    stats = postprocess(src, dst, repair=False)
+    assert stats.padded_measures == 0 and stats.pickup is True
+    # nothing pairs with this first measure and the file does not call it a pickup, so it is said once, quietly
+    assert [(d["kind"], d["level"], d["text"]) for d in stats.doubts] == [("underfull", "info", "a quarter in a 2/4 measure")]
+    assert dst.read_text().count("<rest") == 1
+    assert ET.tostring(ET.parse(src).getroot()) == ET.tostring(ET.parse(dst).getroot())
+
+    src.write_text(UNEVEN)
+    stats = postprocess(src, tmp_path / "uneven.musicxml", repair=False)
+    assert [(d["measure"], d["kind"], d["level"]) for d in stats.doubts] == [
+        (1, "underfull", "info"), (2, "overfull", "info")]

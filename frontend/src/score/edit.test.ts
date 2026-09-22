@@ -49,6 +49,31 @@ describe("check", () => {
     expect(checkText(checks[2])).toBe("longer than 3/4 by an eighth");
     expect(describeLength(2.5)).toBe("five eighths");
   });
+
+  it("leaves an upbeat alone: a bar written in two pieces, or a pickup the file marks (plan 0010)", () => {
+    // 3/4: a short first measure, a full one, then 2 + 1 quarters over two measures, then a full one
+    const doc = doc1(`<measure number="1">{attrs}${note("C", 4, 4, "quarter")}</measure>
+      <measure number="2">${note("D", 4, 12, "half")}</measure>
+      <measure number="3">${note("E", 4, 8, "half")}</measure>
+      <measure number="4">${note("F", 4, 4, "quarter")}</measure>
+      <measure number="5">${note("G", 4, 12, "half")}</measure>`);
+    const checks = checkMeasures(walk(part(doc)));
+    expect(checks.map((c) => c.status)).toEqual(["underfull", "ok", "underfull", "underfull", "ok"]);
+    expect(checks.map((c) => c.upbeat)).toEqual([false, false, true, true, false]);
+
+    // the same first measure, once the document says it is a pickup
+    walk(part(doc))[0].el.setAttribute("implicit", "yes");
+    expect(checkMeasures(walk(part(doc)))[0].upbeat).toBe(true);
+  });
+
+  it("pairs the first measure with the last, the way a songbook closes a page", () => {
+    const doc = doc1(`<measure number="1">{attrs}${note("C", 4, 4, "quarter")}</measure>
+      <measure number="2">${note("D", 4, 12, "half")}</measure>
+      <measure number="3">${note("G", 4, 8, "half")}</measure>`);
+    const checks = checkMeasures(walk(part(doc)));
+    expect(checks.map((c) => c.status)).toEqual(["underfull", "ok", "underfull"]);
+    expect(checks.map((c) => c.upbeat)).toEqual([true, false, true]);
+  });
 });
 
 describe("pitch", () => {

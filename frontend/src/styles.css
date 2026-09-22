@@ -30,6 +30,9 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 2px sol
 .dropzone input { display: none; }
 .filelabel { display: inline-block; }
 .preview { max-height: 240px; width: auto; max-width: 100%; border-radius: 4px; border: 1px solid var(--line); }
+.filecard { display: grid; gap: 6px; justify-items: center; padding: 18px 24px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); max-width: 100%; overflow-wrap: anywhere; }
+.filecard-kind { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .progress { display: grid; gap: 8px; }
 .steps { display: flex; gap: 8px; flex-wrap: wrap; }
 .step { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
@@ -46,6 +49,15 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 2px sol
 .controls.loop input[type="number"] { width: 64px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
 .controls.loop input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
 
+/* plan 0009: the page can be taken away as it is printed or as it is played. The second is written
+   here in the browser from the document on screen, so it is a button and not a link — dressed as one,
+   since the two are the same offer made twice. */
+.downloads { display: inline-flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.downloads a, .downloads button { color: var(--accent); }  /* the two offers read as one pair, not as a link beside a control */
+.downloads button { border: none; background: none; padding: 0; margin: 0; font: inherit; text-decoration: underline; cursor: pointer; }
+.downloads button:hover { color: var(--ink); }
+.downloads .sep { color: var(--muted); }
+
 button.quiet { border-color: transparent; background: transparent; color: var(--muted); padding: 4px 8px; }
 button.quiet:hover { color: var(--ink); border-color: var(--line); }
 button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
@@ -55,6 +67,9 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .score-row.failed .score-name { color: var(--muted); }
 .thumb { width: 56px; height: 72px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--bg); display: block; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+/* a score opened from a file has no photo behind it (plan 0010) */
+.thumb-file { display: grid; place-items: center; width: 100%; height: 100%; font-size: 9px; letter-spacing: .04em;
+  color: var(--muted); background: repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 7px); }
 .score-main { min-width: 0; display: grid; gap: 2px; }
 .score-name { color: var(--ink); text-decoration: none; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score-name:hover { text-decoration: underline; }
@@ -111,6 +126,19 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .toolbar .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-right: 4px; }
 .toolbar button { padding: 6px 9px; font-size: 14px; line-height: 1.2; min-width: 34px; }
 .toolbar button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* "Other readings" is the way out of a misread measure and the one tool a first user has to find, and
+   an accent outline lost it among the grey tools under it, which share its font, its size and nearly
+   its colour: it is the only filled button of the toolbar, set in the display serif of the headings,
+   larger than the tools and lifted off the bar by a ring of its own colour. When the selected measure
+   carries a mark on the sheet it takes that mark's amber, and the key that opens it is written on it. */
+.toolbar button.open-readings { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.18); font-family: "Newsreader", Georgia, serif; font-size: 17px; font-weight: 600; padding: 7px 16px; display: inline-flex; gap: 8px; align-items: center; }
+.toolbar button.open-readings:hover:not(:disabled) { filter: brightness(1.1); }
+.toolbar button.open-readings kbd { font: 600 11px/1 system-ui, sans-serif; padding: 3px 5px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.7; }
+.toolbar button.open-readings.flagged { background: #b45309; border-color: #b45309; color: #fff; box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.24); }
+@media (prefers-color-scheme: dark) {
+  .toolbar button.open-readings { box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22); }
+  .toolbar button.open-readings.flagged { background: #f59e0b; border-color: #f59e0b; color: #1a1e28; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.24); }
+}
 .toolbar input.chord { font: inherit; padding: 5px 8px; width: 7ch; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 .toolbar .panel { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 .toolbar .keys { font-size: 12px; }
@@ -169,6 +197,8 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 @media (max-width: 700px) {
   .toolbar { margin: 0 -12px; border-radius: 8px 8px 0 0; }
   .toolbar button { padding: 9px 11px; min-width: 40px; }
+  .toolbar button.open-readings { padding: 9px 16px; }
+  .toolbar button.open-readings kbd { display: none; } /* no keyboard to press it with */
   .review .photo-toggle { margin-left: 0; }
 }
 

@@ -84,6 +84,9 @@ export function Toolbar({ session, c, onPlayFrom, onReadings, onRevert, onReload
   const isRest = !ev || ev.isRest;
   const disabled = !ev;
   const check = m ? session.checks[m.index] : null;
+  // The readings button wears the colour of the mark on the sheet when the selected measure carries one:
+  // that is when it is the thing to do, and it is the one tool a first user has to find.
+  const flagged = sel ? session.places().find((p) => p.measure === sel.measure && !p.info) : undefined;
 
   return (
     <div className="toolbar" role="toolbar" aria-label="Score editor">
@@ -92,10 +95,15 @@ export function Toolbar({ session, c, onPlayFrom, onReadings, onRevert, onReload
           <span className="selection">
             <strong>Measure {m.index + 1}</strong>, {beat(ev, m.beatType)}: {pitchName(ev)}{t ? `, ${LABEL[t.type]}${".".repeat(t.dots)}` : ""}
             {ev.inChord ? " (in a chord)" : ""}{tiedToNext(ev) ? ", tied" : ""}
-            {check && check.status !== "ok" && <span className="bad"> · {check.status === "underfull" ? "short" : check.status === "overfull" ? "long" : "empty"}</span>}
+            {check && check.status !== "ok" && (check.upbeat
+              ? <span className="muted"> · upbeat</span>
+              : <span className="bad"> · {check.status === "underfull" ? "short" : check.status === "overfull" ? "long" : "empty"}</span>)}
           </span>
         ) : <span className="muted">Click a note on the sheet, or press n for the next place to check.</span>}
-        <button onClick={onReadings} disabled={!ev} title="Other readings of this note (o)">Other readings</button>
+        <button className={"open-readings" + (flagged ? " flagged" : "")} onClick={onReadings} disabled={!ev}
+          title={flagged ? `Other readings of this note (o) — measure ${flagged.measure + 1} is flagged` : "Other readings of this note (o)"}>
+          Other readings <kbd>o</kbd>
+        </button>
         <span className="save-state">
           <button className="quiet" onClick={c.undo} disabled={!session.canUndo} title="Undo (Ctrl+Z)">Undo</button>
           <button className="quiet" onClick={c.redo} disabled={!session.canRedo} title="Redo (Ctrl+Y)">Redo</button>
@@ -104,7 +112,7 @@ export function Toolbar({ session, c, onPlayFrom, onReadings, onRevert, onReload
           {session.status === "saving" && <span className="muted">Saving…</span>}
           {session.status === "error" && <button className="danger" onClick={() => void session.save()}>Save again</button>}
           {session.status === "stale" && <button className="danger" onClick={onReload}>Reload</button>}
-          <button className="primary" onClick={onDone} title="Leave edit mode (Esc)">Done</button>
+          <button onClick={onDone} title="Leave edit mode (Esc)">Done</button>
         </span>
       </div>
       {session.message && <div className="error">{session.message}</div>}
@@ -189,7 +197,7 @@ export function Toolbar({ session, c, onPlayFrom, onReadings, onRevert, onReload
           <button onClick={() => { c.clef(sel?.staff ?? 1, "C"); setPanel(null); }}>𝄡 alto</button>
         </div>
       )}
-      {ev && <div className="muted keys">Keys: ↑ ↓ pitch, Shift+↑ ↓ octave, − 0 + accidental, 1…6 length, . dot, t tie, r rest, a b insert, Del, f fill, ← → move, n p next and previous place, c checked, Ctrl+Z undo.</div>}
+      {ev && <div className="muted keys">Keys: ↑ ↓ pitch, Shift+↑ ↓ octave, − 0 + accidental, 1…6 length, . dot, t tie, r rest, a b insert, Del, f fill, ← → move, n p next and previous place, c checked, o other readings, Ctrl+Z undo.</div>}
     </div>
   );
 }

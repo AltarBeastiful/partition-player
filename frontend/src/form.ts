@@ -177,6 +177,50 @@ export function expandForm(form: Form, measureCount: number): Pass[] {
   });
 }
 
+/**
+ * One stretch of one printed measure as it is played, in timeline order: where its beat 0 would
+ * fall (`origin`, which is before the slice when the measure is entered on an upbeat) and which
+ * part of it is actually played, in whole notes from the measure's start. A whole measure is
+ * `from: 0, to: its duration`. Recorded rather than recomputed, because subtracting a step's
+ * in-measure offset cannot tell a sliced measure from a whole one (plan 0007, step 5). `cut` is
+ * whether the section is left here: a note still sounding at `to` stops there rather than ringing
+ * on, which a whole measure at the end of a range does not do.
+ */
+export interface Slice { measure: number; pass: number; origin: number; from: number; to: number; cut: boolean }
+
+/**
+ * The slices a pass list cuts the printed measures into, in the order they are played: the whole
+ * arithmetic of the form, with no sound in it. Extracted from `layPasses` in plan 0009 (decision 2)
+ * so that `score/expand.ts` can write the same slices out as measures: the page you can download
+ * and the page you hear then leave and enter a measure on the same beat by construction, instead of
+ * two implementations agreeing by inspection.
+ *
+ * `measureDuration` is the length of each printed measure in whole notes. The player measures it
+ * with OSMD; a document on its own measures it by what its measures actually hold.
+ */
+export function sliceRanges(passes: Pass[], measureDuration: number[], measureCount: number): Slice[] {
+  const EPS = 1e-9;
+  const out: Slice[] = [];
+  let t = 0;
+  passes.forEach((pass, pi) => {
+    for (const r of pass.ranges) {
+      const first = Math.max(0, r.from), lastMeasure = Math.min(r.to, measureCount - 1);
+      for (let m = first; m <= lastMeasure; m++) {
+        const duration = measureDuration[m];
+        // the part of this measure that is played: the whole of it, unless the range enters or
+        // leaves it on a beat of its own
+        const from = m === r.from ? Math.max(0, Math.min(r.fromOnset ?? 0, duration)) : 0;
+        const cut = m === r.to && r.toOnset !== undefined;
+        const to = cut ? Math.max(from, Math.min(r.toOnset!, duration)) : duration;
+        if (to - from <= EPS) continue; // a slice with nothing in it is not played at all
+        out.push({ measure: m, pass: pi, origin: t - from, from, to, cut });
+        t += to - from;
+      }
+    }
+  });
+  return out;
+}
+
 /** Sections and passes made from a pass list, so a default form can be edited. */
 export function formFromPasses(passes: Pass[], measureCount: number): Form {
   const sections: Section[] = [];
@@ -328,6 +372,28 @@ export function remapForm(form: Form, remap: (m: number) => number | null): Form
     sections: sections.filter((s): s is Section => s !== null),
     passes: form.passes.filter((p) => keep[p.section]).map((p) => ({ ...p, section: newIndex[p.section] })),
   };
+}
+
+/**
+ * One heading per expanded pass, for the score written out in the order it is sung (plan 0009,
+ * decision 5): "Verse 3", "Chorus". The form's own words when there is a form — the chips, `times`
+ * flattened the way `expandForm` flattens them — and the verse number otherwise. Falls back to the
+ * plain names if the two lists ever stop lining up, since a heading is a label and must never
+ * decide which measures are written.
+ */
+export function passNames(passes: Pass[], form: Form | null, measureCount: number): string[] {
+  if (form) {
+    const out: string[] = [];
+    for (const p of form.passes) {
+      const s = form.sections[p.section];
+      if (!s) continue;
+      const name = (s.name || "Part") + (p.verse !== null ? ` ${p.verse}` : "");
+      const times = Math.max(1, Math.min(Math.round(p.times ?? 1), MAX_TIMES));
+      for (let i = 0; i < times; i++) out.push(name);
+    }
+    if (out.length === expandForm(form, measureCount).length) return out;
+  }
+  return passes.map((p) => (p.verse !== null ? `Verse ${p.verse}` : `m. ${p.ranges.map((r) => (r.from === r.to ? r.from + 1 : `${r.from + 1}\u2013${r.to + 1}`)).join("+")}`));
 }
 
 /** The pass list in words: "Verse 1 · Chorus · Verse 2 · Chorus". */

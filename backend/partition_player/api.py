@@ -7,7 +7,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -15,10 +15,13 @@ from pydantic import BaseModel, Field
 from . import __version__, review
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
+from .pipeline import musicxml
 from .pipeline.lyrics import edit as lyrics_edit
 from .pipeline.lyrics import inject as lyrics_inject
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp"}
+UNSUPPORTED = ("unsupported file {kind}; send a photo of one page (JPEG, PNG or WebP) "
+               "or a MusicXML file (.musicxml, .xml or .mxl)")
 
 
 class Rename(BaseModel):
@@ -71,15 +74,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [j.to_dict() for j in store.list(limit)]
 
     @app.post("/api/jobs", status_code=202)
-    async def create_job(file: UploadFile) -> dict:
-        if file.content_type not in ALLOWED_TYPES:
-            raise HTTPException(415, f"unsupported file type {file.content_type}; send a JPEG, PNG or WebP image")
+    async def create_job(file: UploadFile, name: str = Form("", max_length=MAX_NAME)) -> dict:
+        """A page in: a photo for the engine to read, or a MusicXML file to open as it is (plan 0010).
+
+        Which one it is, is decided by the bytes and the suffix, not by the content type: browsers
+        send application/octet-stream for .musicxml and .mxl alike. `name` is for a client that
+        already knows what the score should be called — the browser duplicating a score as it is
+        played — and keeps the file's own title from overwriting it."""
+        filename = file.filename or "upload.jpg"
         data = await file.read()
-        if len(data) > settings.max_upload_mb * 1024 * 1024:
-            raise HTTPException(413, f"image larger than {settings.max_upload_mb} MB")
         if not data:
             raise HTTPException(400, "empty upload")
-        job = store.create(file.filename or "upload.jpg", data)
+        if musicxml.looks_like_musicxml(filename, data[:64]):
+            source = "musicxml"
+        elif file.content_type in ALLOWED_TYPES:
+            source = "image"
+        else:
+            raise HTTPException(415, UNSUPPORTED.format(kind=f"type {file.content_type}"))
+        if len(data) > settings.max_upload_mb * 1024 * 1024:
+            raise HTTPException(413, f"file larger than {settings.max_upload_mb} MB")
+        job = store.create(filename, data, source, name)
         worker.submit(job.id)
         return job.to_dict()
 

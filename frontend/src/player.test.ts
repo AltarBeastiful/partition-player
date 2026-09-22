@@ -112,8 +112,8 @@ describe("layPasses with a section that starts or ends inside a measure (plan 00
     expect(steps.map((s) => [s.time, s.measure, s.pass])).toEqual([[0, 0, 0], [0.25, 0, 1], [0.5, 1, 1]]);
     // measure 1 is played twice, a different stretch each time, and its beat 0 sits before the chorus
     expect(slices.filter((s) => s.measure === 0)).toEqual([
-      { measure: 0, pass: 0, origin: 0, from: 0, to: 0.25 },
-      { measure: 0, pass: 1, origin: 0, from: 0.25, to: 0.5 },
+      { measure: 0, pass: 0, origin: 0, from: 0, to: 0.25, cut: true },   // the verse is left here
+      { measure: 0, pass: 1, origin: 0, from: 0.25, to: 0.5, cut: false },
     ]);
   });
 

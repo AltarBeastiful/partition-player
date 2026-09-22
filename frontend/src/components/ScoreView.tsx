@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
-import { getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
-import { defaultPasses, expandForm, formFromPasses, samePasses, versesByMeasure, type Pass } from "../form";
+import { createJob, getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
+import { defaultPasses, expandForm, formFromPasses, passNames, samePasses, versesByMeasure, type Pass } from "../form";
 import { clearVerses, dimVerses } from "../verses";
 import { commands, shortcut } from "../editor/commands";
 import { EditorSession } from "../editor/session";
 import { clearSections, drawOverlay, drawSections, hitTest, keepOverlay, rectOf } from "../editor/sheet";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
+import { expandScore, slicesOf } from "../score/expand";
 import type { EventKey } from "../score/xml";
 import { FormPanel, Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
 import { ReadingsDialog } from "./Readings";
+import { navigate, scorePath } from "../router";
 
 const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
 
@@ -37,6 +39,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const playerRef = useRef<Player | null>(null);
   const renderedDoc = useRef(0);
   const [session, setSession] = useState<EditorSession | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState>("stopped");
@@ -344,6 +347,59 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     try { await session.revert(); onReload(); } catch (e) { setError((e as Error).message); }
   }
 
+  const fileBase = (job.name || "score").replace(/[^\w.-]+/g, "_");
+
+  // How long the page is when the form is written out; 0 when there is nothing to write out — a page
+  // played once, straight through, is already the page as played (plan 0009, step 4).
+  const playedMeasures = useMemo(() => {
+    if (!session || loading || passes.length === 0 || measureCount === 0) return 0;
+    try {
+      const n = slicesOf(session.doc, passes).length;
+      return n > measureCount ? n : 0;
+    } catch { return 0; }
+  }, [session, session?.docVersion, passes, loading, measureCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The expanded score is written in the browser from the document on screen and handed over as a
+  // file; it is never loaded back (plan 0009, decision 1), so there is nothing to save or to reload.
+  const downloadPlayed = useCallback(() => {
+    if (!session) return;
+    try {
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount));
+      const url = URL.createObjectURL(new Blob([xml], { type: "application/vnd.recordare.musicxml+xml" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${fileBase}_as_played.musicxml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError("Could not write the score as it is played: " + (e as Error).message);
+    }
+  }, [session, passes, measureCount, fileBase]);
+
+  /**
+   * The same written-out score, kept as a score of its own (plan 0010): it goes back in through the
+   * MusicXML door, so the copy is read by the same code that reads anyone else's file, and it lands
+   * in the library with its own link, its own name and its own form to play with. The page it was
+   * made from is left exactly as it is.
+   */
+  const duplicatePlayed = useCallback(async () => {
+    if (!session || duplicating) return;
+    setDuplicating(true);
+    setError(null);
+    try {
+      if (session.dirty) await session.save();  // the copy is of the score as saved, not of half of it
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount));
+      const file = new File([xml], `${fileBase}_as_played.musicxml`, { type: "application/vnd.recordare.musicxml+xml" });
+      const created = await createJob(file, `${job.name || "Score"} (as played)`);
+      navigate(scorePath(created.id));
+    } catch (e) {
+      setError("Could not duplicate the score as it is played: " + (e as Error).message);
+      setDuplicating(false);
+    }
+  }, [session, passes, measureCount, fileBase, job.name, duplicating]);
+
   const c = session ? commands(session) : null;
 
   return (
@@ -365,7 +421,24 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           <button id="transpose-up" onClick={() => setTranspose((t) => Math.min(12, t + 1))} disabled={loading} aria-label="One semitone up">+</button>
           {transpose !== 0 && <button className="quiet" onClick={() => setTranspose(0)}>reset</button>}
         </label>
-        <a href={scoreUrl(job.id)} download={`${(job.name || "score").replace(/[^\w.-]+/g, "_")}.musicxml`}>Download MusicXML</a>
+        <span className="downloads">
+          Download MusicXML
+          <a href={scoreUrl(job.id)} download={`${fileBase}.musicxml`} title="The page as it is printed: the measures in the order they are engraved, as the server holds them">as printed</a>
+          {playedMeasures > 0 && (
+            <>
+              <span className="sep">·</span>
+              <button onClick={downloadPlayed} title={`The page as the form says it is sung: ${playedMeasures} measures, each verse's words under its own notes, no repeat sign to obey. Written here, so it includes changes not yet saved.`}>
+                as played ({playedMeasures} measures)
+              </button>
+            </>
+          )}
+        </span>
+        {playedMeasures > 0 && (
+          <button onClick={duplicatePlayed} disabled={duplicating}
+            title={`Keep the page as it is sung — ${playedMeasures} measures — as a score of its own in the library, and open it. This one is left as it is.`}>
+            {duplicating ? "Duplicating…" : "Duplicate as played"}
+          </button>
+        )}
       </div>
       <div className="controls loop">
         <label>
@@ -447,7 +520,9 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           {stats.padded_measures > 0 && <span>{stats.padded_measures} measures padded with rests</span>}
           {(stats.chords ?? 0) > 0 && <span>{stats.chords} chord symbols</span>}
           {(stats.lyrics_syllables ?? 0) > 0 && <span>{stats.lyrics_syllables} syllables of lyrics</span>}
-          <span>read by {job.result?.engine} in {job.result?.seconds}s</span>
+          {job.source === "musicxml"
+            ? <span title={job.input_name}>opened from a MusicXML file</span>
+            : <span>read by {job.result?.engine} in {job.result?.seconds}s</span>}
           {job.edited_at && <span>edited</span>}
         </div>
       )}
