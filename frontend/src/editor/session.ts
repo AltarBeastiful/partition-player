@@ -3,7 +3,7 @@
  * undo and redo as serializations, the doubts and the checked measures, and the autosave that sends
  * the whole document with the revision it was edited from. React reads it through subscribe().
  */
-import { revertScore, saveScore, type Doubt, type Form, type Layout, type ReviewState, type Stats } from "../api";
+import { revertScore, saveScore, type Doubt, type Form, type Layout, type ReviewState, type Stats, type Under, type Voicing } from "../api";
 import { remapForm } from "../form";
 import { checkMeasures, checkText, type MeasureCheck } from "../score/check";
 import { EditError } from "../score/edit";
@@ -38,6 +38,14 @@ export class EditorSession {
   checked: Set<number>;
   revision: number;
   form: Form | null;  // the user's form, or null for the automatic one (plan 0004)
+  /**
+   * How the page sounds (plan 0011): the instrument each line plays over which measures, and the
+   * lines that go on playing underneath. Saved with the score but **not** undoable: they are
+   * playback settings, not edits to the document, and an undo of a note should not take a flute
+   * away.
+   */
+  lines: Voicing[];
+  unders: Under[];
   readonly layout: Layout | null;
   readonly hasImage: boolean;
   readonly hasOriginal: boolean;
@@ -65,6 +73,8 @@ export class EditorSession {
     this.checked = new Set(review.checked);
     this.revision = review.revision;
     this.form = review.form ?? null;
+    this.lines = review.lines ?? [];
+    this.unders = review.unders ?? [];
     this.layout = review.layout;
     this.hasImage = review.has_image;
     this.hasOriginal = review.has_original;
@@ -156,6 +166,14 @@ export class EditorSession {
     if (!coalesce || coalesce !== this.formRun) this.push();
     this.formRun = coalesce ?? null;
     this.form = form;
+    this.message = null;
+    this.touch();
+  }
+
+  /** The instruments and the lines going on underneath; saved like the form, undone like neither. */
+  setSound(lines: Voicing[], unders: Under[]): void {
+    this.lines = lines;
+    this.unders = unders;
     this.message = null;
     this.touch();
   }
@@ -292,7 +310,7 @@ export class EditorSession {
     this.status = "saving";
     this.emit();
     try {
-      const result = await saveScore(this.jobId, { musicxml: this.xml, checked: [...this.checked], revision: this.revision, doubts: this.doubts, form: this.form });
+      const result = await saveScore(this.jobId, { musicxml: this.xml, checked: [...this.checked], revision: this.revision, doubts: this.doubts, form: this.form, lines: this.lines, unders: this.unders });
       this.revision = result.revision;
       this.onStats?.(result.stats);
       this.status = this.pending ? "unsaved" : "saved";

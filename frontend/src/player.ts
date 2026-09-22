@@ -13,7 +13,7 @@
  */
 import * as Tone from "tone";
 import { accompaniment, collectChords, type ChordSymbol } from "./chords";
-import { samePrefix, sliceRanges, type Pass, type Slice } from "./form";
+import { samePrefix, sliceRanges, underSlices, type Pass, type Slice, type Under } from "./form";
 import { readLines, type Line } from "./lines";
 import { DEFAULT_VOICE, VoiceBank, instrumentAt, type SampleSet, type Voicing } from "./voices";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
@@ -28,8 +28,14 @@ export type Track = "melody" | "accompaniment";
 export const ACCOMPANIMENT_LINE = -1;
 /** A note of a preview: time and length in whole notes from the start of the excerpt (plan 0005). */
 export interface PreviewNote { time: number; midi: number; length: number }
-/** `line` is the staff it is printed on, `voice` the instrument it sounds with (plan 0011). */
-export interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number; line: number; voice: string } // whole notes
+/**
+ * `line` is the staff it is printed on, `voice` the instrument it sounds with, and `under` is the
+ * under-line it belongs to — the index of an `Under` record, or -1 for the music of the form itself
+ * (plan 0011). An under-line has its own switch, so a flute going on underneath is not silenced by
+ * switching off the staff it is printed on.
+ */
+export interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number; line: number; voice: string; under: number } // whole notes
+export const NOT_UNDER = -1;
 export interface PrintedStep { time: number; measure: number; notes: { midi: number; length: number; line: number }[] }
 export interface Step { time: number; printed: number; measure: number; pass: number } // on the unrolled timeline
 export interface AccompPulse { at: number; midi: number; length: number; velocity: number } // `at` from the measure start
@@ -77,7 +83,7 @@ export interface Timeline { events: NoteEvent[]; steps: Step[]; slices: Slice[];
  * since plan 0009: sound is laid on the slices here, measures are written out from the same slices
  * in `score/expand.ts`.
  */
-export function layPasses(score: PrintedScore, passes: Pass[], voicings: Voicing[] = []): Timeline {
+export function layPasses(score: PrintedScore, passes: Pass[], voicings: Voicing[] = [], unders: Under[] = []): Timeline {
   const events: NoteEvent[] = [];
   const steps: Step[] = [];
   const EPS = 1e-9;
@@ -99,7 +105,7 @@ export function layPasses(score: PrintedScore, passes: Pass[], voicings: Voicing
         steps.push({ time, printed: si, measure: m, pass: pi });
         for (const n of step.notes) {
           const length = Math.min(n.length, cut - at);  // a note is cut where the section is left
-          events.push({ time, midi: n.midi, length, track: "melody", velocity: 0.9, line: n.line, voice: voiceOf(n.line, m) });
+          events.push({ time, midi: n.midi, length, track: "melody", velocity: 0.9, line: n.line, voice: voiceOf(n.line, m), under: NOT_UNDER });
           last = Math.max(last, time + length);
         }
         return;
@@ -109,7 +115,7 @@ export function layPasses(score: PrintedScore, passes: Pass[], voicings: Voicing
         for (const n of step.notes) {
           if (at + n.length <= from + EPS) continue;
           const length = Math.min(at + n.length, cut) - from;
-          events.push({ time: t, midi: n.midi, length, track: "melody", velocity: 0.9, line: n.line, voice: voiceOf(n.line, m) });
+          events.push({ time: t, midi: n.midi, length, track: "melody", velocity: 0.9, line: n.line, voice: voiceOf(n.line, m), under: NOT_UNDER });
           last = Math.max(last, t + length);
         }
       }
@@ -118,13 +124,31 @@ export function layPasses(score: PrintedScore, passes: Pass[], voicings: Voicing
       if (a.at + a.length <= from + EPS || a.at >= to - EPS) continue;
       const at = Math.max(a.at, from);
       const length = Math.min(a.at + a.length, cut) - at;
-      events.push({ time: origin + at, midi: a.midi, length, track: "accompaniment", velocity: a.velocity, line: ACCOMPANIMENT_LINE, voice: DEFAULT_VOICE });
+      events.push({ time: origin + at, midi: a.midi, length, track: "accompaniment", velocity: a.velocity, line: ACCOMPANIMENT_LINE, voice: DEFAULT_VOICE, under: NOT_UNDER });
       last = Math.max(last, origin + at + length);
     }
   }
-  events.sort((a, b) => a.time - b.time);
   const end = slices.length ? slices[slices.length - 1].origin + slices[slices.length - 1].to : 0;
-  return { events, steps, slices, total: Math.max(end, last) };
+  const total = Math.max(end, last);
+  // What goes on underneath is laid last, over the form's own length: its tiles are cut there, so a
+  // line that goes on playing can never make the piece longer than the form says it is.
+  unders.forEach((under, ui) => {
+    for (const tile of underSlices(under, score.measureDuration, score.measureCount, slices, total)) {
+      const start = score.measureStart[tile.measure];
+      for (const step of score.printed) {
+        if (step.measure !== tile.measure) continue;
+        const at = step.time - start;
+        if (at < tile.from - EPS || at >= tile.to - EPS) continue;
+        for (const n of step.notes) {
+          if (n.line !== under.line) continue;
+          const length = Math.min(n.length, tile.cut ? tile.to - at : Infinity);
+          events.push({ time: tile.origin + at, midi: n.midi, length, track: "melody", velocity: 0.75, line: n.line, voice: under.instrument, under: ui });
+        }
+      }
+    }
+  });
+  events.sort((a, b) => a.time - b.time);
+  return { events, steps, slices, total };
 }
 
 const TICK_MS = 25;
@@ -141,6 +165,10 @@ export class Player {
   readonly lineOn = new Map<number, boolean>();
   /** Which instrument each line sounds with, over which measures (ADR 0008, decision 2). */
   voicings: Voicing[] = [];
+  /** The lines that go on playing underneath the form (ADR 0008, decision 5). */
+  unders: Under[] = [];
+  /** Which under-lines are heard, by their index in `unders`. */
+  readonly underOn = new Map<number, boolean>();
   /** Called when the pass being played changes; null when stopped. */
   onPass: ((pass: number | null) => void) | null = null;
   /** Called once when a sample set cannot be fetched and the piano stands in for it. */
@@ -276,7 +304,7 @@ export class Player {
     const line = layPasses({
       printed: this.printed, measureStart: this.measureStart, measureDuration: this.measureDuration,
       accompByMeasure: this.accompByMeasure, measureCount: this.measureCount,
-    }, passes, this.voicings);
+    }, passes, this.voicings, this.unders);
     this.events = line.events;
     this.steps = line.steps;
     this.slices = line.slices;
@@ -375,7 +403,8 @@ export class Player {
       this.ready = (async () => {
         await Tone.start();
         await this.bank.load(DEFAULT_VOICE);
-        await Promise.all([...new Set(this.voicings.map((v) => v.instrument))].map((id) => this.bank.load(id)));
+        const chosen = [...new Set([...this.voicings, ...this.unders].map((v) => v.instrument))];
+        await Promise.all(chosen.map((id) => this.bank.load(id)));
         await Tone.loaded();
       })().catch((e) => { this.ready = null; throw e; });
     }
@@ -394,6 +423,29 @@ export class Player {
 
   heard(line: number): boolean {
     return this.lineOn.get(line) ?? true;
+  }
+
+  /** Switch off what goes on underneath, without silencing the staff it is printed on. */
+  setUnder(index: number, on: boolean): void {
+    this.underOn.set(index, on);
+    if (!on) this.bank.releaseAll();
+  }
+
+  heardUnder(index: number): boolean {
+    return this.underOn.get(index) ?? true;
+  }
+
+  /**
+   * Set the lines that go on playing underneath (ADR 0008, decision 5). Like an instrument, this
+   * re-lays the timeline and fetches what it needs in the background; the form itself is untouched,
+   * so the cursor, the practice window and the seek keep the order they had.
+   */
+  setUnders(unders: Under[]): void {
+    this.unders = unders;
+    this.setPasses(this.passes, true);
+    const wanted = [...new Set(unders.map((u) => u.instrument))].filter((id) => !this.bank.ready(id));
+    if (wanted.length === 0 || !this.ready) return;
+    void Promise.all(wanted.map((id) => this.bank.load(id))).then(() => this.setPasses(this.passes, true));
   }
 
   /**
@@ -561,7 +613,9 @@ export class Player {
         if (when > horizon) return;
         this.nextEvent++;
         try {
-          if (this.tracks[ev.track] && (ev.line === ACCOMPANIMENT_LINE || this.heard(ev.line))) {
+          const heard = ev.under !== NOT_UNDER ? this.heardUnder(ev.under)
+            : ev.line === ACCOMPANIMENT_LINE || this.heard(ev.line);
+          if (this.tracks[ev.track] && heard) {
             this.bank.get(ev.voice)?.triggerAttackRelease(Tone.Frequency(ev.midi + this.transpose, "midi").toNote(), ev.length * this.secondsPerWhole() * 0.95, Math.max(when, now), ev.velocity);
           }
         } catch (e) {

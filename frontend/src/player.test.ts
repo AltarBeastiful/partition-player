@@ -4,8 +4,8 @@
  * measure slice of step 5 lands in this same function and these same tests.
  */
 import { describe, expect, it } from "vitest";
-import { samePrefix, type Pass } from "./form";
-import { ACCOMPANIMENT_LINE, layPasses, windowOf, type PrintedScore } from "./player";
+import { samePrefix, type Pass, type Under } from "./form";
+import { ACCOMPANIMENT_LINE, NOT_UNDER, layPasses, windowOf, type PrintedScore } from "./player";
 import { DEFAULT_VOICE, type Voicing } from "./voices";
 
 /** Four 4/4 measures, one whole note a measure (C4, D4, E4, F4), a chord on the downbeat of each. */
@@ -224,5 +224,51 @@ describe("lines and their instruments (plan 0011, step 3)", () => {
     const { events } = layPasses(canon(), [pass(0, 1), pass(2, 3), pass(0, 1)], voicings);
     const flute = events.filter((e) => e.voice === "flute");
     expect(flute.map((e) => e.time)).toEqual([0, 1, 4, 5]);
+  });
+});
+
+describe("a line that goes on playing underneath (plan 0011, step 4)", () => {
+  /** Two staves, four measures: the top one alone for two measures, then both together. */
+  function canonScore(): PrintedScore {
+    return {
+      printed: [
+        { time: 0, measure: 0, notes: [{ midi: 69, length: 1, line: 0 }] },
+        { time: 1, measure: 1, notes: [{ midi: 71, length: 1, line: 0 }] },
+        { time: 2, measure: 2, notes: [{ midi: 72, length: 1, line: 0 }, { midi: 60, length: 1, line: 1 }] },
+        { time: 3, measure: 3, notes: [{ midi: 74, length: 1, line: 0 }, { midi: 62, length: 1, line: 1 }] },
+      ],
+      measureStart: [0, 1, 2, 3],
+      measureDuration: [1, 1, 1, 1],
+      accompByMeasure: [[], [], [], []],
+      measureCount: 4,
+    };
+  }
+
+  const flute: Under = { line: 0, from: 0, to: 1, startAt: 2, instrument: "flute" };
+
+  it("sounds the loop against the music of the form, on its own instrument", () => {
+    const { events, total } = layPasses(canonScore(), [pass(0, 3)], [], [flute]);
+    expect(total).toBe(4); // what goes on underneath never makes the piece longer
+    const under = events.filter((e) => e.under !== NOT_UNDER);
+    expect(under.map((e) => [e.time, e.midi, e.voice])).toEqual([[2, 69, "flute"], [3, 71, "flute"]]);
+    expect(under.every((e) => e.under === 0)).toBe(true);
+  });
+
+  it("takes only the notes of its own line", () => {
+    const both: Under = { ...flute, line: 1 };
+    const under = layPasses(canonScore(), [pass(0, 3)], [], [both]).events.filter((e) => e.under !== NOT_UNDER);
+    expect(under).toEqual([]); // the lower staff rests in the measures this loop names
+  });
+
+  it("leaves the form's own events untouched", () => {
+    const plain = layPasses(canonScore(), [pass(0, 3)]).events;
+    const withUnder = layPasses(canonScore(), [pass(0, 3)], [], [flute]).events.filter((e) => e.under === NOT_UNDER);
+    expect(withUnder).toEqual(plain);
+  });
+
+  it("cuts the loop where the form ends", () => {
+    const long: Under = { line: 0, from: 0, to: 3, startAt: 2, instrument: "flute" };
+    const under = layPasses(canonScore(), [pass(0, 3)], [], [long]).events.filter((e) => e.under !== NOT_UNDER);
+    expect(under.map((e) => [e.time, e.midi])).toEqual([[2, 69], [3, 71]]); // measures 3 and 4 of the loop fall past the end
   });
 });

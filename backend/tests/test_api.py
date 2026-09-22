@@ -285,3 +285,40 @@ def test_editor_save_revert_and_revision(settings):
         assert r.status_code == 200, r.text
         assert r.json()["doubts"] == rated
         assert client.get(f"/api/jobs/{jid}/review").json()["doubts"] == rated
+
+        # plan 0011: how the page sounds travels with the form and comes back whole — the instrument
+        # ranges of each line, and the line that goes on playing underneath.
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        lines = [{"line": 0, "from": 0, "to": 7, "instrument": "flute"},
+                 {"line": 0, "from": 8, "to": 18, "instrument": "piano"}]
+        unders = [{"line": 0, "from": 0, "to": 7, "startAt": 8, "instrument": "flute"}]
+        r = client.put(f"/api/jobs/{jid}/score",
+                       json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, "lines": lines, "unders": unders})
+        assert r.status_code == 200, r.text
+        assert r.json()["lines"] == lines and r.json()["unders"] == unders
+        assert client.get(f"/api/jobs/{jid}/review").json()["lines"] == lines
+        assert client.get(f"/api/jobs/{jid}/review").json()["unders"] == unders
+
+        # a save that does not mention them leaves them alone (the editor saves the document alone)
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": rev, "form": kept})
+        assert r.status_code == 200 and r.json()["lines"] == lines and r.json()["unders"] == unders
+
+        # every field is bounded, and the save is refused rather than trimmed
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        for bad_sound in (
+            {"lines": [{"line": 0, "from": 0, "to": 99, "instrument": "flute"}]},        # outside the score
+            {"lines": [{"line": 0, "from": 0, "to": 3, "instrument": "theremin"}]},      # not an instrument we have
+            {"lines": [{"line": 99, "from": 0, "to": 3, "instrument": "flute"}]},        # not a staff of any page
+            {"lines": [{"line": 0, "from": 5, "to": 3, "instrument": "flute"}]},         # ends before it starts
+            {"unders": [{"line": 0, "from": 0, "to": 3, "startAt": 99, "instrument": "flute"}]},
+            {"unders": [{"line": 0, "from": 0, "to": 3, "instrument": "flute"}]},        # no measure to start at
+        ):
+            r = client.put(f"/api/jobs/{jid}/score",
+                           json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, **bad_sound})
+            assert r.status_code == 422, (bad_sound, r.status_code)
+        assert client.get(f"/api/jobs/{jid}/review").json()["lines"] == lines
+
+        # reverting puts the page back on the piano, as it puts the form back to the automatic one
+        r = client.post(f"/api/jobs/{jid}/revert")
+        assert r.status_code == 200 and r.json()["lines"] == [] and r.json()["unders"] == []

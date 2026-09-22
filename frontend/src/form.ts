@@ -221,6 +221,57 @@ export function sliceRanges(passes: Pass[], measureDuration: number[], measureCo
   return out;
 }
 
+/**
+ * A line that goes on playing underneath the form (ADR 0008, decision 5).
+ *
+ * The measures `from..to` of `line`, laid end to end over and over, from the first time the timeline
+ * reaches printed measure `startAt` to the end of the form: *the flute goes on playing measures 1–8,
+ * from measure 9 to the end*. Measures are 0-based and inclusive, as everywhere else in the form.
+ */
+export interface Under { line: number; from: number; to: number; startAt: number; instrument: string }
+
+/** Where the timeline first reaches a printed measure's start, or null when the form never plays it. */
+export function firstReach(slices: Slice[], measure: number): number | null {
+  const slice = slices.find((s) => s.measure === measure);
+  return slice ? slice.origin + slice.from : null;
+}
+
+/**
+ * The tiles an under-line puts on the timeline (ADR 0008, decision 6).
+ *
+ * The tiling is laid on **time**, not on measures: the page it was built for turns 6/4 for a bar, so
+ * a loop counted in measures would drift out of step with the measures it runs under. Each tile is a
+ * `Slice` like any other — the same shape `layPasses` lays sound on and `expandScore` writes measures
+ * from — carrying `pass: -1`, since an under-line belongs to no pass of the form. The last tile is
+ * cut where the form ends, and a cut tile stops its notes there rather than letting them ring on.
+ */
+export function underSlices(under: Under, measureDuration: number[], measureCount: number, slices: Slice[], total: number): Slice[] {
+  const EPS = 1e-9;
+  const first = Math.max(0, Math.min(under.from, measureCount - 1));
+  const last = Math.max(first, Math.min(under.to, measureCount - 1));
+  const start = firstReach(slices, Math.max(0, Math.min(under.startAt, measureCount - 1)));
+  if (start === null || total - start <= EPS) return [];
+  const round = measureDuration.slice(first, last + 1).reduce((a, b) => a + b, 0);
+  if (round <= EPS) return [];
+  const out: Slice[] = [];
+  let t = start;
+  let guard = 0;
+  while (total - t > EPS && guard++ < 10_000) {
+    for (let m = first; m <= last && total - t > EPS; m++) {
+      const duration = measureDuration[m];
+      const left = total - t;
+      const cut = left < duration - EPS;
+      const to = cut ? left : duration;
+      out.push({ measure: m, pass: UNDER_PASS, origin: t, from: 0, to, cut });
+      t += to;
+    }
+  }
+  return out;
+}
+
+/** The pass number a tile of an under-line carries: it belongs to no pass of the form. */
+export const UNDER_PASS = -1;
+
 /** Sections and passes made from a pass list, so a default form can be edited. */
 export function formFromPasses(passes: Pass[], measureCount: number): Form {
   const sections: Section[] = [];

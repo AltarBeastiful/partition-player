@@ -101,9 +101,17 @@ export interface Layout { width: number; height: number; systems: LayoutSystem[]
  * verses. The shape is the one `form.ts` works in and the one the server stores; it was declared
  * twice until a `times` added on one side went missing on the other (plan 0007).
  */
-import type { Form } from "./form";
+import type { Form, Under } from "./form";
+import type { Voicing } from "./voices";
 export type { Form, FormPass, Section as FormSection } from "./form";
-export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null }
+export type { Under } from "./form";
+export type { Voicing } from "./voices";
+/**
+ * How the page sounds (plan 0011): `lines` is the instrument each staff plays over which measures,
+ * `unders` the staves that go on playing underneath the form. Both are playback only and both are
+ * empty for every score made before ADR 0008.
+ */
+export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[] }
 export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
 
 export async function getReview(id: string): Promise<ReviewState> {
@@ -116,7 +124,7 @@ export async function getScoreText(id: string, version = 0): Promise<string> {
   return r.text();
 }
 
-export async function saveScore(id: string, body: { musicxml: string; checked: number[]; revision: number; doubts: Doubt[]; form: Form | null }): Promise<SaveResult> {
+export async function saveScore(id: string, body: { musicxml: string; checked: number[]; revision: number; doubts: Doubt[]; form: Form | null; lines?: Voicing[]; unders?: Under[] }): Promise<SaveResult> {
   return check<SaveResult>(await fetch(`/api/jobs/${id}/score`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }));

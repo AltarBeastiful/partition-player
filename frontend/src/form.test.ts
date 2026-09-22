@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import JSZip from "jszip";
 import { beforeAll, describe, expect, it } from "vitest";
-import { defaultPasses, describePasses, expandForm, formFromPasses, parseForm, preset, remapForm, type Form, type Pass, type Section } from "./form";
+import { UNDER_PASS, defaultPasses, describePasses, expandForm, formFromPasses, parseForm, preset, remapForm, sliceRanges, underSlices, type Form, type Pass, type Section, type Under } from "./form";
 
 let OpenSheetMusicDisplay: typeof import("opensheetmusicdisplay").OpenSheetMusicDisplay;
 
@@ -159,5 +159,49 @@ describe("forms", () => {
     const cut = remapForm(form, (i) => (i === 0 ? null : i - 1)); // the first measure deleted
     expect(cut.sections.map((s) => [s.from, s.to])).toEqual([[0, 7], [8, 15]]);
     expect(cut.passes.length).toBe(3);
+  });
+});
+
+describe("underSlices: a line that goes on playing underneath (plan 0011, step 4)", () => {
+  /** The canon page's shape: twenty 4/4 measures, except measure 19 (index 18), which is 6/4. */
+  const durations = Array.from({ length: 20 }, (_, i) => (i === 18 ? 1.5 : 1));
+  const wholePage: Pass[] = [{ ranges: [{ from: 0, to: 19 }], verse: null }];
+  const flute: Under = { line: 0, from: 0, to: 7, startAt: 8, instrument: "flute" };
+  const slices = () => sliceRanges(wholePage, durations, 20);
+  const total = () => durations.reduce((a, b) => a + b, 0);
+
+  it("starts where the form first reaches its measure and fills to the end", () => {
+    const tiles = underSlices(flute, durations, 20, slices(), total());
+    expect(tiles[0].origin).toBe(8);                       // the voices' first measure
+    const end = tiles[tiles.length - 1];
+    expect(end.origin + end.to).toBeCloseTo(total(), 9);   // and not a beat further
+    expect(tiles.every((t) => t.pass === UNDER_PASS)).toBe(true);
+  });
+
+  it("lays one round and a half of eight measures under twelve", () => {
+    const tiles = underSlices(flute, durations, 20, slices(), total());
+    expect(tiles.map((t) => t.measure)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4]);
+    expect(tiles.filter((t) => t.cut)).toHaveLength(1);
+    expect(tiles[tiles.length - 1]).toMatchObject({ measure: 4, from: 0, to: 0.5, cut: true });
+  });
+
+  it("stays on time when the page turns 6/4 in the middle, so the tiles leave the barlines", () => {
+    const tiles = underSlices(flute, durations, 20, slices(), total());
+    // the twelfth tile starts half a whole note after the printed measure it runs under, because
+    // measure 19 of the page is longer than the measures the flute is looping
+    expect(tiles[8].origin).toBe(16);
+    expect(tiles[12].origin).toBe(20);
+    expect(total()).toBe(20.5);
+  });
+
+  it("gives nothing when the form never reaches the measure it should start at", () => {
+    const short: Pass[] = [{ ranges: [{ from: 0, to: 3 }], verse: null }];
+    expect(underSlices(flute, durations, 20, sliceRanges(short, durations, 20), 4)).toEqual([]);
+  });
+
+  it("reads a reversed range as the one measure it names", () => {
+    const empty: Under = { ...flute, from: 5, to: 4 };
+    const tiles = underSlices(empty, durations, 20, slices(), total());
+    expect(tiles.map((t) => t.measure)).toEqual(Array(13).fill(5)); // from..to reversed is one measure
   });
 });

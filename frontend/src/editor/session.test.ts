@@ -17,7 +17,7 @@ import { EditorSession } from "./session";
 
 const GROUND_TRUTH = readFileSync(resolve(process.cwd(), "../bench/samples/anton_yvan_boris_ground_truth.musicxml"), "utf8");
 
-const review: ReviewState = { doubts: [], checked: [], revision: 1, layout: null, has_image: false, has_original: false, form: null };
+const review: ReviewState = { doubts: [], checked: [], revision: 1, layout: null, has_image: false, has_original: false, form: null, lines: [], unders: [] };
 
 const form = (name: string, to = 10): Form => ({
   sections: [{ name, from: 0, to }, { name: "Chorus", from: to + 1, to: 18 }],
