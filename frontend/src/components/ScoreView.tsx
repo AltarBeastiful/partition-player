@@ -51,6 +51,8 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const [melodyOn, setMelodyOn] = useState(true);
   const [lines, setLines] = useState<Line[]>([]);          // the staves of the page (plan 0011)
   const [silent, setSilent] = useState<number[]>([]);      // lines switched off, a practice setting
+  const [preparing, setPreparing] = useState(false);       // the sounds are being fetched for the first Play
+  const [soundNote, setSoundNote] = useState<string | null>(null); // a sample set that would not come
   const lastSound = useRef("");                            // the sound last given to the player
   const [accompOn, setAccompOn] = useState(true);
   const [loop, setLoop] = useState(false);
@@ -110,6 +112,8 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         osmdRef.current = osmd;
         const player = new Player(osmd, setState);
         player.onPass = setCurrentPass;
+        // A sample set that will not come: the line plays the piano and the page says so once.
+        player.onVoiceFailure = (set) => setSoundNote(`${set.label} could not be fetched, so that line plays on the piano. The sounds come from a CDN the first time each one is chosen.`);
         playerRef.current = player;
         const auto = defaultPasses(osmd);
         const played = s.form ? expandForm(s.form, player.measureCount) : auto;
@@ -258,11 +262,24 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     return keepOverlay(host.current, redraw);
   }, [loading, session, redraw]);
 
+  /**
+   * Play or pause. The first Play fetches the piano over the network, which takes a moment on a slow
+   * line and forever when it cannot be reached — so the button says it is fetching, and says so if it
+   * fails, rather than looking like a button that does nothing.
+   */
   const toggle = useCallback(async () => {
     const p = playerRef.current;
     if (!p) return;
-    if (state === "playing") p.pause();
-    else await p.play(bpm, loop, { from, to });
+    if (state === "playing") { p.pause(); return; }
+    setPreparing(true);
+    setSoundNote(null);
+    try {
+      await p.play(bpm, loop, { from, to });
+    } catch (e) {
+      setSoundNote("The sounds could not be loaded: " + (e as Error).message + ". The piano is fetched from tonejs.github.io the first time you play.");
+    } finally {
+      setPreparing(false);
+    }
   }, [state, bpm, loop, from, to]);
 
   const stop = useCallback(() => playerRef.current?.stop(), []);
@@ -437,8 +454,8 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   return (
     <section className={"card" + (editing ? " editing" : "")}>
       <div className="controls">
-        <button className="primary" onClick={toggle} disabled={loading || !!error}>
-          {state === "playing" ? "Pause" : "Play"}
+        <button className="primary" onClick={toggle} disabled={loading || !!error || preparing}>
+          {state === "playing" ? "Pause" : preparing ? "Loading sounds…" : "Play"}
         </button>
         <button onClick={stop} disabled={loading || state === "stopped"}>Stop</button>
         <button onClick={restart} disabled={loading || !!error} title="Back to the beginning (Home): keeps playing from there, or stops at the start">⏮ Start</button>
@@ -510,6 +527,8 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           <button className="primary edit" onClick={enterEdit}>Edit the score</button>
         </div>
       )}
+      {soundNote && <div className="review toast" role="status"><span>{soundNote}</span>
+        <button className="quiet" onClick={() => setSoundNote(null)}>Dismiss</button></div>}
       {session && !loading && (
         <LinesPanel lines={lines} voicings={session.lines} unders={session.unders} measureCount={measureCount}
           rangeOf={(line) => playerRef.current?.lineRange(line) ?? null}

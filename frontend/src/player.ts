@@ -407,18 +407,32 @@ export class Player {
     return this.anchorCtx + (position - this.anchorPos) * this.secondsPerWhole();
   }
 
-  /** Resume the audio context and load the piano once; concurrent callers share the same promise. */
+  /**
+   * Resume the audio context and load the piano once; concurrent callers share the same promise.
+   *
+   * **Only the piano gates the first note.** The other sets are fetched beside it and swapped in as
+   * they arrive (ADR 0008, decision 3: a line keeps the sound it has until its own is there). Waiting
+   * for them here is what made Play do nothing at all on a page whose lines are set: a couple of
+   * megabytes from a CDN, and the music does not start until every byte of it is in — or never,
+   * if one request hangs.
+   */
   private ensureReady(): Promise<void> {
     if (!this.ready) {
       this.ready = (async () => {
         await Tone.start();
         await this.bank.load(DEFAULT_VOICE);
-        const chosen = [...new Set([...this.voicings, ...this.unders].map((v) => v.instrument))];
-        await Promise.all(chosen.map((id) => this.bank.load(id)));
-        await Tone.loaded();
       })().catch((e) => { this.ready = null; throw e; });
     }
+    this.warmVoices();
     return this.ready;
+  }
+
+  /** Fetch the sets the lines are set to, in the background; a missing one plays as the piano. */
+  private warmVoices(): void {
+    const chosen = [...new Set([...this.voicings, ...this.unders].map((v) => v.instrument))];
+    for (const id of chosen) {
+      if (id !== DEFAULT_VOICE && !this.bank.ready(id)) void this.bank.load(id);
+    }
   }
 
   setTrack(track: Track, on: boolean): void {
@@ -454,8 +468,8 @@ export class Player {
     this.unders = unders;
     this.setPasses(this.passes, true);
     const wanted = [...new Set(unders.map((u) => u.instrument))].filter((id) => !this.bank.ready(id));
-    if (wanted.length === 0 || !this.ready) return;
-    void Promise.all(wanted.map((id) => this.bank.load(id))).then(() => this.setPasses(this.passes, true));
+    if (wanted.length === 0 || !this.ready) return;   // nothing is fetched before the first Play
+    void Promise.all(wanted.map((id) => this.bank.load(id).catch(() => null))).then(() => this.setPasses(this.passes, true));
   }
 
   /**
@@ -467,8 +481,8 @@ export class Player {
     this.voicings = voicings;
     this.setPasses(this.passes, true);
     const wanted = [...new Set(voicings.map((v) => v.instrument))].filter((id) => !this.bank.ready(id));
-    if (wanted.length === 0 || !this.ready) return;
-    void Promise.all(wanted.map((id) => this.bank.load(id))).then(() => this.setPasses(this.passes, true));
+    if (wanted.length === 0 || !this.ready) return;   // nothing is fetched before the first Play
+    void Promise.all(wanted.map((id) => this.bank.load(id).catch(() => null))).then(() => this.setPasses(this.passes, true));
   }
 
   /** Semitones added to every note at playback time, so a song can sit in the singer's range. */
