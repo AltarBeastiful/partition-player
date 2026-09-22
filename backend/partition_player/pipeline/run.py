@@ -18,6 +18,8 @@ from .lyrics.polish import polish
 from .engines import EngineError, get_engine
 from .evidence import collect, compare, emitted_by_measure, rate
 from .layout import make_layout
+from . import pdf_words
+from .pdf_words import TextLayer
 from .postprocess import PostprocessError, postprocess
 from .preprocess import preprocess, review_image, thumbnail
 
@@ -32,8 +34,14 @@ def _engine_kwargs(settings: Settings, name: str) -> dict:
     return kw
 
 
-def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress | None = None) -> Path:
-    """Run the full pipeline on `image`; write files under `out_dir`; return the final MusicXML path."""
+def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress | None = None,
+              text_layer: TextLayer | None = None) -> Path:
+    """Run the full pipeline on `image`; write files under `out_dir`; return the final MusicXML path.
+
+    `text_layer` is the page's own text objects, for a born-digital PDF (plan 0012, step 4): with one
+    the OCR is not run at all and the words are written from the file instead, into the same
+    `geometry.json` and the same shape, so every stage after the engine is unchanged.
+    """
     notify = progress or (lambda stage, msg: None)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -58,7 +66,8 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
         try:
             engine = get_engine(name, **_engine_kwargs(settings, name))
             if name == "homr":  # the upload and its scale let the driver cut full-resolution lyric bands
-                engine_xml = engine.recognize(pre, out_dir / name, original=image, scale=info["scale"])
+                engine_xml = engine.recognize(pre, out_dir / name, original=image, scale=info["scale"],
+                                              read_text=text_layer is None)
             else:
                 engine_xml = engine.recognize(pre, out_dir / name)
             info["engine"] = name
@@ -68,6 +77,12 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
             (out_dir / f"{name}.error.log").write_text(f"{e}\n\n{e.log}")
     if engine_xml is None:
         raise EngineError("recognition failed: " + "; ".join(errors))
+
+    geometry_file = out_dir / info["engine"] / "geometry.json"
+    if text_layer is not None and geometry_file.exists():
+        notify("postprocessing", "Reading the words the file already holds")
+        info["text_source"] = "file"
+        info["from_file"] = pdf_words.apply(geometry_file, text_layer)
 
     notify("postprocessing", "Placing chord symbols")
     chord_info = add_chords(engine_xml, engine_xml.parent / "geometry.json", out_dir / "with_chords.musicxml")

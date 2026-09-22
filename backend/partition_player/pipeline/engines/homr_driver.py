@@ -217,7 +217,7 @@ def dedup_bars(xs: list[float], unit: float) -> list[float]:
     return out
 
 
-def main(image_path: str, out_dir: str, original: str | None = None, scale: float = 1.0) -> None:
+def main(image_path: str, out_dir: str, original: str | None = None, scale: float = 1.0, read_text: bool = True) -> None:
     ort.set_default_logger_severity(3)
     download_weights(False, False, False)
     out = Path(out_dir)
@@ -240,8 +240,10 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
             chain = Chain(image_path, gray.shape, 1.0)
             chain.crop, chain.resize, chain.k, chain.ky = (0, 0), (1.0, 1.0), 1.0, 1.0
             upload = gray
-        ocr = make_ocr()  # after the title thread is done, so the OCR does not compete with it
-        lyrics_ocr = make_lyrics_ocr()
+        # On a page whose words are read from the file itself (plan 0012, step 4) no OCR is run at
+        # all: the models are not even loaded, which is most of a page's time on a small machine.
+        ocr = make_ocr() if read_text else None  # after the title thread, so the OCR does not compete with it
+        lyrics_ocr = make_lyrics_ocr() if read_text else None
         systems, staves = [], []
         all_staffs = [(i, v, staff) for i, ms in enumerate(multi_staffs) for v, staff in enumerate(ms.staffs)]
         for i, ms in enumerate(multi_staffs):
@@ -252,7 +254,7 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
             cv2.imwrite(str(band_file), band)
             bars = [float(b.center[0]) for b in bar_lines
                     if staff.min_x - 2 * unit <= b.center[0] <= staff.max_x + 2 * unit and staff.y_distance_to((b.center[0], b.center[1])) < 2 * unit]
-            tokens = read_band(ocr, band, unit)
+            tokens = read_band(ocr, band, unit) if ocr is not None else []
             systems.append({
                 "index": i, "unit": unit, "min_x": float(staff.min_x), "max_x": float(staff.max_x),
                 "top_y": float(staff.min_y), "staffs": len(ms.staffs),
@@ -273,7 +275,7 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
             band, x0, unit_px = band_below(upload, staff, chain, bottom_units)
             band_file = out / f"lyrics_{n}.png"
             cv2.imwrite(str(band_file), band)
-            words = read_lyrics(lyrics_ocr, band, unit_px) if bottom_units > LYRICS_TOP_UNITS + 1 else []
+            words = read_lyrics(lyrics_ocr, band, unit_px) if lyrics_ocr is not None and bottom_units > LYRICS_TOP_UNITS + 1 else []
             staves.append({
                 "index": n, "system": i, "voice": v, "unit": unit, "min_x": float(staff.min_x), "max_x": float(staff.max_x),
                 "top_y": float(staff.min_y), "bottom_y": float(staff.max_y),
@@ -306,5 +308,7 @@ if __name__ == "__main__":
     ap.add_argument("out_dir")
     ap.add_argument("--original", default=None, help="the upload, for full-resolution lyric bands")
     ap.add_argument("--scale", type=float, default=1.0, help="preprocess scale: input px per upload px")
+    ap.add_argument("--no-text-ocr", action="store_true",
+                    help="skip the chord and lyric OCR: the words come from the file itself (plan 0012)")
     a = ap.parse_args()
-    main(a.image, a.out_dir, a.original, a.scale)
+    main(a.image, a.out_dir, a.original, a.scale, read_text=not a.no_text_ocr)

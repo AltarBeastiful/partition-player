@@ -80,6 +80,9 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   useSyncExternalStore(subscribe, () => session?.version ?? 0);
 
   useEffect(() => { setStats(job.result?.stats); }, [job]);
+  // What a PDF brought: its pages, and whether its words were read from the file's own text.
+  const pages = job.result?.pages ?? [];
+  const fromFile = job.result?.text_source === "file";
 
   useEffect(() => {
     let cancelled = false;
@@ -562,6 +565,12 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           {job.source === "musicxml"
             ? <span title={job.input_name}>opened from a MusicXML file</span>
             : <span>read by {job.result?.engine} in {job.result?.seconds}s</span>}
+          {pages.length > 0 && <span title={pages.map((p) => `page ${p.index + 1}: ${p.measures} measures, ${p.kind}`).join("; ")}>
+            {pages.length} page{pages.length > 1 ? "s" : ""} of PDF
+          </span>}
+          {fromFile && <span title="The syllables and the chord names are the file's own text, not a reading of its pixels (plan 0012)">
+            words read from the file itself
+          </span>}
           {job.edited_at && <span>edited</span>}
         </div>
       )}

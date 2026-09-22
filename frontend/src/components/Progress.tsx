@@ -19,6 +19,13 @@ function stepsFor(source: JobSource | undefined): Step[] {
   return source === "musicxml" ? FILE_STEPS : PHOTO_STEPS;
 }
 
+/** What to say while it runs: a PDF says which page it is on, which the server puts in the message. */
+function waitingText(source: JobSource | undefined): string {
+  if (source === "musicxml") return "Opening a file takes a moment: there is nothing to read, only the measures to check.";
+  if (source === "pdf") return "Every page of the PDF is read in turn, which takes from a few seconds to a couple of minutes each. You can keep this tab open in the background.";
+  return "Reading a page takes from a few seconds to a couple of minutes depending on the server. You can keep this tab open in the background.";
+}
+
 export function Progress({ jobId, onDone }: { jobId: string; onDone: (job: Job) => void }) {
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,9 +61,7 @@ export function Progress({ jobId, onDone }: { jobId: string; onDone: (job: Job) 
       <p className="muted">{job?.message ?? "Contacting the server"}</p>
       {job?.status === "failed" && <div className="error">{job.error ?? "Recognition failed"}</div>}
       {error && <div className="error">{error}</div>}
-      <p className="muted">{job?.source === "musicxml"
-        ? "Opening a file takes a moment: there is nothing to read, only the measures to check."
-        : "Reading a page takes from a few seconds to a couple of minutes depending on the server. You can keep this tab open in the background."}</p>
+      <p className="muted">{waitingText(job?.source)}</p>
     </section>
   );
 }

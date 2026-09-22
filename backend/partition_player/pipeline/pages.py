@@ -35,6 +35,7 @@ from pathlib import Path
 from ..config import Settings
 from . import pdf
 from .lyrics import inject as lyrics_inject
+from .pdf_words import TextLayer
 from .run import Progress, recognize
 
 log = logging.getLogger(__name__)
@@ -50,8 +51,9 @@ class PageError(ValueError):
 def read_pdf(src: Path, out_dir: Path, settings: Settings, progress: Progress | None = None) -> Path:
     """Every page of a PDF read by the ordinary pipeline, then joined into one score.
 
-    A page that was engraved is rendered like any other for now: what its text objects hold is read
-    in step 4, and nothing below this line changes when that lands.
+    A page that was engraved is rendered like any other — the notes can only be read from pixels —
+    but its words are not: on a `digital` page the OCR is skipped and the syllables, the chord
+    symbols and the hyphens are taken from the file's own objects (plan 0012, step 4).
     """
     notify = progress or (lambda stage, msg: None)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -67,7 +69,8 @@ def read_pdf(src: Path, out_dir: Path, settings: Settings, progress: Progress | 
             def page_progress(stage: str, message: str, n: int = n) -> None:
                 notify(stage, f"Page {n} of {len(found)}: {message}" if len(found) > 1 else message)
 
-            recognize(image, out_dir / f"page-{n}", settings, page_progress)
+            layer = TextLayer.of(doc[page.index], RENDER_DPI) if page.kind == "digital" else None
+            recognize(image, out_dir / f"page-{n}", settings, page_progress, text_layer=layer)
             page_dirs.append(out_dir / f"page-{n}")
     finally:
         doc.close()

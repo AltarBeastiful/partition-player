@@ -8,6 +8,7 @@ no new binary joins the repository for them.
 from __future__ import annotations
 
 import collections
+import json
 from pathlib import Path
 
 import pymupdf
@@ -133,3 +134,105 @@ def test_the_door_decides_by_the_bytes():
     assert pdf.looks_like_pdf(b"%PDF-1.7\n...")
     assert not pdf.looks_like_pdf(b"<score-partwise>")
     assert not pdf.looks_like_pdf(b"PK\x03\x04")
+
+
+# ---- the words the file already holds (plan 0012, steps 4 and 5) ---------------------------------
+
+from partition_player.pipeline import pdf_words   # noqa: E402
+
+
+def span(text: str, x0: float, y0: float, width: float = 20, height: float = 8, font: str = "C059-Roman") -> pdf.Span:
+    return pdf.Span(text=text, font=font, size=12.0, x0=x0, y0=y0, x1=x0 + width, y1=y0 + height)
+
+
+def geometry(tmp_path: Path, *, staves: list[dict] | None = None, systems: list[dict] | None = None) -> Path:
+    """A geometry file with an identity chain, so points and working pixels differ only by the dpi."""
+    out = tmp_path / "geometry.json"
+    out.write_text(json.dumps({
+        "image": [1000, 1000],
+        "chain": {"crop": [0, 0], "resize": [1.0, 1.0], "scale": 1.0, "k": 1.0},
+        "systems": systems if systems is not None else [{"index": 0, "unit": 10.0, "min_x": 0, "max_x": 1000, "top_y": 100.0, "tokens": []}],
+        "staves": staves if staves is not None else [{"index": 0, "system": 0, "unit": 10.0, "min_x": 0, "max_x": 1000,
+                                                      "top_y": 100.0, "bottom_y": 140.0, "words": []}],
+    }))
+    return out
+
+
+def test_points_become_the_working_image_s_pixels():
+    chain = {"crop": [10, 20], "resize": [0.5, 0.5], "scale": 1.0}
+    x, y = pdf_words.to_working(chain, 72, 100, 200)      # 72 dpi: a point is a pixel
+    assert (x, y) == ((100 - 10) * 0.5, (200 - 20) * 0.5)
+    x, _ = pdf_words.to_working({"crop": [0, 0], "resize": [1.0, 1.0], "scale": 1.0}, 300, 72, 72)
+    assert x == pytest.approx(300.0)                       # an inch at 300 dpi
+
+
+def test_the_syllables_under_a_staff_become_its_words(tmp_path: Path):
+    file = geometry(tmp_path)
+    layer = pdf_words.TextLayer(spans=[span("Dans", 100, 160), span("le", 140, 160), span("port", 180, 160)], marks=[], dpi=72)
+    placed = pdf_words.apply(file, layer)
+    assert placed["syllables"] == 3
+    words = json.loads(file.read_text())["staves"][0]["words"]
+    assert [w["text"] for w in words] == ["Dans", "le", "port"]
+    assert all(w["source"] == "file" for w in words)
+    assert words[0]["y_units"] == pytest.approx((164 - 140) / 10)   # units below the bottom staff line
+
+
+def test_a_hyphen_the_engraver_drew_is_put_back_between_its_syllables(tmp_path: Path):
+    file = geometry(tmp_path)
+    layer = pdf_words.TextLayer(
+        spans=[span("Lo", 100, 160, width=20), span("ri", 130, 160, width=20), span("ent", 160, 160, width=20)],
+        marks=[pdf.Mark(kind="thin", x0=122, y0=163, x1=127, y1=163.3)],
+        dpi=72)
+    pdf_words.apply(file, layer)
+    words = json.loads(file.read_text())["staves"][0]["words"]
+    assert [w["text"] for w in words] == ["Lo", "-", "ri", "ent"]
+
+
+def test_a_long_mark_holds_the_syllable_instead_of_joining_it(tmp_path: Path):
+    file = geometry(tmp_path)
+    layer = pdf_words.TextLayer(
+        spans=[span("vent", 100, 160, width=20), span("Dans", 200, 160, width=20)],
+        marks=[pdf.Mark(kind="thin", x0=122, y0=163, x1=195, y1=163.3)],   # an extender line
+        dpi=72)
+    pdf_words.apply(file, layer)
+    words = json.loads(file.read_text())["staves"][0]["words"]
+    assert [w["text"] for w in words] == ["vent", "Dans"]
+    assert words[0]["extend"] is True
+
+
+def test_a_measure_number_over_a_staff_is_dropped_and_said(tmp_path: Path):
+    file = geometry(tmp_path)
+    layer = pdf_words.TextLayer(spans=[span("17", 100, 80, width=8), span("Gm", 200, 80)], marks=[], dpi=72)
+    placed = pdf_words.apply(file, layer)
+    tokens = json.loads(file.read_text())["systems"][0]["tokens"]
+    assert [t["text"] for t in tokens] == ["Gm"]
+    assert {d["text"] for d in placed["dropped"]} == {"17"}
+    assert placed["chords"] == 1
+
+
+def test_a_span_in_the_gap_belongs_to_the_staff_it_is_nearest(tmp_path: Path):
+    """The gap between two systems is under one staff and over the next; the nearer edge wins."""
+    file = geometry(
+        tmp_path,
+        staves=[{"index": 0, "system": 0, "unit": 10.0, "min_x": 0, "max_x": 1000, "top_y": 100.0, "bottom_y": 140.0, "words": []},
+                {"index": 1, "system": 1, "unit": 10.0, "min_x": 0, "max_x": 1000, "top_y": 240.0, "bottom_y": 280.0, "words": []}],
+        systems=[{"index": 0, "unit": 10.0, "min_x": 0, "max_x": 1000, "top_y": 100.0, "tokens": []},
+                 {"index": 1, "unit": 10.0, "min_x": 0, "max_x": 1000, "top_y": 240.0, "tokens": []}])
+    layer = pdf_words.TextLayer(
+        spans=[span("seau", 100, 160),     # 2 units under staff 1, 7.6 over system 2: a syllable
+               span("Am", 100, 222)],      # 1.8 over system 2, 8.2 under staff 1: a chord
+        marks=[], dpi=72)
+    pdf_words.apply(file, layer)
+    read = json.loads(file.read_text())
+    assert [w["text"] for w in read["staves"][0]["words"]] == ["seau"]
+    assert read["staves"][1]["words"] == []
+    assert [t["text"] for t in read["systems"][1]["tokens"]] == ["Am"]
+    assert read["systems"][0]["tokens"] == []
+
+
+def test_the_beams_of_the_page_are_kept_for_when_they_are_wanted(tmp_path: Path):
+    file = geometry(tmp_path)
+    layer = pdf_words.TextLayer(spans=[], marks=[pdf.Mark(kind="beam", x0=100, y0=110, x1=130, y1=113)], dpi=72)
+    placed = pdf_words.apply(file, layer)
+    assert placed["beams"] == 1
+    assert json.loads(file.read_text())["beams"][0]["x0"] == pytest.approx(100.0)

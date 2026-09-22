@@ -2,10 +2,16 @@ import { useEffect, useState } from "react";
 import { createJob, type Job } from "../api";
 
 const SCORE_FILE = /\.(musicxml|xml|mxl)$/i;
+const PDF_FILE = /\.pdf$/i;
 
 /** A MusicXML file is opened as it is, a photo is read by the engine (plan 0010). */
 export function isScoreFile(file: File): boolean {
   return SCORE_FILE.test(file.name);
+}
+
+/** A PDF is read page by page (plan 0012): engraved or scanned, it still has to be recognized. */
+export function isPdfFile(file: File): boolean {
+  return PDF_FILE.test(file.name);
 }
 
 export function Upload({ onSubmitted }: { onSubmitted: (job: Job) => void }) {
@@ -17,7 +23,7 @@ export function Upload({ onSubmitted }: { onSubmitted: (job: Job) => void }) {
   const score = file !== null && isScoreFile(file);
 
   useEffect(() => {
-    if (!file || isScoreFile(file)) { setPreview(null); return; }
+    if (!file || isScoreFile(file) || isPdfFile(file)) { setPreview(null); return; }
     const url = URL.createObjectURL(file);
     setPreview(url);
     return () => URL.revokeObjectURL(url);
@@ -56,7 +62,7 @@ export function Upload({ onSubmitted }: { onSubmitted: (job: Job) => void }) {
             <span className="muted" style={{ cursor: "pointer", textDecoration: "underline" }}>Take a photo</span>
           </label>
           <label className="filelabel">
-            <input id="picker" type="file" accept="image/*,.musicxml,.xml,.mxl" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <input id="picker" type="file" accept="image/*,.pdf,.musicxml,.xml,.mxl" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             <span className="muted" style={{ cursor: "pointer", textDecoration: "underline" }}>Choose a file</span>
           </label>
         </div>
@@ -64,7 +70,7 @@ export function Upload({ onSubmitted }: { onSubmitted: (job: Job) => void }) {
       {error && <div className="error">{error}</div>}
       <div className="controls">
         <button className="primary" disabled={!file || busy} onClick={submit}>
-          {busy ? "Uploading…" : score ? "Open the score" : "Read the score"}
+          {busy ? "Uploading…" : score ? "Open the score" : file && isPdfFile(file) ? "Read the PDF" : "Read the score"}
         </button>
         {file && <span className="muted">{file.name} · {file.size < 1024 * 1024 ? `${Math.round(file.size / 1024)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`}</span>}
       </div>

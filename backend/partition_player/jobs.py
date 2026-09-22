@@ -234,6 +234,10 @@ class Worker:
             info = json.loads((out / "result.json").read_text())
             job.status, job.message = "done", "Score ready"
             job.result = {"engine": info.get("engine"), "stats": info.get("stats"), "seconds": round(time.monotonic() - started, 1)}
+            if info.get("pages"):        # a PDF: what its pages were, and where its words came from
+                job.result["pages"] = info["pages"]
+            if info.get("text_source"):
+                job.result["text_source"] = info["text_source"]
             title = clean_name(info.get("title") or "")
             if title and job.name == default_name(job.input_name):
                 # an imported file knows its own name better than its file name does — but not better

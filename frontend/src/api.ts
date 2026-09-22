@@ -1,6 +1,6 @@
 export type JobStatus = "queued" | "preprocessing" | "recognizing" | "importing" | "postprocessing" | "done" | "failed";
 /** Where the page came from (plan 0010): a photo the engine read, or a MusicXML file opened as it is. */
-export type JobSource = "image" | "musicxml";
+export type JobSource = "image" | "musicxml" | "pdf";
 
 export interface Job {
   id: string;
@@ -12,9 +12,12 @@ export interface Job {
   source: JobSource;
   name: string;
   error: string | null;
-  result: { engine: string; seconds: number; stats: Stats } | null;
+  result: { engine: string; seconds: number; stats: Stats; pages?: PageInfo[]; text_source?: string } | null;
   edited_at?: string | null;
 }
+
+/** One page of a PDF, as the reader found it (plan 0012). */
+export interface PageInfo { index: number; kind: "digital" | "outlined" | "scan"; dpi: number; measures: number; width_pt: number; height_pt: number }
 
 export interface Stats {
   measures: number; notes: number; rests: number; padded_measures: number; warnings: string[];

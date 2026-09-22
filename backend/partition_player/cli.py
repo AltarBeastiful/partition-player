@@ -1,6 +1,7 @@
 """Command line: `partition-player recognize <file> -o <dir>` and `partition-player serve`.
 
-`recognize` takes the same two kinds of page the API does: a photo, which the engine reads, or a
+`recognize` takes the same three kinds of page the API does: a photo, which the engine reads, a PDF,
+whose pages are rendered and read one by one (plan 0012), or a
 MusicXML file, which is opened as it is (plan 0010)."""
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="partition-player")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    rec = sub.add_parser("recognize", help="read one page: a photo, or a MusicXML file to open as it is")
+    rec = sub.add_parser("recognize", help="read a page: a photo, a PDF, or a MusicXML file to open as it is")
     rec.add_argument("file", type=Path)
     rec.add_argument("-o", "--out", type=Path, default=None, help="output directory (default: <file>.out)")
     rec.add_argument("--engine", default=None, help="override PP_ENGINE (homr, audiveris, fake)")
@@ -34,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
         from dataclasses import replace
 
         from .pipeline.musicxml import ingest, looks_like_musicxml
+        from .pipeline.pages import read_pdf
+        from .pipeline.pdf import looks_like_pdf
         from .pipeline.run import recognize
 
         if args.engine:
@@ -43,8 +46,11 @@ def main(argv: list[str] | None = None) -> int:
         def notify(stage: str, msg: str) -> None:
             print(f"[{stage}] {msg}", file=sys.stderr)
 
-        if looks_like_musicxml(args.file.name, args.file.read_bytes()[:64]):
+        head = args.file.read_bytes()[:64]
+        if looks_like_musicxml(args.file.name, head):
             result = ingest(args.file, out, notify)
+        elif looks_like_pdf(head):
+            result = read_pdf(args.file, out, settings, notify)
         else:
             result = recognize(args.file, out, settings, notify)
         print(json.dumps(json.loads((out / "result.json").read_text()), indent=2), file=sys.stderr)
