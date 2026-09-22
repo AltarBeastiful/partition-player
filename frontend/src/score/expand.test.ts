@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { previewNotes } from "./alternatives";
 import { expandScore, measureDurations, slicesOf } from "./expand";
 import { children, parse, part, text, walk } from "./xml";
-import { expandForm, passNames, sliceRanges, type Form, type Pass } from "../form";
+import { expandForm, passNames, sliceRanges, type Form, type Pass, type Under } from "../form";
 
 const EPS = 1e-9;
 const GROUND_TRUTH = readFileSync(resolve(process.cwd(), "../bench/samples/anton_yvan_boris_ground_truth.musicxml"), "utf8");
@@ -244,5 +244,67 @@ describe("a note the section cuts", () => {
     expect(notes.map((n) => text(n, "duration"))).toEqual(["4", "1"]);
     expect(notes.map((n) => children(n, "tie").map((t) => t.getAttribute("type")).join(""))).toEqual(["start", "stop"]);
     expect(m.getAttribute("implicit")).toBe("yes");
+  });
+});
+
+describe("a line that goes on playing underneath, written out (plan 0011, step 7)", () => {
+  /** Two staves, four 4/4 measures: the top one a tune, the bottom one resting then answering. */
+  const TWO_STAVES = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+<part id="P1">
+${[["A", "4"], ["B", "4"], ["C", "5"], ["D", "5"]].map(([step, octave], i) => `  <measure number="${i + 1}">
+    ${i === 0 ? '<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>G</sign><line>2</line></clef></attributes>' : ""}
+    <note><pitch><step>${step}</step><octave>${octave}</octave></pitch><duration>4</duration><type>whole</type><staff>1</staff><lyric number="1"><syllabic>single</syllabic><text>la</text></lyric></note>
+    <backup><duration>4</duration></backup>
+    <note>${i < 2 ? "<rest/>" : "<pitch><step>F</step><octave>3</octave></pitch>"}<duration>4</duration><type>whole</type><staff>2</staff></note>
+  </measure>`).join("\n")}
+</part></score-partwise>`;
+
+  const page = () => parse(TWO_STAVES);
+  const whole: Pass[] = [{ ranges: [{ from: 0, to: 3 }], verse: null }];
+  const flute: Under = { line: 0, from: 0, to: 1, startAt: 2, instrument: "flute" };
+
+  it("writes nothing new, byte for byte, when no line goes on underneath", () => {
+    const before = expandScore(page(), whole, passNames(whole, null, 4));
+    const after = expandScore(page(), whole, passNames(whole, null, 4), []);
+    expect(after.xml).toBe(before.xml);
+    expect(after.unders).toBe(0);
+    expect(children(parse(after.xml).documentElement, "part")).toHaveLength(1);
+  });
+
+  it("writes the loop as a part of its own, in step with the form", () => {
+    const { xml, unders } = expandScore(page(), whole, passNames(whole, null, 4), [flute], ["Flute", "Voice"]);
+    expect(unders).toBe(1);
+    const doc = parse(xml);
+    const parts = children(doc.documentElement, "part");
+    expect(parts).toHaveLength(2);
+    expect(text(children(children(doc.documentElement, "part-list")[0], "score-part")[1], "part-name")).toBe("Flute, going on");
+    const loop = parts[1];
+    const measures = children(loop, "measure");
+    expect(measures).toHaveLength(4);                       // two of silence, then two tiles
+    expect(children(measures[0], "note").every((n) => children(n, "rest").length === 1)).toBe(true);
+    expect(children(measures[1], "note").every((n) => children(n, "rest").length === 1)).toBe(true);
+    // the tiles are the top staff's own notes, back at the start of the loop
+    const pitches = measures.slice(2).map((m) => children(m, "note").map((n) => text(n.querySelector("pitch")!, "step")));
+    expect(pitches).toEqual([["A"], ["B"]]);
+  });
+
+  it("takes the line's own staff and leaves the words behind", () => {
+    const lower: Under = { ...flute, line: 1 };
+    const doc = parse(expandScore(page(), whole, passNames(whole, null, 4), [lower], ["Flute", "Voice"]).xml);
+    const loop = children(doc.documentElement, "part")[1];
+    const sounding = children(loop, "measure").slice(2).flatMap((m) => children(m, "note"));
+    expect(sounding.every((n) => children(n, "lyric").length === 0)).toBe(true);
+    expect(sounding.every((n) => children(n, "staff").length === 0)).toBe(true);
+    expect(sounding.every((n) => children(n, "rest").length === 1)).toBe(true);  // the lower staff rests there
+  });
+
+  it("stops where the form stops, and says the last measure is not a bar of its own", () => {
+    const long: Under = { line: 0, from: 0, to: 3, startAt: 2, instrument: "flute" };
+    const doc = parse(expandScore(page(), whole, passNames(whole, null, 4), [long], ["Flute", "Voice"]).xml);
+    const measures = children(children(doc.documentElement, "part")[1], "measure");
+    expect(measures).toHaveLength(4);
+    expect(measures[measures.length - 1].getAttribute("implicit")).toBe("no"); // the tile filled its measure
+    expect(measures[measures.length - 1].querySelector("barline bar-style")?.textContent).toBe("light-heavy");
   });
 });

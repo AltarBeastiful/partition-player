@@ -231,6 +231,16 @@ export class Player {
     return this.totalWholeNotes;
   }
 
+  /** The lowest and highest note printed on a line, for saying when a set cannot reach it. */
+  lineRange(line: number): { low: number; high: number } | null {
+    let low = Infinity, high = -Infinity;
+    for (const step of this.printed) for (const n of step.notes) {
+      if (n.line !== line) continue;
+      low = Math.min(low, n.midi); high = Math.max(high, n.midi);
+    }
+    return low === Infinity ? null : { low, high };
+  }
+
   /** The length of a printed measure in whole notes; 0 when it is not on the page. */
   printedLength(measure: number): number {
     return this.measureDuration[measure] ?? 0;

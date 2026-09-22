@@ -8,6 +8,8 @@ import { EditorSession } from "../editor/session";
 import { clearSections, drawOverlay, drawSections, hitTest, keepOverlay, rectOf } from "../editor/sheet";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
+import type { Line } from "../lines";
+import { LinesPanel } from "./Lines";
 import { expandScore, slicesOf } from "../score/expand";
 import type { EventKey } from "../score/xml";
 import { FormPanel, Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
@@ -47,6 +49,9 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const [transpose, setTranspose] = useState(0);
   const [chordCount, setChordCount] = useState(0);
   const [melodyOn, setMelodyOn] = useState(true);
+  const [lines, setLines] = useState<Line[]>([]);          // the staves of the page (plan 0011)
+  const [silent, setSilent] = useState<number[]>([]);      // lines switched off, a practice setting
+  const lastSound = useRef("");                            // the sound last given to the player
   const [accompOn, setAccompOn] = useState(true);
   const [loop, setLoop] = useState(false);
   const [noteNames, setNoteNames] = useState(readNoteNamesPref);
@@ -105,7 +110,13 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         playerRef.current = player;
         const auto = defaultPasses(osmd);
         const played = s.form ? expandForm(s.form, player.measureCount) : auto;
+        // How the page sounds, as it was saved (plan 0011). Set before the passes are laid, since
+        // the instrument of a line is decided while the timeline is built.
+        player.voicings = s.lines;
+        player.unders = s.unders;
+        lastSound.current = JSON.stringify([s.lines, s.unders]);
         player.setPasses(played);
+        setLines(player.lines);
         playing.current = played;
         lastForm.current = s.form;
         setPrinted(auto); setPasses(played);
@@ -164,6 +175,9 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         osmd.render();
         osmd.cursor.show();
         player.rebuild();
+        player.voicings = session.lines;
+        player.unders = session.unders;
+        setLines(player.lines);
         const auto = defaultPasses(osmd);
         const played = session.form ? expandForm(session.form, player.measureCount) : auto;
         player.setPasses(played);
@@ -203,6 +217,18 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     player.setPasses(played, true); // keep the music going: the form is built by ear (plan 0007)
     setPasses(played);
   }, [session, session?.version, loading, printed]);
+
+  // The sound changed (the Lines panel, a revert): the player re-lays the timeline with it. Like the
+  // form's effect above, it compares before acting, so a save or a re-render does not stop the music.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (loading || !session || !player) return;
+    const key = JSON.stringify([session.lines, session.unders]);
+    if (key === lastSound.current) return;
+    lastSound.current = key;
+    player.setVoicings(session.lines);
+    player.setUnders(session.unders);
+  }, [session, session?.version, loading]);
 
   // The pass being played: its verse's words stay, the others are dimmed.
   useEffect(() => {
@@ -364,7 +390,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const downloadPlayed = useCallback(() => {
     if (!session) return;
     try {
-      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount));
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), session.unders, lines.map((l) => l.name));
       const url = URL.createObjectURL(new Blob([xml], { type: "application/vnd.recordare.musicxml+xml" }));
       const a = document.createElement("a");
       a.href = url;
@@ -390,7 +416,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     setError(null);
     try {
       if (session.dirty) await session.save();  // the copy is of the score as saved, not of half of it
-      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount));
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), session.unders, lines.map((l) => l.name));
       const file = new File([xml], `${fileBase}_as_played.musicxml`, { type: "application/vnd.recordare.musicxml+xml" });
       const created = await createJob(file, `${job.name || "Score"} (as played)`);
       navigate(scorePath(created.id));
@@ -477,6 +503,16 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           <span>The recognition was unsure there: they are tinted on the sheet with a "?".</span>
           <button className="primary edit" onClick={enterEdit}>Edit the score</button>
         </div>
+      )}
+      {session && !loading && (
+        <LinesPanel lines={lines} voicings={session.lines} unders={session.unders} measureCount={measureCount}
+          rangeOf={(line) => playerRef.current?.lineRange(line) ?? null}
+          heard={(line) => !silent.includes(line)}
+          onHeard={(line, on) => {
+            setSilent((was) => (on ? was.filter((l) => l !== line) : [...was, line]));
+            playerRef.current?.setLine(line, on);
+          }}
+          onChange={(voicings, unders) => session.setSound(voicings, unders)} />
       )}
       {session && !loading && (
         <FormPanel form={session.form} passes={passes} printed={printed} measureCount={measureCount} verseCount={verseCount} currentPass={currentPass}

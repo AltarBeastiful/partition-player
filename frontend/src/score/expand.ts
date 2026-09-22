@@ -21,7 +21,7 @@ import { inForce, type InForce } from "./alternatives";
 import { filledQuarters } from "./check";
 import { nominalQuarters, renumber, splitQuarters, typeFor, type DurationType } from "./edit";
 import { child, children, insertOrdered, make, parse, part, removeChildren, serialize, setChild, text } from "./xml";
-import { sliceRanges, type Pass, type Slice } from "../form";
+import { sliceRanges, underSlices, type Pass, type Slice, type Under } from "../form";
 
 const EPS = 1e-9;
 const FINAL_STYLES = ["light-heavy", "heavy-light", "heavy-heavy"];
@@ -33,6 +33,7 @@ export interface Expansion {
   measures: number;   // measure elements written
   partial: number;    // of which entered or left on a beat of their own
   passes: number;
+  unders: number;     // parts written for the lines that go on playing underneath (plan 0011)
 }
 
 /** The divisions per quarter in force at each measure of the part. */
@@ -316,6 +317,125 @@ function pruneSlurs(partEl: Element): void {
   for (const slur of open.values()) drop(slur);
 }
 
+
+// ---- a line that goes on playing underneath (plan 0011, step 7) -----------------------------------
+
+/**
+ * One staff of a source measure, as a measure of its own.
+ *
+ * The under-line is a stretch of *one staff*, and the part it is written into has one staff, so the
+ * other staves' notes go, the `<backup>` that separated them goes with them, and what is left keeps
+ * its onsets — a gap becomes a rest written by its duration, as the pipeline's own padding rests are.
+ * Words go too: a flute going on underneath sings nobody's verse.
+ */
+function staffMeasure(src: Element, staff: number, length: number): Element {
+  const doc = src.ownerDocument!;
+  const m = doc.createElement("measure");
+  const rest = (div: number) => {
+    if (div <= EPS) return;
+    const note = doc.createElement("note");
+    note.appendChild(make(doc, "rest"));
+    note.appendChild(make(doc, "duration", String(Math.round(div))));
+    m.appendChild(note);
+  };
+  let pos = 0;
+  for (const it of items(src)) {
+    if (it.kind === "attributes") { m.appendChild(oneStaffAttributes(it.el, staff)); continue; }
+    if (it.kind !== "note") continue;   // harmony, directions and barlines belong to the page, not to a loop
+    const on = Number(text(it.el, "staff", "1")) || 1;
+    if (on !== staff) continue;
+    if (it.onset > pos + EPS) { rest(it.onset - pos); pos = it.onset; }
+    for (const el of it.group) {
+      const note = el.cloneNode(true) as Element;
+      removeChildren(note, "staff");
+      removeChildren(note, "lyric");
+      m.appendChild(note);
+    }
+    if (!it.grace) pos += it.duration;
+  }
+  rest(length - pos);
+  if (m.children.length === 0) rest(length);
+  return m;
+}
+
+/** The attributes of a one-staff part: no `<staves>`, and only this staff's clef, unnumbered. */
+function oneStaffAttributes(src: Element, staff: number): Element {
+  const attrs = src.cloneNode(true) as Element;
+  removeChildren(attrs, "staves");
+  for (const clef of children(attrs, "clef")) {
+    const number = clef.getAttribute("number");
+    if (number && Number(number) !== staff) attrs.removeChild(clef);
+    else clef.removeAttribute("number");
+  }
+  for (const tag of ["key", "time", "clef"]) for (const el of children(attrs, tag)) el.removeAttribute("number");
+  return attrs;
+}
+
+/**
+ * The part a line going on underneath becomes in the written-out score (ADR 0008, decision 8).
+ *
+ * Its measures are the tiles the player sounds — the same `underSlices` arithmetic — so the file
+ * holds what was heard, tile for tile, with the last one cut where the form ends and written
+ * `implicit="yes"` like every other measure that is not a bar of its own. Before it starts there is
+ * silence: one rest per measure of the form, so the part stays in step with the others.
+ */
+function writeUnderPart(out: XMLDocument, srcPart: Element, under: Under, slices: Slice[], durations: number[], id: string, name: string): { part: Element; scorePart: Element } {
+  const part = make(out, "part", undefined, { id });
+  const srcMeasures = children(srcPart, "measure");
+  const divisions = divisionsByMeasure(srcPart);
+  const total = slices.reduce((t, s) => t + (s.to - s.from), 0);
+  const tiles = underSlices(under, durations, durations.length, slices, total);
+  const started = tiles.length ? tiles[0].origin : total;
+  // the silence before it comes in, one measure of the form at a time
+  let t = 0;
+  const written: Element[] = [];
+  for (const s of slices) {
+    const length = s.to - s.from;
+    if (t + length > started + EPS) break;
+    const per = divisions[s.measure];
+    const m = make(out, "measure");
+    const note = make(out, "note");
+    note.appendChild(make(out, "rest", undefined, { measure: "yes" }));
+    note.appendChild(make(out, "duration", String(Math.round(length * 4 * per))));
+    m.appendChild(note);
+    m.setAttribute("implicit", "no");
+    written.push(m);
+    t += length;
+  }
+  for (const tile of tiles) {
+    const src = srcMeasures[tile.measure];
+    if (!src) continue;
+    const per = divisions[tile.measure];
+    const length = Math.round(durations[tile.measure] * 4 * per);
+    const single = staffMeasure(src, staffOf(under.line, srcPart), length);
+    const m = writeSlice(out, out.importNode(single, true) as Element, per, Math.round(tile.from * 4 * per), Math.round(tile.to * 4 * per), tile.cut, null);
+    m.setAttribute("implicit", tile.cut || tile.from > EPS ? "yes" : "no");
+    written.push(m);
+  }
+  for (const m of written) part.appendChild(m);
+  const last = written[written.length - 1];
+  if (last) {
+    for (const n of tailNotes(last)) dropTie(n, "start");
+    const bar = make(out, "barline", undefined, { location: "right" });
+    bar.appendChild(make(out, "bar-style", "light-heavy"));
+    last.appendChild(bar);
+  }
+  renumber(part);
+  const scorePart = make(out, "score-part", undefined, { id });
+  scorePart.appendChild(make(out, "part-name", name));
+  return { part, scorePart };
+}
+
+/**
+ * The staff number a line means inside its part. A line is a staff of the whole sheet; a document
+ * the app plays has one part (homr) or a part per line (an imported file), so for a one-part
+ * document the line *is* the staff, and for the others the first staff of the part is what is left.
+ */
+function staffOf(line: number, srcPart: Element): number {
+  const staves = Math.max(1, ...children(srcPart, "measure").flatMap((m) => children(m, "note").map((n) => Number(text(n, "staff", "1")) || 1)));
+  return Math.min(line + 1, staves);
+}
+
 // ---- the expansion ---------------------------------------------------------------------------------
 
 /**
@@ -326,7 +446,7 @@ function pruneSlurs(partEl: Element): void {
  * measures replaced by the slices. A multi-part score is sliced identically in every part, so the parts
  * stay in step.
  */
-export function expandScore(doc: XMLDocument, passes: Pass[], names: string[] = []): Expansion {
+export function expandScore(doc: XMLDocument, passes: Pass[], names: string[] = [], unders: Under[] = [], lineNames: string[] = []): Expansion {
   const out = parse(serialize(doc));
   const srcParts = children(doc.documentElement, "part");
   const outParts = children(out.documentElement, "part");
@@ -399,5 +519,16 @@ export function expandScore(doc: XMLDocument, passes: Pass[], names: string[] = 
     pruneSlurs(outPart);
     renumber(outPart);
   });
-  return { xml: serialize(out), measures: slices.length, partial, passes: new Set(slices.map((s) => s.pass)).size };
+  // What goes on playing underneath becomes a part of its own, so the file holds what was heard
+  // (ADR 0008, decision 8). A score with none is written exactly as it was before this existed.
+  const partList = child(out.documentElement, "part-list");
+  unders.forEach((under, ui) => {
+    const srcPart = srcParts[0];
+    const id = `PU${ui + 1}`;
+    const line = lineNames[under.line] ?? `Staff ${under.line + 1}`;
+    const { part, scorePart } = writeUnderPart(out, srcPart, under, slices, durations, id, `${line}, going on`);
+    partList?.appendChild(scorePart);
+    out.documentElement.appendChild(part);
+  });
+  return { xml: serialize(out), measures: slices.length, partial, passes: new Set(slices.map((s) => s.pass)).size, unders: unders.length };
 }
