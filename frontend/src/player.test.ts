@@ -5,13 +5,14 @@
  */
 import { describe, expect, it } from "vitest";
 import { samePrefix, type Pass } from "./form";
-import { layPasses, windowOf, type PrintedScore } from "./player";
+import { ACCOMPANIMENT_LINE, layPasses, windowOf, type PrintedScore } from "./player";
+import { DEFAULT_VOICE, type Voicing } from "./voices";
 
 /** Four 4/4 measures, one whole note a measure (C4, D4, E4, F4), a chord on the downbeat of each. */
 function score(): PrintedScore {
   const midi = [60, 62, 64, 65];
   return {
-    printed: midi.map((m, i) => ({ time: i, measure: i, notes: [{ midi: m, length: 1 }] })),
+    printed: midi.map((m, i) => ({ time: i, measure: i, notes: [{ midi: m, length: 1, line: 0 }] })),
     measureStart: [0, 1, 2, 3],
     measureDuration: [1, 1, 1, 1],
     accompByMeasure: midi.map((m) => [{ at: 0, midi: m - 12, length: 1, velocity: 0.5 }]),
@@ -55,7 +56,7 @@ describe("layPasses", () => {
 
   it("carries a note that rings past the last measure into the total", () => {
     const long = score();
-    long.printed[3] = { time: 3, measure: 3, notes: [{ midi: 65, length: 2.5 }] };
+    long.printed[3] = { time: 3, measure: 3, notes: [{ midi: 65, length: 2.5, line: 0 }] };
     expect(layPasses(long, [pass(0, 3)]).total).toBe(5.5);
   });
 });
@@ -65,9 +66,9 @@ describe("layPasses with a section that starts or ends inside a measure (plan 00
   function anton(): PrintedScore {
     return {
       printed: [
-        { time: 0, measure: 0, notes: [{ midi: 60, length: 0.25 }] },   // "…relles." beat 1
-        { time: 0.25, measure: 0, notes: [{ midi: 67, length: 0.125 }] }, // "An-" beat 2
-        { time: 0.5, measure: 1, notes: [{ midi: 60, length: 0.125 }] }, // "-ton,"
+        { time: 0, measure: 0, notes: [{ midi: 60, length: 0.25, line: 0 }] },   // "…relles." beat 1
+        { time: 0.25, measure: 0, notes: [{ midi: 67, length: 0.125, line: 0 }] }, // "An-" beat 2
+        { time: 0.5, measure: 1, notes: [{ midi: 60, length: 0.125, line: 0 }] }, // "-ton,"
       ],
       measureStart: [0, 0.5],
       measureDuration: [0.5, 0.5],
@@ -92,7 +93,7 @@ describe("layPasses with a section that starts or ends inside a measure (plan 00
 
   it("sounds a note that began before the edge and still rings over it", () => {
     const long = anton();
-    long.printed[0] = { time: 0, measure: 0, notes: [{ midi: 60, length: 0.5 }] }; // a half note over the bar's two beats
+    long.printed[0] = { time: 0, measure: 0, notes: [{ midi: 60, length: 0.5, line: 0 }] }; // a half note over the bar's two beats
     const melody = layPasses(long, [chorus]).events.filter((e) => e.track === "melody");
     expect(melody[0]).toMatchObject({ time: 0, midi: 60, length: 0.25 }); // heard from the edge, for what is left of it
   });
@@ -175,5 +176,53 @@ describe("samePrefix", () => {
   it("tells a different verse and a different range apart", () => {
     expect(samePrefix([pass(0, 1, 1)], [pass(0, 1, 2)])).toBe(0);
     expect(samePrefix([pass(0, 1, 1)], [pass(0, 2, 1)])).toBe(0);
+  });
+});
+
+describe("lines and their instruments (plan 0011, step 3)", () => {
+  /** The canon page in little: two staves, the top one a flute for two measures then a voice. */
+  function canon(): PrintedScore {
+    return {
+      printed: [
+        { time: 0, measure: 0, notes: [{ midi: 69, length: 1, line: 0 }] },
+        { time: 1, measure: 1, notes: [{ midi: 71, length: 1, line: 0 }] },
+        { time: 2, measure: 2, notes: [{ midi: 72, length: 1, line: 0 }, { midi: 60, length: 1, line: 1 }] },
+        { time: 3, measure: 3, notes: [{ midi: 74, length: 1, line: 0 }, { midi: 62, length: 1, line: 1 }] },
+      ],
+      measureStart: [0, 1, 2, 3],
+      measureDuration: [1, 1, 1, 1],
+      accompByMeasure: [[], [], [{ at: 0, midi: 48, length: 1, velocity: 0.5 }], []],
+      measureCount: 4,
+    };
+  }
+
+  it("keeps every note's line on its event", () => {
+    const { events } = layPasses(canon(), [pass(0, 3)]);
+    const melody = events.filter((e) => e.track === "melody");
+    expect(melody.map((e) => e.line)).toEqual([0, 0, 0, 1, 0, 1]);
+    expect(events.find((e) => e.track === "accompaniment")?.line).toBe(ACCOMPANIMENT_LINE);
+  });
+
+  it("plays every line on the piano when nothing has been chosen", () => {
+    const { events } = layPasses(canon(), [pass(0, 3)]);
+    expect(new Set(events.map((e) => e.voice))).toEqual(new Set([DEFAULT_VOICE]));
+  });
+
+  it("changes instrument at the measure the range says, and leaves the other line alone", () => {
+    const voicings: Voicing[] = [{ line: 0, from: 0, to: 1, instrument: "flute" }];
+    const { events } = layPasses(canon(), [pass(0, 3)], voicings);
+    const melody = events.filter((e) => e.track === "melody");
+    expect(melody.map((e) => [e.line, e.voice])).toEqual([
+      [0, "flute"], [0, "flute"], [0, DEFAULT_VOICE], [1, DEFAULT_VOICE], [0, DEFAULT_VOICE], [1, DEFAULT_VOICE],
+    ]);
+    // the accompaniment is the piano whatever the lines are given
+    expect(events.filter((e) => e.track === "accompaniment").every((e) => e.voice === DEFAULT_VOICE)).toBe(true);
+  });
+
+  it("follows the instrument through a repeat, since it is chosen by printed measure", () => {
+    const voicings: Voicing[] = [{ line: 0, from: 0, to: 1, instrument: "flute" }];
+    const { events } = layPasses(canon(), [pass(0, 1), pass(2, 3), pass(0, 1)], voicings);
+    const flute = events.filter((e) => e.voice === "flute");
+    expect(flute.map((e) => e.time)).toEqual([0, 1, 4, 5]);
   });
 });

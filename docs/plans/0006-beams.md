@@ -1,5 +1,8 @@
 # Plan 0006: Beams, read from the print and fixed with one key
 
+Status 2026-09-22: on hold. The user means to sort beams out another way first, probably OSMD's
+`autoBeam` (ADR 0007 decision 6 turns it off; that is the decision to revisit, not this plan's steps).
+
 Status 2026-09-19: written, not started. Rooted in a scratch probe run the same day (numbers in
 ADR 0007: 89 of 95 beam groups found on four pages, no false one, 0.3 s a page).
 

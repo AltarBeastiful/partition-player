@@ -14,6 +14,8 @@
 import * as Tone from "tone";
 import { accompaniment, collectChords, type ChordSymbol } from "./chords";
 import { samePrefix, sliceRanges, type Pass, type Slice } from "./form";
+import { readLines, type Line } from "./lines";
+import { DEFAULT_VOICE, VoiceBank, instrumentAt, type SampleSet, type Voicing } from "./voices";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 
 export type { Slice } from "./form";
@@ -22,10 +24,13 @@ export type PlaybackState = "stopped" | "playing" | "paused";
 export interface LoopRange { from: number; to: number } // 1-based printed measure numbers, inclusive
 
 export type Track = "melody" | "accompaniment";
+/** The line an event belongs to: a staff of the page (ADR 0008), or the chord accompaniment. */
+export const ACCOMPANIMENT_LINE = -1;
 /** A note of a preview: time and length in whole notes from the start of the excerpt (plan 0005). */
 export interface PreviewNote { time: number; midi: number; length: number }
-export interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number } // whole notes
-export interface PrintedStep { time: number; measure: number; notes: { midi: number; length: number }[] }
+/** `line` is the staff it is printed on, `voice` the instrument it sounds with (plan 0011). */
+export interface NoteEvent { time: number; midi: number; length: number; track: Track; velocity: number; line: number; voice: string } // whole notes
+export interface PrintedStep { time: number; measure: number; notes: { midi: number; length: number; line: number }[] }
 export interface Step { time: number; printed: number; measure: number; pass: number } // on the unrolled timeline
 export interface AccompPulse { at: number; midi: number; length: number; velocity: number } // `at` from the measure start
 
@@ -72,10 +77,11 @@ export interface Timeline { events: NoteEvent[]; steps: Step[]; slices: Slice[];
  * since plan 0009: sound is laid on the slices here, measures are written out from the same slices
  * in `score/expand.ts`.
  */
-export function layPasses(score: PrintedScore, passes: Pass[]): Timeline {
+export function layPasses(score: PrintedScore, passes: Pass[], voicings: Voicing[] = []): Timeline {
   const events: NoteEvent[] = [];
   const steps: Step[] = [];
   const EPS = 1e-9;
+  const voiceOf = (line: number, measure: number) => instrumentAt(voicings, line, measure);
   const slices = sliceRanges(passes, score.measureDuration, score.measureCount);
   let last = 0;
   for (const slice of slices) {
@@ -93,7 +99,7 @@ export function layPasses(score: PrintedScore, passes: Pass[]): Timeline {
         steps.push({ time, printed: si, measure: m, pass: pi });
         for (const n of step.notes) {
           const length = Math.min(n.length, cut - at);  // a note is cut where the section is left
-          events.push({ time, midi: n.midi, length, track: "melody", velocity: 0.9 });
+          events.push({ time, midi: n.midi, length, track: "melody", velocity: 0.9, line: n.line, voice: voiceOf(n.line, m) });
           last = Math.max(last, time + length);
         }
         return;
@@ -103,7 +109,7 @@ export function layPasses(score: PrintedScore, passes: Pass[]): Timeline {
         for (const n of step.notes) {
           if (at + n.length <= from + EPS) continue;
           const length = Math.min(at + n.length, cut) - from;
-          events.push({ time: t, midi: n.midi, length, track: "melody", velocity: 0.9 });
+          events.push({ time: t, midi: n.midi, length, track: "melody", velocity: 0.9, line: n.line, voice: voiceOf(n.line, m) });
           last = Math.max(last, t + length);
         }
       }
@@ -112,7 +118,7 @@ export function layPasses(score: PrintedScore, passes: Pass[]): Timeline {
       if (a.at + a.length <= from + EPS || a.at >= to - EPS) continue;
       const at = Math.max(a.at, from);
       const length = Math.min(a.at + a.length, cut) - at;
-      events.push({ time: origin + at, midi: a.midi, length, track: "accompaniment", velocity: a.velocity });
+      events.push({ time: origin + at, midi: a.midi, length, track: "accompaniment", velocity: a.velocity, line: ACCOMPANIMENT_LINE, voice: DEFAULT_VOICE });
       last = Math.max(last, origin + at + length);
     }
   }
@@ -121,11 +127,6 @@ export function layPasses(score: PrintedScore, passes: Pass[]): Timeline {
   return { events, steps, slices, total: Math.max(end, last) };
 }
 
-const SAMPLES: Record<string, string> = {
-  A1: "A1.mp3", C2: "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3", A2: "A2.mp3", C3: "C3.mp3", "D#3": "Ds3.mp3",
-  "F#3": "Fs3.mp3", A3: "A3.mp3", C4: "C4.mp3", "D#4": "Ds4.mp3", "F#4": "Fs4.mp3", A4: "A4.mp3", C5: "C5.mp3",
-  "D#5": "Ds5.mp3", "F#5": "Fs5.mp3", A5: "A5.mp3", C6: "C6.mp3", "D#6": "Ds6.mp3", "F#6": "Fs6.mp3", A6: "A6.mp3",
-};
 const TICK_MS = 25;
 const LOOKAHEAD_S = 0.12;
 
@@ -134,8 +135,16 @@ export class Player {
   chords: ChordSymbol[] = [];
   passes: Pass[] = [];
   readonly tracks: Record<Track, boolean> = { melody: true, accompaniment: true };
+  /** The staves of the page, top first (ADR 0008, decision 1). */
+  lines: Line[] = [];
+  /** Which lines are heard; a line switched off is silent but still drawn and still followed. */
+  readonly lineOn = new Map<number, boolean>();
+  /** Which instrument each line sounds with, over which measures (ADR 0008, decision 2). */
+  voicings: Voicing[] = [];
   /** Called when the pass being played changes; null when stopped. */
   onPass: ((pass: number | null) => void) | null = null;
+  /** Called once when a sample set cannot be fetched and the piano stands in for it. */
+  onVoiceFailure: ((set: SampleSet) => void) | null = null;
 
   // printed order
   private printed: PrintedStep[] = [];
@@ -149,7 +158,7 @@ export class Player {
   private slices: Slice[] = [];
   private totalWholeNotes = 0;
 
-  private sampler: Tone.Sampler | null = null;
+  private bank = new VoiceBank((set) => this.onVoiceFailure?.(set));
   private ready: Promise<void> | null = null;
   private starting = false;
 
@@ -205,6 +214,9 @@ export class Player {
     this.measureDuration = [];
     this.accompByMeasure = [];
     this.osmd.EngravingRules.CursorIgnoreRepetitions = true; // the printed order; the passes do the jumping
+    const { lines, lineOf } = readLines(this.osmd);
+    this.lines = lines;
+    for (const line of lines) if (!this.lineOn.has(line.index)) this.lineOn.set(line.index, true);
     const cursor = this.osmd.cursor;
     cursor.reset();
     let prev = -1;
@@ -215,11 +227,12 @@ export class Player {
       prev = t;
       const step: PrintedStep = { time: t, measure: cursor.iterator.CurrentMeasureIndex, notes: [] };
       for (const voiceEntry of cursor.iterator.CurrentVoiceEntries ?? []) {
+        const line = lineOf(voiceEntry.ParentSourceStaffEntry?.ParentStaff);
         for (const note of voiceEntry.Notes) {
           if (note.isRest() || !note.Pitch) continue;
           if (note.NoteTie && note.NoteTie.StartNote !== note) continue; // tied continuation
           const length = note.NoteTie ? note.NoteTie.Duration.RealValue : note.Length.RealValue;
-          step.notes.push({ midi: note.halfTone + 12, length });
+          step.notes.push({ midi: note.halfTone + 12, length, line });
         }
       }
       this.printed.push(step);
@@ -258,12 +271,12 @@ export class Player {
     // the next edit is about, since the panel's edges are taken from it. Keep it on that note.
     const note = keep && state === "stopped" ? this.at() : null;
     const common = samePrefix(this.passes, passes);
-    if (keep) { this.clearTimers(); this.endPreview(false); this.sampler?.releaseAll(); } else { this.stop(); }
+    if (keep) { this.clearTimers(); this.endPreview(false); this.bank.releaseAll(); } else { this.stop(); }
     this.passes = passes;
     const line = layPasses({
       printed: this.printed, measureStart: this.measureStart, measureDuration: this.measureDuration,
       accompByMeasure: this.accompByMeasure, measureCount: this.measureCount,
-    }, passes);
+    }, passes, this.voicings);
     this.events = line.events;
     this.steps = line.steps;
     this.slices = line.slices;
@@ -361,7 +374,8 @@ export class Player {
     if (!this.ready) {
       this.ready = (async () => {
         await Tone.start();
-        this.sampler = new Tone.Sampler({ urls: SAMPLES, baseUrl: "https://tonejs.github.io/audio/salamander/", release: 1 }).toDestination();
+        await this.bank.load(DEFAULT_VOICE);
+        await Promise.all([...new Set(this.voicings.map((v) => v.instrument))].map((id) => this.bank.load(id)));
         await Tone.loaded();
       })().catch((e) => { this.ready = null; throw e; });
     }
@@ -370,6 +384,29 @@ export class Player {
 
   setTrack(track: Track, on: boolean): void {
     this.tracks[track] = on;
+  }
+
+  /** Switch a line on or off. It keeps its place on the sheet and under the cursor; it is only silent. */
+  setLine(line: number, on: boolean): void {
+    this.lineOn.set(line, on);
+    if (!on) this.bank.releaseAll();
+  }
+
+  heard(line: number): boolean {
+    return this.lineOn.get(line) ?? true;
+  }
+
+  /**
+   * Give the lines their instruments (ADR 0008, decision 2). The sets are fetched in the background;
+   * the timeline is re-laid at once so the choice takes effect on the next note, and a line whose set
+   * is not there yet keeps sounding on the piano until it is.
+   */
+  setVoicings(voicings: Voicing[]): void {
+    this.voicings = voicings;
+    this.setPasses(this.passes, true);
+    const wanted = [...new Set(voicings.map((v) => v.instrument))].filter((id) => !this.bank.ready(id));
+    if (wanted.length === 0 || !this.ready) return;
+    void Promise.all(wanted.map((id) => this.bank.load(id))).then(() => this.setPasses(this.passes, true));
   }
 
   /** Semitones added to every note at playback time, so a song can sit in the singer's range. */
@@ -446,7 +483,7 @@ export class Player {
       const when = start + time * spw;
       end = Math.max(end, when + length * spw);
       try {
-        this.sampler?.triggerAttackRelease(Tone.Frequency(midi + this.transpose, "midi").toNote(), length * spw * 0.95, when, velocity);
+        this.bank.get(DEFAULT_VOICE)?.triggerAttackRelease(Tone.Frequency(midi + this.transpose, "midi").toNote(), length * spw * 0.95, when, velocity);
       } catch (e) {
         console.warn("note skipped", midi, e);
       }
@@ -468,7 +505,7 @@ export class Player {
 
   private endPreview(release: boolean): void {
     if (this.previewTimer !== null) { window.clearTimeout(this.previewTimer); this.previewTimer = null; }
-    if (release && this.previewDone) this.sampler?.releaseAll();
+    if (release && this.previewDone) this.bank.releaseAll();
     const done = this.previewDone;
     this.previewDone = null;
     done?.();
@@ -496,7 +533,7 @@ export class Player {
       this.moveTo(this.stepIndex(position));
       return;
     }
-    this.sampler?.releaseAll();
+    this.bank.releaseAll();
     this.anchorCtx = Tone.now();
     this.anchorPos = position;
     this.nextEvent = this.events.findIndex((e) => e.time >= position);
@@ -524,8 +561,8 @@ export class Player {
         if (when > horizon) return;
         this.nextEvent++;
         try {
-          if (this.tracks[ev.track]) {
-            this.sampler?.triggerAttackRelease(Tone.Frequency(ev.midi + this.transpose, "midi").toNote(), ev.length * this.secondsPerWhole() * 0.95, Math.max(when, now), ev.velocity);
+          if (this.tracks[ev.track] && (ev.line === ACCOMPANIMENT_LINE || this.heard(ev.line))) {
+            this.bank.get(ev.voice)?.triggerAttackRelease(Tone.Frequency(ev.midi + this.transpose, "midi").toNote(), ev.length * this.secondsPerWhole() * 0.95, Math.max(when, now), ev.velocity);
           }
         } catch (e) {
           console.warn("note skipped", ev.midi, e);
@@ -560,7 +597,7 @@ export class Player {
     if (this.state !== "playing") return;
     this.pausedAt = Math.min(this.positionAt(Tone.now()), this.winEnd);
     this.clearTimers();
-    this.sampler?.releaseAll();
+    this.bank.releaseAll();
     this.state = "paused";
     this.onState("paused");
   }
@@ -568,7 +605,7 @@ export class Player {
   stop(): void {
     this.clearTimers();
     this.endPreview(false);
-    this.sampler?.releaseAll();
+    this.bank.releaseAll();
     this.pending = null;
     this.state = "stopped";
     this.osmd.cursor.reset();
@@ -615,8 +652,7 @@ export class Player {
   dispose(): void {
     this.clearTimers();
     this.endPreview(false);
-    this.sampler?.dispose();
-    this.sampler = null;
+    this.bank.dispose();
     this.ready = null;
   }
 }

@@ -1,7 +1,9 @@
 # ADR 0007: Beams read from the print, kept as MusicXML beams, edited as links between notes
 
 Date: 2026-09-19
-Status: Proposed (plan 0006)
+Status: Proposed (plan 0006), on hold 2026-09-22 — the user means to try OSMD's `autoBeam` first,
+which decision 6 turns off. If beaming by rule in the renderer is good enough on real pages, most of
+this record is moot and only the print-read beams (decision 1) stay worth building.
 
 ## Context
 
