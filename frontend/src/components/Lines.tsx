@@ -47,7 +47,7 @@ function summarize(lines: Line[], voicings: Voicing[], unders: Under[]): string 
   return said.join(" · ");
 }
 
-export function LinesPanel({ lines, voicings, unders, measureCount, rangeOf, heard, onHeard, onChange }: {
+export function LinesPanel({ lines, voicings, unders, measureCount, rangeOf, heard, onHeard, heardUnder, onHeardUnder, onChange }: {
   lines: Line[];
   voicings: Voicing[];
   unders: Under[];
@@ -55,6 +55,8 @@ export function LinesPanel({ lines, voicings, unders, measureCount, rangeOf, hea
   rangeOf: (line: number) => Range | null;
   heard: (line: number) => boolean;
   onHeard: (line: number, on: boolean) => void;
+  heardUnder: (index: number) => boolean;
+  onHeardUnder: (index: number, on: boolean) => void;
   onChange: (voicings: Voicing[], unders: Under[]) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -142,6 +144,9 @@ export function LinesPanel({ lines, voicings, unders, measureCount, rangeOf, hea
           {unders.map((u, i) => (
             <div className="row" key={i}>
               <span className="section">
+                <label title="Hear it or not. The staff it is printed on keeps its own switch: on this page they are the same staff.">
+                  <input type="checkbox" checked={heardUnder(i)} onChange={(e) => onHeardUnder(i, e.target.checked)} />
+                </label>
                 <select value={u.line} onChange={(e) => setUnder(i, { line: Number(e.target.value) })} aria-label="Line">
                   {lines.map((l) => <option key={l.index} value={l.index}>{l.name}</option>)}
                 </select>

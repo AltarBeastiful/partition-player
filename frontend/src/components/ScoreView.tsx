@@ -51,6 +51,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const [melodyOn, setMelodyOn] = useState(true);
   const [lines, setLines] = useState<Line[]>([]);          // the staves of the page (plan 0011)
   const [silent, setSilent] = useState<number[]>([]);      // lines switched off, a practice setting
+  const [silentUnders, setSilentUnders] = useState<number[]>([]);  // lines going on underneath, switched off
   const [preparing, setPreparing] = useState(false);       // the sounds are being fetched for the first Play
   const [soundNote, setSoundNote] = useState<string | null>(null); // a sample set that would not come
   const lastSound = useRef("");                            // the sound last given to the player
@@ -536,6 +537,11 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
           onHeard={(line, on) => {
             setSilent((was) => (on ? was.filter((l) => l !== line) : [...was, line]));
             playerRef.current?.setLine(line, on);
+          }}
+          heardUnder={(i) => !silentUnders.includes(i)}
+          onHeardUnder={(i, on) => {
+            setSilentUnders((was) => (on ? was.filter((k) => k !== i) : [...was, i]));
+            playerRef.current?.setUnder(i, on);
           }}
           onChange={(voicings, unders) => session.setSound(voicings, unders)} />
       )}
