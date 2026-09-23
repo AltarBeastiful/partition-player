@@ -83,10 +83,12 @@ function expectSameMusic(doc: XMLDocument, passes: Pass[]): void {
 }
 
 describe("the expanded page is what the player plays", () => {
+  // The heaviest case in the suite: five verses expanded to 145 measures and read back note by
+  // note, 3.3 s on an idle machine and over vitest's 5 s default on a loaded one.
   it("writes Anton's real form out note for note", () => {
     const doc = anton();
     expectSameMusic(doc, expandForm(ANTON_FORM, 19));
-  });
+  }, 30_000);
 
   it("writes a plain page sung twice, a section cut on both sides, and a pass with times", () => {
     const doc = anton();
