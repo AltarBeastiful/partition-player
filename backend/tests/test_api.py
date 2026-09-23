@@ -319,6 +319,19 @@ def test_editor_save_revert_and_revision(settings):
             assert r.status_code == 422, (bad_sound, r.status_code)
         assert client.get(f"/api/jobs/{jid}/review").json()["lines"] == lines
 
+        # a counted line, and one that comes in with a section rather than at a bare measure
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        counted = [{"line": 0, "from": 0, "to": 7, "startAt": 8, "instrument": "flute", "times": 2, "startSection": 1}]
+        r = client.put(f"/api/jobs/{jid}/score",
+                       json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, "lines": lines, "unders": counted})
+        assert r.status_code == 200, r.text
+        assert r.json()["unders"] == counted
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        for bad in ({"times": 99}, {"times": 0}, {"startSection": 7}):
+            broken = [{**counted[0], **bad}]
+            assert client.put(f"/api/jobs/{jid}/score",
+                              json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, "unders": broken}).status_code == 422, bad
+
         # reverting puts the page back on the piano, as it puts the form back to the automatic one
         r = client.post(f"/api/jobs/{jid}/revert")
         assert r.status_code == 200 and r.json()["lines"] == [] and r.json()["unders"] == []

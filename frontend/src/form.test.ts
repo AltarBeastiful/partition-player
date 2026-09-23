@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import JSZip from "jszip";
 import { beforeAll, describe, expect, it } from "vitest";
-import { UNDER_PASS, defaultPasses, describePasses, expandForm, formFromPasses, parseForm, preset, remapForm, sliceRanges, underSlices, type Form, type Pass, type Section, type Under } from "./form";
+import { UNDER_PASS, defaultPasses, resolveUnders, describePasses, expandForm, formFromPasses, parseForm, preset, remapForm, sliceRanges, underSlices, type Form, type Pass, type Section, type Under } from "./form";
 
 let OpenSheetMusicDisplay: typeof import("opensheetmusicdisplay").OpenSheetMusicDisplay;
 
@@ -203,5 +203,54 @@ describe("underSlices: a line that goes on playing underneath (plan 0011, step 4
     const empty: Under = { ...flute, from: 5, to: 4 };
     const tiles = underSlices(empty, durations, 20, slices(), total());
     expect(tiles.map((t) => t.measure)).toEqual(Array(13).fill(5)); // from..to reversed is one measure
+  });
+});
+
+describe("a line that goes on playing, counted (plan 0011, follow-up)", () => {
+  const durations = Array.from({ length: 20 }, () => 1);
+  const wholePage: Pass[] = [{ ranges: [{ from: 0, to: 19 }], verse: null }];
+  const slices = () => sliceRanges(wholePage, durations, 20);
+  const flute: Under = { line: 0, from: 0, to: 7, startAt: 8, instrument: "flute" };
+
+  it("fills the form's time when no count is given, as an ostinato does", () => {
+    const tiles = underSlices(flute, durations, 20, slices(), 20);
+    expect(tiles).toHaveLength(12);                       // measures 9 to 20: a round and a half
+  });
+
+  it("plays exactly the rounds it is asked for, and then stops", () => {
+    const twice = underSlices({ ...flute, times: 2 }, durations, 20, slices(), 32);
+    expect(twice).toHaveLength(16);                       // two rounds of eight measures
+    expect(twice.map((t) => t.measure)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7]);
+    const once = underSlices({ ...flute, times: 1 }, durations, 20, slices(), 32);
+    expect(once).toHaveLength(8);
+  });
+
+  it("is still cut where the form ends, however many rounds it was promised", () => {
+    const tiles = underSlices({ ...flute, times: 5 }, durations, 20, slices(), 20);
+    expect(tiles).toHaveLength(12);                       // twelve measures left, not forty
+    expect(tiles[tiles.length - 1].measure).toBe(3);
+  });
+});
+
+describe("resolveUnders: coming in with a section (plan 0011, follow-up)", () => {
+  const form: Form = {
+    sections: [{ name: "Flute", from: 0, to: 7 }, { name: "Voices", from: 8, to: 19 }],
+    passes: [{ section: 0, verse: null }, { section: 1, verse: null }],
+  };
+  const under: Under = { line: 0, from: 0, to: 7, startAt: 0, instrument: "flute", startSection: 1 };
+
+  it("comes in where its section begins, not where its number says", () => {
+    expect(resolveUnders([under], form)[0].startAt).toBe(8);
+  });
+
+  it("follows the section when it moves", () => {
+    const moved: Form = { ...form, sections: [form.sections[0], { ...form.sections[1], from: 10 }] };
+    expect(resolveUnders([under], moved)[0].startAt).toBe(10);
+  });
+
+  it("leaves a bare measure alone, and keeps the last measure when the section is gone", () => {
+    expect(resolveUnders([{ ...under, startSection: undefined, startAt: 8 }], form)[0].startAt).toBe(8);
+    expect(resolveUnders([under], null)[0].startAt).toBe(0);
+    expect(resolveUnders([{ ...under, startSection: 9 }], form)[0].startAt).toBe(0);
   });
 });

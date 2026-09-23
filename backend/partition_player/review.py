@@ -55,6 +55,7 @@ MAX_TIMES = 50     # how often one pass may repeat itself
 MAX_LINES = 24     # staves on a page: a piano page has two, an orchestral score is not what this app is
 MAX_VOICINGS = 200  # instrument ranges over those staves
 MAX_UNDERS = 8     # lines going on underneath at once
+MAX_UNDER_TIMES = 20  # rounds a line may be asked to play; absent means it fills the form's time
 
 # The instruments a line may be given (plan 0011, step 2). The browser holds the same list with the
 # samples; the server only has to refuse a name that is not one of them.
@@ -152,9 +153,13 @@ def validate_lines(lines: object, measure_count: int) -> list[dict]:
     return out
 
 
-def validate_unders(unders: object, measure_count: int) -> list[dict]:
+def validate_unders(unders: object, measure_count: int, sections: int = 0) -> list[dict]:
     """The lines that go on playing underneath the form (plan 0011): a stretch of measures of one
-    staff, repeated from a measure to the end."""
+    staff, played from a measure on.
+
+    `times` is how many rounds it plays, absent for "fill whatever the form leaves"; `startSection`
+    anchors the start to a section of the form instead of to a bare measure, and is checked against
+    the form saved in the same request."""
     if unders is None:
         return []
     if not isinstance(unders, list):
@@ -171,8 +176,19 @@ def validate_unders(unders: object, measure_count: int) -> list[dict]:
                 raise InvalidDocument(f"line {line} is not a staff of this page")
             if not 0 <= start < measure_count:
                 raise InvalidDocument(f"a line going on underneath starts at measure {start + 1}, outside the score")
-            out.append({"line": line, "from": first, "to": last, "startAt": start,
-                        "instrument": _instrument(under["instrument"])})
+            record = {"line": line, "from": first, "to": last, "startAt": start,
+                      "instrument": _instrument(under["instrument"])}
+            if under.get("times") is not None:
+                times = int(under["times"])
+                if not 1 <= times <= MAX_UNDER_TIMES:
+                    raise InvalidDocument(f"a line going on underneath plays {times} times, outside 1 to {MAX_UNDER_TIMES}")
+                record["times"] = times
+            if under.get("startSection") is not None:
+                section = int(under["startSection"])
+                if not 0 <= section < sections:
+                    raise InvalidDocument("a line going on underneath names a section that does not exist")
+                record["startSection"] = section
+            out.append(record)
     except (KeyError, TypeError, ValueError, AttributeError) as e:
         if isinstance(e, InvalidDocument):
             raise
@@ -233,7 +249,7 @@ def save(store: JobStore, job: Job, musicxml: str, checked: list[int], revision:
     measure_count = len(tree.getroot().find("part").findall("measure"))
     form = validate_form(form, measure_count)
     voicings = validate_lines(lines, measure_count)
-    going_under = validate_unders(unders, measure_count)
+    going_under = validate_unders(unders, measure_count, len(form["sections"]) if form else 0)
     d = store.dir(job.id)
     with store.lock:
         current = load(d)

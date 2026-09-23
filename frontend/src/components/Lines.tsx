@@ -10,7 +10,7 @@
 import { useState } from "react";
 import type { Line } from "../lines";
 import { VOICES, outsideRange, voiceSet, type Voicing } from "../voices";
-import type { Under } from "../form";
+import { MAX_UNDER_TIMES, type Form, type Under } from "../form";
 
 interface Range { low: number; high: number }
 
@@ -42,16 +42,19 @@ function summarize(lines: Line[], voicings: Voicing[], unders: Under[]): string 
   });
   for (const under of unders) {
     const line = lines.find((l) => l.index === under.line);
-    said.push(`${voiceSet(under.instrument).label.toLowerCase()} goes on under m. ${under.startAt + 1}${line ? ` (${line.name})` : ""}`);
+    const rounds = under.times === undefined ? "" : ` ×${under.times}`;
+    said.push(`${voiceSet(under.instrument).label.toLowerCase()} goes on under m. ${under.startAt + 1}${rounds}${line ? ` (${line.name})` : ""}`);
   }
   return said.join(" · ");
 }
 
-export function LinesPanel({ lines, voicings, unders, measureCount, rangeOf, heard, onHeard, heardUnder, onHeardUnder, onChange }: {
+export function LinesPanel({ lines, voicings, unders, measureCount, form, rangeOf, heard, onHeard, heardUnder, onHeardUnder, onChange }: {
   lines: Line[];
   voicings: Voicing[];
   unders: Under[];
   measureCount: number;
+  /** The form's sections, so a line can be told to come in where one begins rather than at a number. */
+  form: Form | null;
   rangeOf: (line: number) => Range | null;
   heard: (line: number) => boolean;
   onHeard: (line: number, on: boolean) => void;
@@ -84,6 +87,13 @@ export function LinesPanel({ lines, voicings, unders, measureCount, rangeOf, hea
   const addUnder = () => onChange(voicings, [...unders, {
     line: lines[0].index, from: 0, to: Math.min(7, last), startAt: Math.min(8, last), instrument: "flute",
   }]);
+  /** Fill the form, then once, twice… and back to filling: the form panel's own ×N idiom. */
+  const cycleTimes = (i: number, by: number) => {
+    const now = unders[i].times;
+    const next = now === undefined ? (by > 0 ? 1 : MAX_UNDER_TIMES) : now + by;
+    setUnder(i, { times: next < 1 || next > MAX_UNDER_TIMES ? undefined : next });
+  };
+  const sections = form?.sections ?? [];
   const setUnder = (i: number, patch: Partial<Under>) => {
     const list = unders.map((u, k) => (k === i ? { ...u, ...patch } : u));
     const u = list[i];
@@ -153,13 +163,29 @@ export function LinesPanel({ lines, voicings, unders, measureCount, rangeOf, hea
                 <span className="muted">goes on playing</span>
                 <label>m. <input type="number" min={1} max={measureCount} value={u.from + 1} onChange={(e) => setUnder(i, { from: Number(e.target.value) - 1 })} /></label>
                 <label>to <input type="number" min={1} max={measureCount} value={u.to + 1} onChange={(e) => setUnder(i, { to: Number(e.target.value) - 1 })} /></label>
-                <label title="Where it starts on the timeline: the first time the form reaches this measure.">from m. <input type="number" min={1} max={measureCount} value={u.startAt + 1}
+                <label title="Where it comes in: the first time the form reaches this measure.">from m. <input type="number" min={1} max={measureCount}
+                  value={(u.startSection !== undefined ? sections[u.startSection]?.from ?? u.startAt : u.startAt) + 1}
+                  disabled={u.startSection !== undefined}
                   onChange={(e) => setUnder(i, { startAt: Number(e.target.value) - 1 })} /></label>
+                {sections.length > 0 && (
+                  <select value={u.startSection ?? ""} aria-label="Come in with a section"
+                    title="Come in where a section begins, so that moving the section moves what plays under it."
+                    onChange={(e) => setUnder(i, { startSection: e.target.value === "" ? undefined : Number(e.target.value) })}>
+                    <option value="">at that measure</option>
+                    {sections.map((sec, k) => <option key={k} value={k}>with {sec.name || `section ${k + 1}`}</option>)}
+                  </select>
+                )}
+                <button className="quiet times" onClick={() => cycleTimes(i, 1)} onContextMenu={(e) => { e.preventDefault(); cycleTimes(i, -1); }}
+                  title="How many rounds it plays: click for one more, right-click for one fewer. ∞ fills whatever time the form leaves.">
+                  {u.times === undefined ? "∞" : `×${u.times}`}
+                </button>
                 <Picker value={u.instrument} range={rangeOf(u.line)} onChange={(id) => setUnder(i, { instrument: id })} />
                 <button className="quiet" title="Remove" onClick={() => onChange(voicings, unders.filter((_, k) => k !== i))}>×</button>
               </span>
               <span className="muted">
-                It repeats to the end of the form, and a practice loop replays whatever falls in its window.
+                {u.times === undefined
+                  ? "It fills the time the form leaves it, and a practice loop replays whatever falls in its window."
+                  : `It plays ${u.times === 1 ? "once" : `${u.times} times`} and then stops; the last round is still cut where the form ends.`}
               </span>
             </div>
           ))}

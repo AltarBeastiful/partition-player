@@ -224,11 +224,35 @@ export function sliceRanges(passes: Pass[], measureDuration: number[], measureCo
 /**
  * A line that goes on playing underneath the form (ADR 0008, decision 5).
  *
- * The measures `from..to` of `line`, laid end to end over and over, from the first time the timeline
- * reaches printed measure `startAt` to the end of the form: *the flute goes on playing measures 1–8,
- * from measure 9 to the end*. Measures are 0-based and inclusive, as everywhere else in the form.
+ * The measures `from..to` of `line`, laid end to end from the first time the timeline reaches printed
+ * measure `startAt`: *the flute goes on playing measures 1–8, from measure 9 to the end*. Measures
+ * are 0-based and inclusive, as everywhere else in the form.
+ *
+ * `times` is how many rounds it plays: absent means it fills whatever time the form leaves, which is
+ * what an ostinato does; a number means exactly that many and then silence, which is what "the flute
+ * plays it twice over the voices" means. Either way the last round is cut where the form ends.
+ *
+ * `startSection` anchors the start to a section of the form rather than to a bare measure number, so
+ * that moving the chorus moves what plays under it. It is resolved to `startAt` by `resolveUnders`
+ * before anything is laid; nothing below this line knows about sections.
  */
-export interface Under { line: number; from: number; to: number; startAt: number; instrument: string }
+export interface Under { line: number; from: number; to: number; startAt: number; instrument: string; times?: number; startSection?: number }
+
+/** The most rounds a line may be asked to play; beyond that it is an ostinato, which is `times` absent. */
+export const MAX_UNDER_TIMES = 20;
+
+/**
+ * The unders as the player and the expansion want them: every `startSection` turned into the measure
+ * that section starts on. A section that no longer exists leaves the measure it was last resolved to,
+ * so a deleted section silences nothing.
+ */
+export function resolveUnders(unders: Under[], form: Form | null): Under[] {
+  return unders.map((under) => {
+    if (under.startSection === undefined) return under;
+    const section = form?.sections[under.startSection];
+    return section ? { ...under, startAt: section.from } : under;
+  });
+}
 
 /** Where the timeline first reaches a printed measure's start, or null when the form never plays it. */
 export function firstReach(slices: Slice[], measure: number): number | null {
@@ -253,10 +277,11 @@ export function underSlices(under: Under, measureDuration: number[], measureCoun
   if (start === null || total - start <= EPS) return [];
   const round = measureDuration.slice(first, last + 1).reduce((a, b) => a + b, 0);
   if (round <= EPS) return [];
+  const rounds = under.times === undefined ? Infinity : Math.max(1, Math.min(Math.round(under.times), MAX_UNDER_TIMES));
   const out: Slice[] = [];
   let t = start;
   let guard = 0;
-  while (total - t > EPS && guard++ < 10_000) {
+  while (total - t > EPS && guard < rounds && guard++ < 10_000) {
     for (let m = first; m <= last && total - t > EPS; m++) {
       const duration = measureDuration[m];
       const left = total - t;

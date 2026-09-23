@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { createJob, getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
-import { defaultPasses, expandForm, formFromPasses, passNames, samePasses, versesByMeasure, type Pass } from "../form";
+import { defaultPasses, expandForm, formFromPasses, passNames, resolveUnders, samePasses, versesByMeasure, type Pass } from "../form";
 import { clearVerses, dimVerses } from "../verses";
 import { commands, shortcut } from "../editor/commands";
 import { EditorSession } from "../editor/session";
@@ -121,8 +121,8 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         // How the page sounds, as it was saved (plan 0011). Set before the passes are laid, since
         // the instrument of a line is decided while the timeline is built.
         player.voicings = s.lines;
-        player.unders = s.unders;
-        lastSound.current = JSON.stringify([s.lines, s.unders]);
+        player.unders = resolveUnders(s.unders, s.form);
+        lastSound.current = JSON.stringify([s.lines, player.unders]);
         player.setPasses(played);
         setLines(player.lines);
         playing.current = played;
@@ -184,7 +184,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         osmd.cursor.show();
         player.rebuild();
         player.voicings = session.lines;
-        player.unders = session.unders;
+        player.unders = resolveUnders(session.unders, session.form);
         setLines(player.lines);
         const auto = defaultPasses(osmd);
         const played = session.form ? expandForm(session.form, player.measureCount) : auto;
@@ -231,11 +231,14 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   useEffect(() => {
     const player = playerRef.current;
     if (loading || !session || !player) return;
-    const key = JSON.stringify([session.lines, session.unders]);
+    // A section anchor is turned into the measure it starts on here: nothing below knows about
+    // sections, and this way moving the chorus moves what plays under it.
+    const unders = resolveUnders(session.unders, session.form);
+    const key = JSON.stringify([session.lines, unders]);
     if (key === lastSound.current) return;
     lastSound.current = key;
     player.setVoicings(session.lines);
-    player.setUnders(session.unders);
+    player.setUnders(unders);
   }, [session, session?.version, loading]);
 
   // The pass being played: its verse's words stay, the others are dimmed.
@@ -414,7 +417,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
   const downloadPlayed = useCallback(() => {
     if (!session) return;
     try {
-      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), session.unders, lines.map((l) => l.name));
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), resolveUnders(session.unders, session.form), lines.map((l) => l.name));
       const url = URL.createObjectURL(new Blob([xml], { type: "application/vnd.recordare.musicxml+xml" }));
       const a = document.createElement("a");
       a.href = url;
@@ -440,7 +443,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     setError(null);
     try {
       if (session.dirty) await session.save();  // the copy is of the score as saved, not of half of it
-      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), session.unders, lines.map((l) => l.name));
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), resolveUnders(session.unders, session.form), lines.map((l) => l.name));
       const file = new File([xml], `${fileBase}_as_played.musicxml`, { type: "application/vnd.recordare.musicxml+xml" });
       const created = await createJob(file, `${job.name || "Score"} (as played)`);
       navigate(scorePath(created.id));
@@ -531,7 +534,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
       {soundNote && <div className="review toast" role="status"><span>{soundNote}</span>
         <button className="quiet" onClick={() => setSoundNote(null)}>Dismiss</button></div>}
       {session && !loading && (
-        <LinesPanel lines={lines} voicings={session.lines} unders={session.unders} measureCount={measureCount}
+        <LinesPanel lines={lines} voicings={session.lines} unders={session.unders} measureCount={measureCount} form={session.form}
           rangeOf={(line) => playerRef.current?.lineRange(line) ?? null}
           heard={(line) => !silent.includes(line)}
           onHeard={(line, on) => {
