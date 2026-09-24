@@ -92,7 +92,7 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
     notify("postprocessing", "Checking measures")
     final = out_dir / "score.musicxml"
     try:
-        stats = postprocess(engine_xml, final)
+        stats = postprocess(engine_xml, final, times=_time_marks(geometry_file))
     except PostprocessError as e:
         raise EngineError(f"{info.get('engine')} produced unusable output: {e}") from e
     if chord_info is not None:
@@ -152,6 +152,17 @@ def add_evidence(out_dir: Path, geometry_file: Path, final: Path, stats) -> None
         stats.doubts.extend(rate(compare(evidence, emitted, adds_up=adds_up)))
     except Exception:  # noqa: BLE001  (the rating is a convenience; the score stands without it)
         log.exception("evidence failed")
+
+
+def _time_marks(geometry_file: Path) -> list[dict]:
+    """The measures where the driver saw a time signature printed (plan 0013). An engine that does
+    not report them, or a page read before this existed, simply has none."""
+    if not geometry_file.exists():
+        return []
+    try:
+        return list(json.loads(geometry_file.read_text()).get("times") or [])
+    except (ValueError, OSError):
+        return []
 
 
 def add_chords(engine_xml: Path, geometry_file: Path, dst: Path) -> dict | None:

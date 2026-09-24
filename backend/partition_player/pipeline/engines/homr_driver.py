@@ -6,6 +6,7 @@ Mirrors `homr.main.process_image` for the CPU path (no cache, no debug, no GPU) 
 - `engine.musicxml`: homr's output (same as `python -m homr.main` would write);
 - `geometry.json`: per system (top staff of each connected staff group): interline, x extent, barline
   and notehead x positions, the transformer's measure count, and the chord tokens read above it;
+  plus `times`, the measures where a time signature was printed (plan 0013);
   per staff (`staves`): the same plus the bottom line, noteheads as (x, y), and the lyric words read
   below it;
 - `band_<n>.png`: the straightened band above each system (chords);
@@ -83,18 +84,26 @@ def detect(image_path: str):
     return multi_staffs, bar_lines, predictions.preprocessed, debug, title_future
 
 
-def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[int], list]:
+def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[int], list, list[dict]]:
     """`homr.staff_parsing.parse_staffs`, also returning the measure count the transformer saw per
-    system and the staff groups it actually parsed (it may drop or split groups)."""
+    system, the staff groups it actually parsed (it may drop or split groups), and where a time
+    signature was printed.
+
+    The last of those is why this walks the raw stream (plan 0013): homr reads a time-signature mark
+    in the right bar but cannot say how many beats it has — the token carries only the beat-type —
+    and `remove_duplicated_symbols` then drops the mark whenever that token repeats, which is every
+    change of numerator. The position is thrown away here and nowhere else, so it is kept here.
+    """
     multi_staffs = _ensure_same_number_of_staffs(multi_staffs, image)
     regions = StaffRegions(multi_staffs)
     config = Config()
     config.use_gpu_inference = False
     voices, measures_per_system = [], []
+    marks: dict[tuple[int, int], int] = {}   # (system, bar within it) -> beat type
     i = 0
     for voice in range(_get_number_of_voices(multi_staffs)):
         result_for_voice: list[EncodedSymbol] = []
-        for ms in multi_staffs:
+        for system, ms in enumerate(multi_staffs):
             staff = ms.staffs[voice]
             result = parse_staff_image(debug, i, staff, image, regions, config)
             i += 1
@@ -103,14 +112,27 @@ def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[i
                 if voice == 0:
                     measures_per_system.append(0)
                 continue
+            seen = 0
+            for s in result:
+                if is_barline(s.rhythm):
+                    seen += 1
+                elif s.rhythm.startswith("timeSignature"):
+                    marks.setdefault((system, seen), int(s.rhythm.split("/")[1]))
             if voice == 0:
-                bars = sum(1 for s in result if "barline" in s.rhythm or "repeat" in s.rhythm)
-                last_is_bar = "barline" in result[-1].rhythm or "repeat" in result[-1].rhythm
+                bars = sum(1 for s in result if is_barline(s.rhythm))
+                last_is_bar = is_barline(result[-1].rhythm)
                 measures_per_system.append(bars + (0 if last_is_bar else 1))
             result.append(EncodedSymbol("newline"))
             result_for_voice.extend(result)
         voices.append(remove_duplicated_symbols(result_for_voice))
-    return voices, measures_per_system, multi_staffs
+    times = [{"measure": sum(measures_per_system[:system]) + bar, "beat_type": beat_type}
+             for (system, bar), beat_type in sorted(marks.items())]
+    return voices, measures_per_system, multi_staffs, times
+
+
+def is_barline(rhythm: str) -> bool:
+    """What ends a measure in the token stream, counted exactly as `build_measures` counts it."""
+    return "barline" in rhythm or "repeat" in rhythm
 
 
 # ---- coordinate chain -----------------------------------------------------------------------------
@@ -227,7 +249,7 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
     try:
         multi_staffs, bar_lines, image, debug, title_future = detect(image_path)
         gray = cv2.cvtColor(debug.original_image, cv2.COLOR_BGR2GRAY) if debug.original_image.ndim == 3 else debug.original_image
-        voices, measures_per_system, multi_staffs = parse(debug, multi_staffs, image)
+        voices, measures_per_system, multi_staffs, times = parse(debug, multi_staffs, image)
         title = title_future.result(60)
         log("Found title:", title)
         xml = generate_xml(XmlGeneratorArguments(False, None, None), voices, title)
@@ -291,7 +313,7 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
                            "height_units": (w.y_bottom - w.y_top) / unit_px, "extend": bool(w.extend)} for w in words],
             })
         (out / "geometry.json").write_text(json.dumps({"image": [int(gray.shape[1]), int(gray.shape[0])], "chain": chain.as_dict(),
-                                                        "systems": systems, "staves": staves}, indent=1))
+                                                        "systems": systems, "staves": staves, "times": times}, indent=1))
         log("Result was written to", xml_file)
     except BaseException:
         if xml_file.exists():

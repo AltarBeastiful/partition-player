@@ -93,6 +93,170 @@ def _measure_filled(measure: ET.Element, divisions: int) -> Fraction:
     return end
 
 
+ATTRIBUTES_ORDER = ["footnote", "level", "divisions", "key", "time", "staves", "part-symbol", "instruments", "clef",
+                    "staff-details", "transpose", "directive", "measure-style"]
+
+
+def _key_of(note: ET.Element) -> str:
+    """The voice a note belongs to. MusicXML numbers voices per part and not per staff, which is how
+    piano writing puts one hand's voice on the other's staff for a few notes — 7 measures of the
+    benchmark's two-staff songs do — so the staff must not come into it. homr numbers its voices
+    apart per staff already (`get_xml_voice`)."""
+    return note.findtext("voice", "1").strip()
+
+
+def _onsets(measure: ET.Element) -> list[tuple[ET.Element, Fraction, Fraction]]:
+    """Every note of the measure as (element, where the written stream puts it, where its own voice
+    says it belongs). The second is what a reader follows; the third has every voice entering where
+    its first note is written and its notes following one another from there.
+
+    The entry is taken and not assumed: a second voice on a staff may well begin in the middle of the
+    bar and say so by the backup that positions it. Starting every voice at the bar line instead, and
+    keying it by (staff, voice), moved notes in 16 of the benchmark's 1946 authored measures, all in
+    the two-staff songs — those two mistakes together. What no writer means is a gap inside a voice:
+    that is what a cursor laid by duration alone produces when a long note in one staff spans a
+    shorter note in the other."""
+    written = Fraction(0)          # a reader's cursor through backup/forward
+    at: dict[str, Fraction] = {}
+    head_written = head_meant = Fraction(0)
+    out: list[tuple[ET.Element, Fraction, Fraction]] = []
+    for el in measure:
+        if el.tag == "backup":
+            written -= Fraction(el.findtext("duration", "0").strip())
+            continue
+        if el.tag == "forward":
+            written += Fraction(el.findtext("duration", "0").strip())
+            continue
+        if el.tag != "note":
+            continue
+        key = _key_of(el)
+        dur_el = el.find("duration")
+        grace = el.find("grace") is not None or dur_el is None
+        chord = el.find("chord") is not None
+        dur = Fraction(0) if grace else Fraction(dur_el.text.strip())
+        if chord or grace:
+            out.append((el, head_written, head_meant))
+            continue
+        meant = at.setdefault(key, written)
+        out.append((el, written, meant))
+        head_written, head_meant = written, meant
+        written += dur
+        at[key] = meant + dur
+    return out
+
+
+def _ends_at(places: list[tuple[ET.Element, Fraction, Fraction]]) -> Fraction:
+    """Where the last voice ends once every voice follows its own notes, in divisions."""
+    end = Fraction(0)
+    for el, _, meant in places:
+        dur_el = el.find("duration")
+        if dur_el is None or el.find("chord") is not None or el.find("grace") is not None:
+            continue
+        end = max(end, meant + Fraction(dur_el.text.strip()))
+    return end
+
+
+def _relay(measure: ET.Element) -> bool:
+    """Put every note where its own voice says it belongs, by rewriting backup and forward (plan 0013).
+
+    homr's generator lays chords one after another by duration and keeps no absolute onset, so a long
+    note in one staff spanning a shorter note in the other makes the cursor overshoot and everything
+    after it in the bar lands late — the canon's measure 19 holds six quarters in each voice and is
+    written seven long, with a beat of silence in the middle. So the repair is made only where it
+    **shortens** the bar, which is what closing a hole does and what nothing else does: a voice whose
+    writer really did leave a gap, and two voices an engine numbered alike, both leave the bar as long
+    as it was and are left alone. Over the benchmark's 61 authored scores (1946 measures) this moves
+    nothing at all; over homr's own output on the pages in this repository it moves 14 measures, 13 of
+    them into their time signature and none out of it. Returns whether anything moved.
+
+    Whatever is not a note and not a backup keeps the note it stands before, so a chord symbol or a
+    direction keeps its beat."""
+    if measure.find("forward") is not None:
+        return False   # a writer that positions a voice itself is trusted to mean it
+    places = _onsets(measure)
+    if all(written == meant for _, written, meant in places):
+        return False
+    if _ends_at(places) >= _measure_filled(measure, 1):
+        return False   # the bar is no shorter for it, so nothing here was a hole: leave it written
+    meant = {id(el): m for el, _, m in places}
+    cursor = Fraction(0)
+    out: list[ET.Element] = []
+    pending: list[ET.Element] = []
+    for el in list(measure):
+        if el.tag in ("backup", "forward"):
+            continue                      # rebuilt below from the notes themselves
+        if el.tag != "note":
+            pending.append(el)
+            continue
+        onset = meant[id(el)]
+        if onset != cursor:
+            move = ET.Element("backup" if onset < cursor else "forward")
+            ET.SubElement(move, "duration").text = str(int(abs(onset - cursor)))
+            out.append(move)
+            cursor = onset
+        out.extend(pending)
+        pending = []
+        out.append(el)
+        dur_el = el.find("duration")
+        if dur_el is not None and el.find("grace") is None and el.find("chord") is None:
+            cursor += Fraction(dur_el.text.strip())
+    out.extend(pending)
+    for el in list(measure):
+        measure.remove(el)
+    measure.extend(out)
+    return True
+
+
+def _voice_lengths(measure: ET.Element) -> list[Fraction]:
+    """What each voice of the measure holds from its own notes alone, in divisions."""
+    ends: dict[str, Fraction] = {}
+    for el, _, meant in _onsets(measure):
+        if el.find("chord") is not None or el.find("grace") is not None:
+            continue
+        dur_el = el.find("duration")
+        if dur_el is None:
+            continue
+        ends[_key_of(el)] = meant + Fraction(dur_el.text.strip())
+    return list(ends.values())
+
+
+def _time_from_bar(ctx: "MeasureCtx") -> tuple[int, int] | None:
+    """The numerator a bar with a time-signature mark says about itself (plan 0013), or None.
+
+    homr reads the mark but never its numerator, so the page gives the place and the bar gives the
+    count. Conditions, all of them needed to keep this from renaming a misread bar: two voices at
+    least, agreeing exactly, on a length that is not the one in force, that is a whole number of
+    beats, and that is not twice the bar — a missed barline joins two bars far more often than a
+    page doubles its meter."""
+    lengths = _voice_lengths(ctx.measure)
+    if len(lengths) < 2 or len(set(lengths)) != 1 or lengths[0] <= 0:
+        return None
+    held = lengths[0]
+    if held == ctx.expected or held == 2 * ctx.expected:
+        return None
+    beats = ctx.quarters(held) * ctx.beat_type / 4
+    if beats.denominator != 1 or not 1 <= beats <= 32:
+        return None
+    return int(beats), ctx.beat_type
+
+
+def _set_time(measure: ET.Element, beats: int, beat_type: int) -> None:
+    """Write a time signature into the measure, making its <attributes> if it has none."""
+    attrs = measure.find("attributes")
+    if attrs is None:
+        attrs = ET.Element("attributes")
+        first = next((i for i, el in enumerate(list(measure)) if el.tag in ("note", "harmony", "direction", "backup", "forward")), len(measure))
+        measure.insert(first, attrs)
+    for old in attrs.findall("time"):
+        attrs.remove(old)
+    time = ET.Element("time")
+    ET.SubElement(time, "beats").text = str(beats)
+    ET.SubElement(time, "beat-type").text = str(beat_type)
+    after = ATTRIBUTES_ORDER[:ATTRIBUTES_ORDER.index("time")]
+    place = max([i for i, el in enumerate(list(attrs)) if el.tag in after], default=-1) + 1
+    attrs.insert(place, time)
+
+
 def _fix_rest_chords(measure: ET.Element) -> int:
     """homr sometimes emits a rest followed by a note flagged <chord/>, i.e. a "chord" of rest + note.
 
@@ -156,17 +320,24 @@ class MeasureCtx:
         return divs / self.divisions
 
 
+def _in_force(measure: ET.Element, state: tuple[int, int, int]) -> tuple[int, int, int]:
+    """(divisions, beats, beat type) after this measure's own attributes, which engines may split."""
+    divisions, beats, beat_type = state
+    for attrs in measure.findall("attributes"):
+        if (d := attrs.findtext("divisions")) is not None:
+            divisions = int(d.strip())
+        if (t := attrs.find("time")) is not None:
+            beats = int(t.findtext("beats", "4").strip())
+            beat_type = int(t.findtext("beat-type", "4").strip())
+    return divisions, beats, beat_type
+
+
 def measures(part: ET.Element) -> Iterator[MeasureCtx]:
     """Every measure with the divisions and time signature in force (engines may split attributes)."""
-    divisions, beats, beat_type = 1, 4, 4
+    state = (1, 4, 4)
     for index, measure in enumerate(part.findall("measure")):
-        for attrs in measure.findall("attributes"):
-            if (d := attrs.findtext("divisions")) is not None:
-                divisions = int(d.strip())
-            if (t := attrs.find("time")) is not None:
-                beats = int(t.findtext("beats", "4").strip())
-                beat_type = int(t.findtext("beat-type", "4").strip())
-        yield MeasureCtx(index, measure, divisions, beats, beat_type)
+        state = _in_force(measure, state)
+        yield MeasureCtx(index, measure, *state)
 
 
 def part_lengths(part: ET.Element) -> list[tuple[Fraction, Fraction]]:
@@ -259,12 +430,15 @@ def inspect(tree: ET.ElementTree) -> ScoreStats:
     return stats
 
 
-def postprocess(src: Path, dst: Path, repair: bool = True) -> ScoreStats:
+def postprocess(src: Path, dst: Path, repair: bool = True, times: list[dict] | None = None) -> ScoreStats:
     """Read `src`, write `dst`, return what the document holds.
 
     `repair` is what an engine's output needs and an authored file must not get (plan 0010): with it
     off nothing is padded, unmerged or moved, and a measure that does not add up is recorded as
-    information rather than as a doubt."""
+    information rather than as a doubt.
+
+    `times` is the driver's list of the measures where a time signature is printed (plan 0013), which
+    the engine reads and then cannot write down."""
     try:
         tree = ET.parse(src)
     except ET.ParseError as e:
@@ -275,7 +449,12 @@ def postprocess(src: Path, dst: Path, repair: bool = True) -> ScoreStats:
     stats = ScoreStats()
     for p, part in enumerate(root.findall("part")):
         stats.parts += 1
-        (_repair_part if repair else _read_part)(part, p, stats)
+        if repair:
+            marks = {int(t["measure"]): int(t["beat_type"]) for t in (times or [])}
+            _read_meter(part, marks, p, stats)
+            _repair_part(part, p, stats, marks)
+        else:
+            _read_part(part, p, stats)
     if stats.parts == 0:
         raise PostprocessError("no <part> in the document")
     if stats.notes == 0:
@@ -312,11 +491,48 @@ def _read_part(part: ET.Element, p: int, stats: ScoreStats) -> None:
             stats.doubts.append(doubt(ctx.index, "overfull", f"{describe(filled)} in a {ctx.time} measure", p, info=True, excess=str(filled - expected)))
 
 
-def _repair_part(part: ET.Element, p: int, stats: ScoreStats) -> None:
+def _mark_note(ctx: "MeasureCtx", marks: dict[int, int]) -> str:
+    """What to add to a doubt on a bar where a time signature is printed and could not be read from
+    the bar itself: the page said the meter changes here, so say so rather than only the arithmetic."""
+    return "; a time signature is printed here, so the meter may change on this bar" if ctx.index in marks and ctx.index > 0 else ""
+
+
+def _mark_detail(ctx: "MeasureCtx", marks: dict[int, int]) -> dict:
+    return {"time_mark": True} if ctx.index in marks and ctx.index > 0 else {}
+
+
+def _read_meter(part: ET.Element, marks: dict[int, int], p: int, stats: ScoreStats) -> None:
+    """Where the engine read a time-signature mark, take the numerator from the bar (plan 0013).
+
+    Its own pass, before anything is measured: `measures` carries the time in force forward, so a
+    measure whose meter changes must be written before the measure after it is looked at. Measure 0
+    is skipped — the engine already wrote the meter the page opens with, and its numerator, being the
+    median bar of the page, is right far more often than not."""
+    if not marks:
+        return
+    state = (1, 4, 4)
+    for index, measure in enumerate(part.findall("measure")):
+        state = _in_force(measure, state)
+        if index == 0 or index not in marks:
+            continue
+        found = _time_from_bar(MeasureCtx(index, measure, *state))
+        if found is None:
+            continue
+        beats, beat_type = found
+        _set_time(measure, beats, beat_type)
+        state = (state[0], beats, beat_type)   # in force from here, for the measures still to come
+        stats.warnings.append(f"measure {measure.get('number')}: time signature read as {beats}/{beat_type} (the mark was seen, the count comes from the bar)")
+        stats.doubts.append(doubt(index, "time", f"a time signature is printed here: read as {beats}/{beat_type}, the count taken from what the bar holds",
+                                  p, info=True, beats=beats, beat_type=beat_type))
+
+
+def _repair_part(part: ET.Element, p: int, stats: ScoreStats, marks: dict[int, int]) -> None:
     """An engine's part: made safe to play, and every repair recorded as a doubt (ADR 0005)."""
     for ctx in measures(part):
         measure = ctx.measure
         stats.measures += 1
+        if _relay(measure):
+            stats.warnings.append(f"measure {measure.get('number')}: the voices were put back on their own beats")
         signs = _repeat_signs(measure)
         if signs:
             stats.repeat_signs += len(signs)
@@ -346,11 +562,13 @@ def _repair_part(part: ET.Element, p: int, stats: ScoreStats) -> None:
                                           p, gap=str(ctx.quarters(gap)), info=True))
             else:
                 measure.append(rest)
-                stats.doubts.append(doubt(ctx.index, "padded", f"shorter than {ctx.time} by {describe(ctx.quarters(gap))}: a rest was added at the end", p, gap=str(ctx.quarters(gap))))
+                stats.doubts.append(doubt(ctx.index, "padded", f"shorter than {ctx.time} by {describe(ctx.quarters(gap))}: a rest was added at the end{_mark_note(ctx, marks)}",
+                                          p, gap=str(ctx.quarters(gap)), **_mark_detail(ctx, marks)))
             stats.padded_measures += 1
         elif filled > ctx.expected:
             stats.warnings.append(
                 f"measure {measure.get('number')} overfull: {float(ctx.quarters(filled)):g} vs {float(ctx.quarters(ctx.expected)):g} quarters"
             )
             excess = ctx.quarters(filled - ctx.expected)
-            stats.doubts.append(doubt(ctx.index, "overfull", f"longer than {ctx.time} by {describe(excess)}", p, excess=str(excess)))
+            stats.doubts.append(doubt(ctx.index, "overfull", f"longer than {ctx.time} by {describe(excess)}{_mark_note(ctx, marks)}",
+                                      p, excess=str(excess), **_mark_detail(ctx, marks)))

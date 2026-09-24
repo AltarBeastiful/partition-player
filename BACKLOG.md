@@ -28,6 +28,31 @@ Items deferred from v1 scope (decided 2026-09-18). Not ordered by priority yet.
 
 ## Recognition fixes
 - Ties across bar lines: homr places the tied note a beat late and overfills the measure (Gymnopédie m26, m31). Detect overfull measures with a tie and shift the tied note.
+- A time signature that changes in the middle of a page: read as of plan 0013 (steps 1 to 3 done; the
+  benchmark is not re-scored yet).
+  Measured on the canon photo (*Auprès du ruisseau*, which prints 6/4 at measure 19 and 4/4 at
+  measure 20), homr does **see** both marks, in the right bars: dumping a staff's raw token stream
+  gives `|1 |2 <timeSignature/4@bar3> |3 <timeSignature/4@bar4> |4` for the last system. It cannot
+  say how many beats, because the numerator is not in its vocabulary at all -- the token is
+  `timeSignature/{beat-type}` (`transformer/vocabulary.py`) and `build_time_signature`
+  (`music_xml_generator.py`) writes `beats = <median measure length of the whole part> * beat-type`,
+  one number for the document. So 4/4 → 6/4 is not expressible, and a change that does move the
+  beat-type would be written with the wrong numerator. Both marks are then dropped as duplicates by
+  `_remove_redudant_clefs_keys_and_time_signatures`, which compares the token string: `timeSignature/4`
+  equals the one at measure 1. Waiting for the engine is therefore not an option, but the position is
+  ours to keep — `homr_driver.parse()` already holds each staff's stream before that filter runs —
+  and the numerator can come from the bar's own content, which on measure 19 is exactly six quarters
+  in both voices.
+- Two staves whose rhythms interleave drift apart inside the measure. homr's generator lays chords
+  one after another by duration (`build_note_chord`, `build_measures`) and keeps no absolute onset,
+  so whenever a long note in one staff spans a shorter note in the other the cursor overshoots and
+  the next voice-switch lands late: the canon's measure 19 holds six quarters in each voice but is
+  written seven long, with a beat of silence in the middle and the two voices a beat out of step.
+  Repaired by step 2 of plan 0013: every voice enters where its first note is written and its own
+  notes follow from there, kept only where that **shortens** the bar — which is what closing a hole
+  does and what a gap a writer meant does not. Measured: 0 of the benchmark's 1946 authored measures
+  move, 14 measures of homr's output in this repository do, 13 of them into their time signature and
+  none out of it.
 
 ## Rendering polish
 - Beams: planned (ADR 0007, plan 0006): read from the print's pixels in the driver, placed on the notes by the chord stage's mapping, beaming by the beat as the fallback, joined or broken with one key in the editor. homr writes no <beam> and its masks hold none, so music21's beam maker is not the path.
