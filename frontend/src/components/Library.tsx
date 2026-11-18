@@ -46,7 +46,10 @@ export function Library() {
           {jobs.map((j) => (
             <li key={j.id} className={"score-row" + (j.status === "failed" ? " failed" : "")}>
               <a className="thumb" href={scorePath(j.id)} onClick={onLinkClick} aria-hidden="true" tabIndex={-1}>
-                <img src={thumbUrl(j.id)} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
+                {/* an imported file has no photo to show (plan 0010) */}
+                {j.source === "musicxml"
+                  ? <span className="thumb-file">MusicXML</span>
+                  : <img src={thumbUrl(j.id)} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />}
               </a>
               <div className="score-main">
                 <a className="score-name" href={scorePath(j.id)} onClick={onLinkClick}>{j.name || "Untitled score"}</a>

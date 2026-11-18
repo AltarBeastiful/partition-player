@@ -1,0 +1,113 @@
+{
+ "note": "six verses over m1-10 (rows 1/3/5 and 1/2/3 in the middle), chorus m11-23 after each",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     9
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     10,
+     22
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     9
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     10,
+     22
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     9
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     10,
+     22
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     9
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     10,
+     22
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     9
+    ]
+   ],
+   "verse": 5
+  },
+  {
+   "ranges": [
+    [
+     10,
+     22
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     9
+    ]
+   ],
+   "verse": 6
+  },
+  {
+   "ranges": [
+    [
+     10,
+     22
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

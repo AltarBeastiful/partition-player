@@ -14,9 +14,11 @@ from .base import Engine, EngineError
 class HomrEngine(Engine):
     name = "homr"
 
-    def recognize(self, image: Path, out_dir: Path, original: Path | None = None, scale: float = 1.0) -> Path:
+    def recognize(self, image: Path, out_dir: Path, original: Path | None = None, scale: float = 1.0,
+                  read_text: bool = True) -> Path:
         """`image` is the preprocessed page; `original` the upload and `scale` the preprocess factor,
-        so the driver can cut full-resolution lyric bands (ADR 0004)."""
+        so the driver can cut full-resolution lyric bands (ADR 0004). `read_text` is off for a page
+        whose words come from the file itself (plan 0012, step 4), and then no OCR model is loaded."""
         out_dir.mkdir(parents=True, exist_ok=True)
         work_image = (out_dir / f"homr_input{image.suffix}").resolve()  # homr runs with cwd=out_dir
         shutil.copyfile(image, work_image)
@@ -24,6 +26,8 @@ class HomrEngine(Engine):
         cmd = [sys.executable, "-m", "partition_player.pipeline.engines.homr_driver", str(work_image), str(out_dir.resolve())]
         if original is not None:
             cmd += ["--original", str(original.resolve()), "--scale", str(scale)]
+        if not read_text:
+            cmd += ["--no-text-ocr"]
         log = self._run(cmd, cwd=out_dir)
         (out_dir / "homr.log").write_text(log)
         result = out_dir / "engine.musicxml"

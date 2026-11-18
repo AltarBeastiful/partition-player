@@ -1,12 +1,30 @@
 import { useEffect, useState } from "react";
-import { getJob, type Job, type JobStatus } from "../api";
+import { getJob, type Job, type JobSource, type JobStatus } from "../api";
 
-const STEPS: { key: JobStatus; label: string }[] = [
+type Step = { key: JobStatus; label: string };
+const PHOTO_STEPS: Step[] = [
   { key: "queued", label: "Queued" },
   { key: "preprocessing", label: "Preparing image" },
   { key: "recognizing", label: "Reading notes" },
   { key: "postprocessing", label: "Checking measures" },
 ];
+/** An imported file has nothing to read: it is opened and checked (plan 0010). */
+const FILE_STEPS: Step[] = [
+  { key: "queued", label: "Queued" },
+  { key: "importing", label: "Opening the file" },
+  { key: "postprocessing", label: "Checking measures" },
+];
+
+function stepsFor(source: JobSource | undefined): Step[] {
+  return source === "musicxml" ? FILE_STEPS : PHOTO_STEPS;
+}
+
+/** What to say while it runs: a PDF says which page it is on, which the server puts in the message. */
+function waitingText(source: JobSource | undefined): string {
+  if (source === "musicxml") return "Opening a file takes a moment: there is nothing to read, only the measures to check.";
+  if (source === "pdf") return "Every page of the PDF is read in turn, which takes from a few seconds to a couple of minutes each. You can keep this tab open in the background.";
+  return "Reading a page takes from a few seconds to a couple of minutes depending on the server. You can keep this tab open in the background.";
+}
 
 export function Progress({ jobId, onDone }: { jobId: string; onDone: (job: Job) => void }) {
   const [job, setJob] = useState<Job | null>(null);
@@ -31,18 +49,19 @@ export function Progress({ jobId, onDone }: { jobId: string; onDone: (job: Job) 
     return () => { stopped = true; window.clearTimeout(timer); };
   }, [jobId, onDone]);
 
-  const idx = job ? STEPS.findIndex((s) => s.key === job.status) : 0;
+  const steps = stepsFor(job?.source);
+  const idx = job ? steps.findIndex((s) => s.key === job.status) : 0;
   return (
     <section className="card progress">
       <div className="steps">
-        {STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <span key={s.key} className={"step" + (i < idx ? " done" : i === idx ? " active" : "")}>{s.label}</span>
         ))}
       </div>
       <p className="muted">{job?.message ?? "Contacting the server"}</p>
       {job?.status === "failed" && <div className="error">{job.error ?? "Recognition failed"}</div>}
       {error && <div className="error">{error}</div>}
-      <p className="muted">Reading a page takes from a few seconds to a couple of minutes depending on the server. You can keep this tab open in the background.</p>
+      <p className="muted">{waitingText(job?.source)}</p>
     </section>
   );
 }

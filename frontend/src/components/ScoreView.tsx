@@ -1,8 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
-import { scoreUrl, type Job } from "../api";
+import { createJob, getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
+import { defaultPasses, expandForm, formFromPasses, passNames, resolveUnders, samePasses, versesByMeasure, type Pass } from "../form";
+import { clearVerses, dimVerses } from "../verses";
+import { commands, shortcut } from "../editor/commands";
+import { EditorSession } from "../editor/session";
+import { clearSections, drawOverlay, drawSections, hitTest, keepOverlay, rectOf } from "../editor/sheet";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
+import type { Line } from "../lines";
+import { LinesPanel } from "./Lines";
+import { expandScore, slicesOf } from "../score/expand";
+import type { EventKey } from "../score/xml";
+import { FormPanel, Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
+import { ReadingsDialog } from "./Readings";
+import { navigate, scorePath } from "../router";
 
 const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
 
@@ -14,10 +26,22 @@ function writeNoteNamesPref(on: boolean): void {
   try { localStorage.setItem(NOTE_NAMES_PREF, on ? "1" : "0"); } catch { /* private browsing */ }
 }
 
-export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) {
+function inTextField(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  if (el.tagName === "INPUT") return !["checkbox", "radio", "range", "button", "submit"].includes((el as HTMLInputElement).type);
+  return ["TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable;
+}
+
+export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }: {
+  job: Job; version?: number; onStats?: (s: Stats) => void; registerFlush?: (flush: (() => Promise<void>) | null) => void; onReload: () => void;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
   const playerRef = useRef<Player | null>(null);
+  const renderedDoc = useRef(0);
+  const [session, setSession] = useState<EditorSession | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState>("stopped");
@@ -25,6 +49,12 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
   const [transpose, setTranspose] = useState(0);
   const [chordCount, setChordCount] = useState(0);
   const [melodyOn, setMelodyOn] = useState(true);
+  const [lines, setLines] = useState<Line[]>([]);          // the staves of the page (plan 0011)
+  const [silent, setSilent] = useState<number[]>([]);      // lines switched off, a practice setting
+  const [silentUnders, setSilentUnders] = useState<number[]>([]);  // lines going on underneath, switched off
+  const [preparing, setPreparing] = useState(false);       // the sounds are being fetched for the first Play
+  const [soundNote, setSoundNote] = useState<string | null>(null); // a sample set that would not come
+  const lastSound = useRef("");                            // the sound last given to the player
   const [accompOn, setAccompOn] = useState(true);
   const [loop, setLoop] = useState(false);
   const [noteNames, setNoteNames] = useState(readNoteNamesPref);
@@ -33,6 +63,29 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(1);
   const [measureCount, setMeasureCount] = useState(0);
+  const [stats, setStats] = useState<Stats | undefined>(job.result?.stats);
+  const [showPhoto, setShowPhoto] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
+  const [staves, setStaves] = useState(1);
+  const [editing, setEditing] = useState(false);
+  const [readingsFor, setReadingsFor] = useState<EventKey | null>(null); // the note the readings dialog is about
+  const [printed, setPrinted] = useState<Pass[]>([]);   // the automatic passes
+  const [passes, setPasses] = useState<Pass[]>([]);     // what plays
+  const [verseCount, setVerseCount] = useState(1);
+  const [currentPass, setCurrentPass] = useState<number | null>(null);
+  const lastForm = useRef<Form | null | undefined>(undefined);
+  const playing = useRef<Pass[]>([]);   // the list the player holds, to tell a rename from a real change
+  const [showSections, setShowSections] = useState(false); // the bands, while the form panel is open
+  const clicked = useRef<{ measure: number; onset: number } | null>(null); // the note last clicked on the sheet
+  const verseRef = useRef<number | null>(null);
+
+  const subscribe = useCallback((fn: () => void) => (session ? session.subscribe(fn) : () => {}), [session]);
+  useSyncExternalStore(subscribe, () => session?.version ?? 0);
+
+  useEffect(() => { setStats(job.result?.stats); }, [job]);
+  // What a PDF brought: its pages, and whether its words were read from the file's own text.
+  const pages = job.result?.pages ?? [];
+  const fromFile = job.result?.text_source === "file";
 
   useEffect(() => {
     let cancelled = false;
@@ -48,18 +101,43 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
         cursorsOptions: [{ type: 0, color: "#0e7490", alpha: 0.35, follow: false }],
       });
       try {
-        await osmd.load(scoreUrl(job.id, version));
+        const [xml, review] = await Promise.all([getScoreText(job.id, version), getReview(job.id)]);
+        if (cancelled) return;
+        const s = new EditorSession(job.id, xml, review);
+        s.onStats = (st) => { setStats(st); onStats?.(st); };
+        await osmd.load(s.xml);
         if (cancelled) return;
         reserveNoteNamesSpace(osmd, noteNamesRef.current); // before the first render, so nothing jumps
         osmd.render();
         osmd.cursor.show();
         osmdRef.current = osmd;
         const player = new Player(osmd, setState);
+        player.onPass = setCurrentPass;
+        // A sample set that will not come: the line plays the piano and the page says so once.
+        player.onVoiceFailure = (set) => setSoundNote(`${set.label} could not be fetched, so that line plays on the piano. The sounds come from a CDN the first time each one is chosen.`);
         playerRef.current = player;
-        (window as unknown as { __player?: Player }).__player = player; // debugging aid
+        const auto = defaultPasses(osmd);
+        const played = s.form ? expandForm(s.form, player.measureCount) : auto;
+        // How the page sounds, as it was saved (plan 0011). Set before the passes are laid, since
+        // the instrument of a line is decided while the timeline is built.
+        player.voicings = s.lines;
+        player.unders = resolveUnders(s.unders, s.form);
+        lastSound.current = JSON.stringify([s.lines, player.unders]);
+        player.setPasses(played);
+        setLines(player.lines);
+        playing.current = played;
+        lastForm.current = s.form;
+        setPrinted(auto); setPasses(played);
+        setVerseCount(Math.max(1, ...versesByMeasure(osmd).flat()));
+        (window as unknown as { __player?: Player; __session?: EditorSession }).__player = player; // debugging aid
+        (window as unknown as { __session?: EditorSession }).__session = s;
+        renderedDoc.current = s.docVersion;
         setMeasureCount(player.measureCount);
         setChordCount(player.chords.length);
+        setStaves(Math.max(1, ...s.measures.flatMap((m) => m.events.map((e) => e.key.staff))));
         setTo(player.measureCount);
+        setSession(s);
+        registerFlush?.(() => s.save());
         setLoading(false);
       } catch (e) {
         setError("Could not render the score: " + (e as Error).message);
@@ -72,22 +150,151 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
     // here or the page ends up showing both.
     return () => {
       cancelled = true;
+      registerFlush?.(null);
       playerRef.current?.dispose();
       playerRef.current = null;
       osmdRef.current?.clear();
       osmdRef.current = null;
       host.current?.replaceChildren();
+      setSession((s) => { s?.dispose(); return null; });
     };
-  }, [job.id, version]);
+  }, [job.id, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const redraw = useCallback(() => {
+    const osmd = osmdRef.current;
+    if (!osmd || !session) return;
+    drawOverlay(osmd, session.places(), session.selected);
+    if (verseRef.current !== null) dimVerses(osmd, verseRef.current); else clearVerses(osmd);
+    // plan 0007: the sections over the measures they cover, while the panel that edits them is open
+    if (showSections) drawSections(osmd, (session.form ?? formFromPasses(printed, measureCount)).sections);
+    else clearSections(osmd);
+  }, [session, showSections, printed, measureCount]);
+
+  // The document changed (an edit, undo, redo): render it again and read the events again.
+  useEffect(() => {
+    const osmd = osmdRef.current, player = playerRef.current;
+    if (!osmd || !player || !session || loading || session.docVersion === renderedDoc.current) return;
+    renderedDoc.current = session.docVersion;
+    let cancelled = false;
+    (async () => {
+      try {
+        await osmd.load(session.xml);
+        if (cancelled) return;
+        osmd.render();
+        osmd.cursor.show();
+        player.rebuild();
+        player.voicings = session.lines;
+        player.unders = resolveUnders(session.unders, session.form);
+        setLines(player.lines);
+        const auto = defaultPasses(osmd);
+        const played = session.form ? expandForm(session.form, player.measureCount) : auto;
+        player.setPasses(played);
+        playing.current = played;
+        // The re-render stopped the playback: put it back on the edited note, so Space replays it.
+        if (session.selected) {
+          const at = player.positionOf(session.selected.measure, session.selected.onset);
+          if (at !== null) player.seek(at);
+        }
+        lastForm.current = session.form;
+        setPrinted(auto); setPasses(played);
+        setVerseCount(Math.max(1, ...versesByMeasure(osmd).flat()));
+        setMeasureCount(player.measureCount);
+        setChordCount(player.chords.length);
+        setTo((t) => Math.min(Math.max(t, 1), player.measureCount || 1));
+        setFrom((f) => Math.min(Math.max(f, 1), player.measureCount || 1));
+        if (noteNamesRef.current) drawNoteNames(osmd);
+        redraw();
+        setError(null);
+      } catch (e) {
+        setError("Could not render the edited score: " + (e as Error).message + ". Undo the last change.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, session?.docVersion, loading, redraw]);
+
+  // The form changed (the panel, undo, revert): the player plays the new passes.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (loading || !session || !player || lastForm.current === session.form) return;
+    lastForm.current = session.form;
+    const played = session.form ? expandForm(session.form, player.measureCount) : printed;
+    // A rename or a recoloured chip leaves the played list alone: rebuilding it would stop the
+    // sound and reset the cursor for nothing (plan 0007, step 1).
+    if (samePasses(played, playing.current)) return;
+    playing.current = played;
+    player.setPasses(played, true); // keep the music going: the form is built by ear (plan 0007)
+    setPasses(played);
+  }, [session, session?.version, loading, printed]);
+
+  // The sound changed (the Lines panel, a revert): the player re-lays the timeline with it. Like the
+  // form's effect above, it compares before acting, so a save or a re-render does not stop the music.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (loading || !session || !player) return;
+    // A section anchor is turned into the measure it starts on here: nothing below knows about
+    // sections, and this way moving the chorus moves what plays under it.
+    const unders = resolveUnders(session.unders, session.form);
+    const key = JSON.stringify([session.lines, unders]);
+    if (key === lastSound.current) return;
+    lastSound.current = key;
+    player.setVoicings(session.lines);
+    player.setUnders(unders);
+  }, [session, session?.version, loading]);
+
+  // The pass being played: its verse's words stay, the others are dimmed.
+  useEffect(() => {
+    const osmd = osmdRef.current;
+    if (!osmd || loading) return;
+    verseRef.current = currentPass === null ? null : passes[currentPass]?.verse ?? null;
+    dimVerses(osmd, verseRef.current);
+  }, [currentPass, passes, loading]);
+
+  // Selection or places changed: the overlay only.
+  useEffect(() => {
+    if (loading || !session) return;
+    redraw();
+    const osmd = osmdRef.current;
+    if (osmd && session.selected) {
+      const r = rectOf(osmd, session.selected);
+      if (r && (r.top < 60 || r.bottom > window.innerHeight - 200)) window.scrollBy({ top: r.top - window.innerHeight / 3, behavior: "smooth" });
+    }
+  }, [session, session?.version, loading, redraw]);
+
+  // OSMD re-renders by itself on resize: put the overlay back each time it does.
+  useEffect(() => {
+    if (loading || !host.current || !session) return;
+    return keepOverlay(host.current, redraw);
+  }, [loading, session, redraw]);
+
+  /**
+   * Play or pause. The first Play fetches the piano over the network, which takes a moment on a slow
+   * line and forever when it cannot be reached — so the button says it is fetching, and says so if it
+   * fails, rather than looking like a button that does nothing.
+   */
   const toggle = useCallback(async () => {
     const p = playerRef.current;
     if (!p) return;
-    if (state === "playing") p.pause();
-    else await p.play(bpm, loop, { from, to });
+    if (state === "playing") { p.pause(); return; }
+    setPreparing(true);
+    setSoundNote(null);
+    try {
+      await p.play(bpm, loop, { from, to });
+    } catch (e) {
+      setSoundNote("The sounds could not be loaded: " + (e as Error).message + ". The piano is fetched from tonejs.github.io the first time you play.");
+    } finally {
+      setPreparing(false);
+    }
   }, [state, bpm, loop, from, to]);
 
   const stop = useCallback(() => playerRef.current?.stop(), []);
+  const restart = useCallback(() => playerRef.current?.restart(), []);
+
+  const playFrom = useCallback(async (measure: number) => {
+    const p = playerRef.current;
+    if (!p) return;
+    p.stop();
+    await p.play(bpm, false, { from: measure + 1, to: p.measureCount });
+  }, [bpm]);
 
   useEffect(() => { playerRef.current?.setBpm(bpm); }, [bpm]);
   useEffect(() => { playerRef.current?.setTranspose(transpose); }, [transpose]);
@@ -104,7 +311,8 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
       osmd.cursor.show();
     }
     if (noteNames) drawNoteNames(osmd); else clearNoteNames(osmd);
-  }, [noteNames, loading]);
+    redraw();
+  }, [noteNames, loading, redraw]);
 
   // OSMD re-renders by itself, on resize: the names have to be put back each time it does.
   useEffect(() => {
@@ -113,14 +321,148 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
     return keepNoteNames(osmd, host.current);
   }, [noteNames, loading]);
 
-  const stats = job.result?.stats;
+  // A click on the sheet leads the playback to the note, in both modes; in edit mode it also selects it.
+  const onSheetClick = useCallback((e: React.MouseEvent) => {
+    const osmd = osmdRef.current, player = playerRef.current;
+    if (!osmd || !session) return;
+    const key = hitTest(osmd, e.clientX, e.clientY);
+    if (editing) session.select(key);
+    // the note last put a finger on: what the form panel's edges are taken from, since an edge the
+    // panel has just applied can leave that note out of the form and so off the playback (plan 0007)
+    if (key) clicked.current = { measure: key.measure, onset: key.onset };
+    if (!key || !player) return;
+    const at = player.positionOf(key.measure, key.onset);
+    if (at !== null) player.seek(at);
+  }, [session, editing]);
+
+  // A double click asks what else this note could have been, entering edit mode on the way.
+  const onSheetDoubleClick = useCallback((e: React.MouseEvent) => {
+    const osmd = osmdRef.current;
+    if (!osmd || !session) return;
+    const key = hitTest(osmd, e.clientX, e.clientY);
+    if (!key) return;
+    session.select(key);
+    playerRef.current?.stop();
+    setEditing(true);
+    setReadingsFor(key);
+  }, [session]);
+
+  const enterEdit = useCallback(() => { playerRef.current?.stop(); setEditing(true); }, []);
+  const leaveEdit = useCallback(() => {
+    session?.select(null);
+    if (session?.dirty) void session.save();
+    setReadingsFor(null);
+    setEditing(false);
+  }, [session]);
+
+  // Keyboard: the editor's shortcuts, space for play and pause, Escape to drop the selection.
+  useEffect(() => {
+    if (!session) return;
+    const c = commands(session);
+    const onKey = (e: KeyboardEvent) => {
+      if (inTextField(e.target) || e.altKey) return;
+      if (e.key === " ") { e.preventDefault(); void toggle(); return; }
+      if (e.key === "Home" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); restart(); return; }
+      if (!editing) return; // the editing keys only act in edit mode
+      if (readingsFor) { // the readings dialog has the keyboard while it is open (state, not the DOM: its own Escape closes it in this same event); undo and redo still reach the score
+        if ((e.ctrlKey || e.metaKey) && ["z", "y"].includes(e.key.toLowerCase())) { e.preventDefault(); if (e.key.toLowerCase() === "y" || e.shiftKey) session.redo(); else session.undo(); }
+        return;
+      }
+      if (e.key === "Escape") {
+        if (document.querySelector(".lightbox")) return;
+        if (session.selected) session.select(null); else leaveEdit();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); void session.save(); return; }
+      if (e.key === "o" && session.selected) { e.preventDefault(); setReadingsFor(session.selected); return; }
+      if (shortcut(e, c, session.selected !== null)) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [session, toggle, restart, editing, leaveEdit, readingsFor]);
+
+  // Leaving with unsaved changes asks first.
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => { if (session?.dirty) { e.preventDefault(); } };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [session]);
+
+  // A new document (reload after a lyrics save or a revert) starts in playing mode.
+  useEffect(() => { setEditing(false); setReadingsFor(null); }, [job.id, version]);
+
+  async function revert() {
+    if (!session) return;
+    if (!window.confirm("Put the recognized score back? Every correction made here will be dropped.")) return;
+    try { await session.revert(); onReload(); } catch (e) { setError((e as Error).message); }
+  }
+
+  const fileBase = (job.name || "score").replace(/[^\w.-]+/g, "_");
+
+  // How long the page is when the form is written out, and whether writing it out says anything the
+  // printed page does not. A page played once, straight through, is already the page as played
+  // (plan 0009, step 4) — unless a line goes on playing underneath it, which no printed measure
+  // holds and which the expansion writes as a part of its own (plan 0011, step 7).
+  const played = useMemo(() => {
+    const none = { measures: 0, offer: false };
+    if (!session || loading || passes.length === 0 || measureCount === 0) return none;
+    try {
+      const n = slicesOf(session.doc, passes).length;
+      return { measures: n, offer: n > measureCount || session.unders.length > 0 };
+    } catch { return none; }
+  }, [session, session?.docVersion, session?.version, passes, loading, measureCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The expanded score is written in the browser from the document on screen and handed over as a
+  // file; it is never loaded back (plan 0009, decision 1), so there is nothing to save or to reload.
+  const downloadPlayed = useCallback(() => {
+    if (!session) return;
+    try {
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), resolveUnders(session.unders, session.form), lines.map((l) => l.name));
+      const url = URL.createObjectURL(new Blob([xml], { type: "application/vnd.recordare.musicxml+xml" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${fileBase}_as_played.musicxml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError("Could not write the score as it is played: " + (e as Error).message);
+    }
+  }, [session, passes, measureCount, fileBase]);
+
+  /**
+   * The same written-out score, kept as a score of its own (plan 0010): it goes back in through the
+   * MusicXML door, so the copy is read by the same code that reads anyone else's file, and it lands
+   * in the library with its own link, its own name and its own form to play with. The page it was
+   * made from is left exactly as it is.
+   */
+  const duplicatePlayed = useCallback(async () => {
+    if (!session || duplicating) return;
+    setDuplicating(true);
+    setError(null);
+    try {
+      if (session.dirty) await session.save();  // the copy is of the score as saved, not of half of it
+      const { xml } = expandScore(session.doc, passes, passNames(passes, session.form, measureCount), resolveUnders(session.unders, session.form), lines.map((l) => l.name));
+      const file = new File([xml], `${fileBase}_as_played.musicxml`, { type: "application/vnd.recordare.musicxml+xml" });
+      const created = await createJob(file, `${job.name || "Score"} (as played)`);
+      navigate(scorePath(created.id));
+    } catch (e) {
+      setError("Could not duplicate the score as it is played: " + (e as Error).message);
+      setDuplicating(false);
+    }
+  }, [session, passes, measureCount, fileBase, job.name, duplicating]);
+
+  const c = session ? commands(session) : null;
+
   return (
-    <section className="card">
+    <section className={"card" + (editing ? " editing" : "")}>
       <div className="controls">
-        <button className="primary" onClick={toggle} disabled={loading || !!error}>
-          {state === "playing" ? "Pause" : "Play"}
+        <button className="primary" onClick={toggle} disabled={loading || !!error || preparing}>
+          {state === "playing" ? "Pause" : preparing ? "Loading sounds…" : "Play"}
         </button>
         <button onClick={stop} disabled={loading || state === "stopped"}>Stop</button>
+        <button onClick={restart} disabled={loading || !!error} title="Back to the beginning (Home): keeps playing from there, or stops at the start">⏮ Start</button>
         <label>
           Tempo <input id="tempo" type="range" min={40} max={180} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} />
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{bpm} bpm</span>
@@ -132,7 +474,24 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           <button id="transpose-up" onClick={() => setTranspose((t) => Math.min(12, t + 1))} disabled={loading} aria-label="One semitone up">+</button>
           {transpose !== 0 && <button className="quiet" onClick={() => setTranspose(0)}>reset</button>}
         </label>
-        <a href={scoreUrl(job.id)} download={`${(job.name || "score").replace(/[^\w.-]+/g, "_")}.musicxml`}>Download MusicXML</a>
+        <span className="downloads">
+          Download MusicXML
+          <a href={scoreUrl(job.id)} download={`${fileBase}.musicxml`} title="The page as it is printed: the measures in the order they are engraved, as the server holds them">as printed</a>
+          {played.offer && (
+            <>
+              <span className="sep">·</span>
+              <button onClick={downloadPlayed} title={`The page as the form says it is sung: ${played.measures} measures, each verse's words under its own notes, no repeat sign to obey. Written here, so it includes changes not yet saved.`}>
+                as played ({played.measures} measures)
+              </button>
+            </>
+          )}
+        </span>
+        {played.offer && (
+          <button onClick={duplicatePlayed} disabled={duplicating}
+            title={`Keep the page as it is sung — ${played.measures} measures — as a score of its own in the library, and open it. This one is left as it is.`}>
+            {duplicating ? "Duplicating…" : "Duplicate as played"}
+          </button>
+        )}
       </div>
       <div className="controls loop">
         <label>
@@ -156,12 +515,71 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           Note names
         </label>
         <span className="muted">do, ré, mi… above the staff, read from the pitches on the page.</span>
+        {chordCount > 0 && (
+          <>
+            <label><input id="melody" type="checkbox" checked={melodyOn} onChange={(e) => setMelodyOn(e.target.checked)} /> Melody</label>
+            <label><input id="accompaniment" type="checkbox" checked={accompOn} onChange={(e) => setAccompOn(e.target.checked)} /> Accompaniment</label>
+            <span className="muted">Piano chords from the {chordCount} chord symbols on the page.</span>
+          </>
+        )}
       </div>
-      {chordCount > 0 && (
-        <div className="controls loop">
-          <label><input id="melody" type="checkbox" checked={melodyOn} onChange={(e) => setMelodyOn(e.target.checked)} /> Melody</label>
-          <label><input id="accompaniment" type="checkbox" checked={accompOn} onChange={(e) => setAccompOn(e.target.checked)} /> Accompaniment</label>
-          <span className="muted">Piano chords from the {chordCount} chord symbols on the page. Turn the melody off to sing it yourself.</span>
+      {session && c && editing && <ReviewBar session={session} c={c} hasPhoto={session.hasImage} showPhoto={showPhoto} setShowPhoto={setShowPhoto} />}
+      {session && !editing && session.open().length > 0 && (
+        <div className="review toast" role="status">
+          <strong>{session.open().length} place{session.open().length > 1 ? "s" : ""} to check</strong>
+          <span>The recognition was unsure there: they are tinted on the sheet with a "?".</span>
+          <button className="primary edit" onClick={enterEdit}>Edit the score</button>
+        </div>
+      )}
+      {soundNote && <div className="review toast" role="status"><span>{soundNote}</span>
+        <button className="quiet" onClick={() => setSoundNote(null)}>Dismiss</button></div>}
+      {session && !loading && (
+        <LinesPanel lines={lines} voicings={session.lines} unders={session.unders} measureCount={measureCount} form={session.form}
+          rangeOf={(line) => playerRef.current?.lineRange(line) ?? null}
+          heard={(line) => !silent.includes(line)}
+          onHeard={(line, on) => {
+            setSilent((was) => (on ? was.filter((l) => l !== line) : [...was, line]));
+            playerRef.current?.setLine(line, on);
+          }}
+          heardUnder={(i) => !silentUnders.includes(i)}
+          onHeardUnder={(i, on) => {
+            setSilentUnders((was) => (on ? was.filter((k) => k !== i) : [...was, i]));
+            playerRef.current?.setUnder(i, on);
+          }}
+          onChange={(voicings, unders) => session.setSound(voicings, unders)} />
+      )}
+      {session && !loading && (
+        <FormPanel form={session.form} passes={passes} printed={printed} measureCount={measureCount} verseCount={verseCount} currentPass={currentPass}
+          onChange={(f, coalesce) => session.setForm(f, coalesce)}
+          onOpen={setShowSections}
+          cursorAt={() => {
+            const at = clicked.current ?? playerRef.current?.at() ?? null;
+            if (!at) return null;
+            return { ...at, beat: at.onset / 0.25 + 1 };
+          }} />
+      )}
+      {session && showPhoto && editing && session.layout && (
+        <PrintedStrip jobId={job.id} layout={session.layout} measure={session.selected?.measure ?? null} onOpen={() => setLightbox(true)} />
+      )}
+      {session && showPhoto && editing && !session.layout && session.hasImage && (
+        <div className="strip whole" onClick={() => setLightbox(true)}><img src={`/api/jobs/${job.id}/review.webp`} alt="The uploaded photo" /></div>
+      )}
+      {loading && <p className="muted">Rendering the score…</p>}
+      {error && <div className="error">{error}</div>}
+      {editing && <div className="mode"><span className="mode-badge">Edit mode</span><span className="muted">A click selects the note and leads the playback there; Space plays from it. Double-click it for its other readings.</span></div>}
+      <div className="sheet" ref={host} onClick={onSheetClick} onDoubleClick={onSheetDoubleClick} />
+      {session && c && editing && (
+        <Toolbar session={session} c={c} onPlayFrom={playFrom} onReadings={() => { if (session.selected) setReadingsFor(session.selected); }}
+          onRevert={revert} onReload={onReload} onDone={leaveEdit} staves={staves} />
+      )}
+      {session && !editing && (
+        <div className="edit-row">
+          <button className="edit" onClick={enterEdit}>Edit the score</button>
+          <span className="muted">
+            {session.open().length > 0 ? `${session.open().length} place${session.open().length > 1 ? "s" : ""} to check. ` : ""}
+            Correct notes, rests, measures, chords, time and key. Outside edit mode, clicking a note plays from there.
+            Double-click a note for its other readings.
+          </span>
         </div>
       )}
       {stats && (
@@ -172,7 +590,16 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           {stats.padded_measures > 0 && <span>{stats.padded_measures} measures padded with rests</span>}
           {(stats.chords ?? 0) > 0 && <span>{stats.chords} chord symbols</span>}
           {(stats.lyrics_syllables ?? 0) > 0 && <span>{stats.lyrics_syllables} syllables of lyrics</span>}
-          <span>read by {job.result?.engine} in {job.result?.seconds}s</span>
+          {job.source === "musicxml"
+            ? <span title={job.input_name}>opened from a MusicXML file</span>
+            : <span>read by {job.result?.engine} in {job.result?.seconds}s</span>}
+          {pages.length > 0 && <span title={pages.map((p) => `page ${p.index + 1}: ${p.measures} measures, ${p.kind}`).join("; ")}>
+            {pages.length} page{pages.length > 1 ? "s" : ""} of PDF
+          </span>}
+          {fromFile && <span title="The syllables and the chord names are the file's own text, not a reading of its pixels (plan 0012)">
+            words read from the file itself
+          </span>}
+          {job.edited_at && <span>edited</span>}
         </div>
       )}
       {stats && (stats.chord_warnings?.length || stats.chords_seen?.length || stats.lyrics_seen?.length) ? (
@@ -186,9 +613,12 @@ export function ScoreView({ job, version = 0 }: { job: Job; version?: number }) 
           )}
         </div>
       ) : null}
-      {loading && <p className="muted">Rendering the score…</p>}
-      {error && <div className="error">{error}</div>}
-      <div className="sheet" ref={host} />
+      {lightbox && <Lightbox jobId={job.id} onClose={() => setLightbox(false)} />}
+      {session && editing && readingsFor && playerRef.current && (
+        <ReadingsDialog session={session} jobId={job.id} target={readingsFor} bpm={bpm} player={playerRef.current}
+          onApply={(r) => { if (session.apply(r.apply)) setReadingsFor(session.selected); }}
+          onClose={() => setReadingsFor(null)} />
+      )}
     </section>
   );
 }

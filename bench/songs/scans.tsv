@@ -1,0 +1,16 @@
+# The IMSLP scan each transcription was made from (OpenScore Lieder records the source file id).
+# The engraver's page breaks are not the render's, so the measures printed on each scanned page were
+# pinned by reading the page and finding its first and last words in the transcription's syllable
+# sequence (bench/songs/pin_scan.py). first/last are measure indices, half-open. swap = the print
+# stacks the verses the other way round from the transcription (translation on top).
+# imslp	pdf_page	first	last	swap	name
+24123	7	10	26	no	fr_faure_au_cimetiere
+258732	2	19	36	no	fr_gounod_serenade_cg_437
+154079	2	13	26	no	fr_chaminade_villanelle
+421429	25	16	33	yes	fr_berlioz_absence
+23172	21	11	22	no	de_wolf_der_soldat_ii
+47274	10	0	11	no	de_beethoven_mollys_abschied
+650688	10	10	25	no	en_butterworth_oh_fair_enough_are_sky_and_plain
+650688	15	15	31	no	en_butterworth_on_the_idle_hill_of_summer
+252752	2	8	16	no	it_tosti_ideale
+507203	2	0	9	no	it_ferrari_lontan_dagli_occhi_lontan_dal_cuore_op_17

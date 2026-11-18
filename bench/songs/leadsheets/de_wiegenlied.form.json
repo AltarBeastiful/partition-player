@@ -1,0 +1,23 @@
+{
+ "note": "two stacked verses",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 2
+  }
+ ]
+}

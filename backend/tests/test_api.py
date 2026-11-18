@@ -2,7 +2,9 @@ import time
 
 from fastapi.testclient import TestClient
 
-from conftest import PHOTO
+from conftest import GROUND_TRUTH, PHOTO, ROOT
+
+CLEMENTINE = ROOT / "bench" / "songs" / "leadsheets" / "en_clementine.mxl"
 
 
 def wait_done(client: TestClient, job_id: str, timeout: float = 30.0) -> dict:
@@ -34,8 +36,68 @@ def test_rejects_non_images(settings):
 
     with TestClient(create_app(settings)) as client:
         r = client.post("/api/jobs", files={"file": ("x.txt", b"hello", "text/plain")})
-        assert r.status_code == 415
+        assert r.status_code == 415 and ".mxl" in r.json()["error"]
         assert client.get("/api/jobs/nope").status_code == 404
+        assert client.post("/api/jobs", files={"file": ("empty.musicxml", b"", "application/octet-stream")}).status_code == 400
+
+
+def test_opens_a_musicxml_file(settings):
+    """The other door (plan 0010): a file the user already has, read with no engine at all."""
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("en_clementine.mxl", CLEMENTINE.read_bytes(), "application/octet-stream")})
+        assert r.status_code == 202 and r.json()["source"] == "musicxml"
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "done", job
+        assert job["name"] == "Clementine"  # the file's own title, not "en clementine"
+        assert job["result"]["engine"] == "import"
+        assert job["result"]["stats"]["measures"] == 18 and job["result"]["stats"]["doubts"] == []
+
+        score = client.get(f"/api/jobs/{job['id']}/score.musicxml")
+        assert score.status_code == 200 and b"<score-partwise" in score.content
+        review = client.get(f"/api/jobs/{job['id']}/review").json()
+        assert review["has_image"] is False and review["layout"] is None and review["has_original"] is True
+        assert client.get(f"/api/jobs/{job['id']}/thumb.jpg").status_code == 404
+        assert client.get(f"/api/jobs/{job['id']}/review.webp").status_code == 404
+        assert client.get(f"/api/jobs/{job['id']}/lyrics").json()["verses"][0].startswith("v1 In")
+
+        # a photo still goes to the engine, and the two live side by side in the library
+        client.post("/api/jobs", files={"file": ("photo.jpg", PHOTO.read_bytes(), "image/jpeg")})
+        assert {j["source"] for j in client.get("/api/jobs").json()} == {"image", "musicxml"}
+
+
+def test_an_upload_may_name_itself(settings):
+    """The browser duplicating a score as it is played knows the name it wants; the file's own title
+    must not take it back (plan 0010)."""
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("en_clementine.mxl", CLEMENTINE.read_bytes(), "application/octet-stream")},
+                        data={"name": "  Clementine (as played)  "})
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "done" and job["name"] == "Clementine (as played)"
+
+
+def test_a_broken_score_file_fails_with_its_reason(settings):
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("nope.musicxml", b"<html><body>hello</body></html>", "text/xml")})
+        assert r.status_code == 202  # it looks like a score file; only reading it can tell
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "failed" and "not MusicXML" in job["error"]
+        assert job["message"] == "This file could not be opened"
+
+
+def test_an_uncompressed_score_file_keeps_its_own_name(settings):
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("truth.musicxml", GROUND_TRUTH.read_bytes(), "")})
+        job = wait_done(client, r.json()["id"])
+        assert job["status"] == "done" and job["result"]["stats"]["measures"] == 19
+        assert job["name"] == "Anton, Yvan, Boris et moi"  # <work-title>, not "truth"
 
 
 def test_library_list_rename_delete(settings):
@@ -47,7 +109,8 @@ def test_library_list_rename_delete(settings):
         assert job["name"] == "Anton Yvan Boris"
         assert client.get(f"/api/jobs/{job['id']}/thumb.jpg").headers["content-type"] == "image/jpeg"
         kept = sorted(p.name for p in (settings.jobs_dir / job["id"]).iterdir())
-        assert kept == ["result.json", "score.musicxml", "status.json", "thumb.jpg"]
+        assert kept == ["original.musicxml", "result.json", "review.json", "review.webp", "score.musicxml", "status.json", "thumb.jpg"]
+        assert (settings.jobs_dir / job["id"] / "review.webp").stat().st_size <= 300_000  # ADR 0005: the photo the editor shows
         assert client.get(f"/api/jobs/{job['id']}/input").status_code == 404
 
         listed = client.get("/api/jobs").json()
@@ -125,3 +188,150 @@ def test_lyrics_editor_round_trip(settings):
         assert score.content.count(b"<lyric") == 6 and score.headers["cache-control"] == "no-cache"
         assert "lyrics.json" in [p.name for p in (settings.jobs_dir / job["id"]).iterdir()]
         assert client.patch(f"/api/jobs/{job['id']}/lyrics", json={"verses": []}).json()["verses"] == []
+
+
+def test_editor_save_revert_and_revision(settings):
+    """ADR 0005: the browser saves the whole document; the server validates, re-reads the lyrics,
+    keeps the revision honest and can put the recognized version back."""
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("photo.jpg", PHOTO.read_bytes(), "image/jpeg")})
+        job = wait_done(client, r.json()["id"])
+        jid = job["id"]
+        state = client.get(f"/api/jobs/{jid}/review").json()
+        assert state["revision"] == 1 and state["doubts"] == [] and state["checked"] == []
+        assert state["has_image"] and state["has_original"] and state["layout"] is None  # the fake engine has no geometry
+        assert client.get(f"/api/jobs/{jid}/review.webp").headers["content-type"] == "image/webp"
+        assert b"<score-partwise" in client.get(f"/api/jobs/{jid}/original.musicxml").content
+
+        client.patch(f"/api/jobs/{jid}/lyrics", json={"verses": ["Lors-que nous é-tions"]})
+        assert client.get(f"/api/jobs/{jid}/review").json()["revision"] == 2  # the lyrics panel moves the revision on too
+        xml = client.get(f"/api/jobs/{jid}/score.musicxml").text
+        notes_before = job["result"]["stats"]["notes"]
+        # drop the first sounding note (it carries "Lors") and shorten nothing else
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml)
+        measure = root.find("part").find("measure")
+        first = next(n for n in measure.findall("note") if n.find("rest") is None)
+        measure.remove(first)
+        edited = ET.tostring(root, encoding="unicode")
+
+        form = {"sections": [{"name": "Verse", "from": 0, "to": 7}, {"name": "Chorus", "from": 8, "to": 18}],
+                "passes": [{"section": 0, "verse": 1}, {"section": 1, "verse": None}, {"section": 0, "verse": 2}, {"section": 1}]}
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [0, 3], "revision": 2, "form": form})
+        assert r.status_code == 200, r.text
+        saved = r.json()
+        assert saved["revision"] == 3 and saved["checked"] == [0, 3]
+        assert saved["form"]["passes"][3] == {"section": 1, "verse": None} and saved["form"]["sections"][1]["name"] == "Chorus"
+        assert client.get(f"/api/jobs/{jid}/review").json()["form"] == saved["form"]
+        # a form outside the score, or naming a missing section, is refused
+        bad = {"sections": [{"name": "x", "from": 0, "to": 99}], "passes": []}
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 3, "form": bad}).status_code == 422
+        bad = {"sections": [{"name": "x", "from": 0, "to": 1}], "passes": [{"section": 4}]}
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 3, "form": bad}).status_code == 422
+        assert saved["stats"]["notes"] == notes_before - 1
+        assert any(d["kind"] == "underfull" and d["measure"] == 0 for d in saved["check"])
+        assert client.get(f"/api/jobs/{jid}").json()["edited_at"]
+        lyrics = client.get(f"/api/jobs/{jid}/lyrics").json()
+        assert lyrics["verses"] == ["que nous é-tions"] and lyrics["syllables"] == [4]
+
+        # a second browser that still holds revision 2 is refused
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": 2})
+        assert r.status_code == 409 and "revision 3" in r.json()["error"]
+        # nonsense is refused and nothing changes
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<nope>", "checked": [], "revision": 3}).status_code == 422
+        assert client.put(f"/api/jobs/{jid}/score", json={"musicxml": "<score-partwise><part id='P1'/></score-partwise>", "checked": [], "revision": 3}).status_code == 422
+        assert client.get(f"/api/jobs/{jid}/review").json()["revision"] == 3
+
+        r = client.post(f"/api/jobs/{jid}/revert")
+        assert r.status_code == 200 and r.json()["revision"] == 4 and r.json()["checked"] == [] and r.json()["form"] is None
+        assert r.json()["stats"]["notes"] == notes_before
+        assert client.get(f"/api/jobs/{jid}/score.musicxml").text == client.get(f"/api/jobs/{jid}/original.musicxml").text
+        # the panel shows what the document has: the fixture score's own words, re-read on revert
+        assert client.get(f"/api/jobs/{jid}/lyrics").json()["verses"][0].startswith("Lors-que nous é-tions")
+        assert client.get(f"/api/jobs/{jid}").json()["edited_at"] is None
+
+        # plan 0007: a doubled pass and a section starting on an upbeat are kept, not dropped
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        rich = {"sections": [{"name": "Verse", "from": 0, "to": 10}, {"name": "Chorus", "from": 10, "to": 18, "fromOnset": 0.25}],
+                "passes": [{"section": 0, "verse": 1}, {"section": 1, "verse": None, "times": 2}]}
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": rev, "form": rich})
+        assert r.status_code == 200, r.text
+        kept = r.json()["form"]
+        assert kept["passes"][1]["times"] == 2 and kept["sections"][1]["fromOnset"] == 0.25
+        assert "fromOnset" not in kept["sections"][0] and "times" not in kept["passes"][0]
+        assert client.get(f"/api/jobs/{jid}/review").json()["form"] == kept
+        # each of the new fields is bounded, and the save is refused rather than trimmed
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        for bad_form in (
+            {"sections": [{"name": "x", "from": 0, "to": 1}], "passes": [{"section": 0, "times": 500}]},
+            {"sections": [{"name": "x", "from": 0, "to": 1, "fromOnset": 99}], "passes": []},
+            {"sections": [{"name": "x", "from": 2, "to": 2, "fromOnset": 0.5, "toOnset": 0.25}], "passes": []},
+        ):
+            assert client.put(f"/api/jobs/{jid}/score",
+                              json={"musicxml": edited, "checked": [], "revision": rev, "form": bad_form}).status_code == 422
+        assert client.get(f"/api/jobs/{jid}/review").json()["form"] == kept
+
+        # plan 0008: a rated doubt survives a save whole, level and sources included. The form's
+        # fields were silently stripped once by a validator that rebuilt the dict key by key; this
+        # pins that the doubts are not saved that way.
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        rated = [{"measure": 7, "part": 0, "kind": "heads_more", "level": "check", "sources": ["noteheads"],
+                  "text": "6 noteheads were detected here, the score has 4", "heads": 6, "notes": 4},
+                 {"measure": 3, "part": 0, "kind": "overfull", "level": "wrong", "text": "longer than 2/4"}]
+        r = client.put(f"/api/jobs/{jid}/score",
+                       json={"musicxml": edited, "checked": [], "revision": rev, "doubts": rated, "form": kept})
+        assert r.status_code == 200, r.text
+        assert r.json()["doubts"] == rated
+        assert client.get(f"/api/jobs/{jid}/review").json()["doubts"] == rated
+
+        # plan 0011: how the page sounds travels with the form and comes back whole — the instrument
+        # ranges of each line, and the line that goes on playing underneath.
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        lines = [{"line": 0, "from": 0, "to": 7, "instrument": "flute"},
+                 {"line": 0, "from": 8, "to": 18, "instrument": "piano"}]
+        unders = [{"line": 0, "from": 0, "to": 7, "startAt": 8, "instrument": "flute"}]
+        r = client.put(f"/api/jobs/{jid}/score",
+                       json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, "lines": lines, "unders": unders})
+        assert r.status_code == 200, r.text
+        assert r.json()["lines"] == lines and r.json()["unders"] == unders
+        assert client.get(f"/api/jobs/{jid}/review").json()["lines"] == lines
+        assert client.get(f"/api/jobs/{jid}/review").json()["unders"] == unders
+
+        # a save that does not mention them leaves them alone (the editor saves the document alone)
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": edited, "checked": [], "revision": rev, "form": kept})
+        assert r.status_code == 200 and r.json()["lines"] == lines and r.json()["unders"] == unders
+
+        # every field is bounded, and the save is refused rather than trimmed
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        for bad_sound in (
+            {"lines": [{"line": 0, "from": 0, "to": 99, "instrument": "flute"}]},        # outside the score
+            {"lines": [{"line": 0, "from": 0, "to": 3, "instrument": "theremin"}]},      # not an instrument we have
+            {"lines": [{"line": 99, "from": 0, "to": 3, "instrument": "flute"}]},        # not a staff of any page
+            {"lines": [{"line": 0, "from": 5, "to": 3, "instrument": "flute"}]},         # ends before it starts
+            {"unders": [{"line": 0, "from": 0, "to": 3, "startAt": 99, "instrument": "flute"}]},
+            {"unders": [{"line": 0, "from": 0, "to": 3, "instrument": "flute"}]},        # no measure to start at
+        ):
+            r = client.put(f"/api/jobs/{jid}/score",
+                           json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, **bad_sound})
+            assert r.status_code == 422, (bad_sound, r.status_code)
+        assert client.get(f"/api/jobs/{jid}/review").json()["lines"] == lines
+
+        # a counted line, and one that comes in with a section rather than at a bare measure
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        counted = [{"line": 0, "from": 0, "to": 7, "startAt": 8, "instrument": "flute", "times": 2, "startSection": 1}]
+        r = client.put(f"/api/jobs/{jid}/score",
+                       json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, "lines": lines, "unders": counted})
+        assert r.status_code == 200, r.text
+        assert r.json()["unders"] == counted
+        rev = client.get(f"/api/jobs/{jid}/review").json()["revision"]
+        for bad in ({"times": 99}, {"times": 0}, {"startSection": 7}):
+            broken = [{**counted[0], **bad}]
+            assert client.put(f"/api/jobs/{jid}/score",
+                              json={"musicxml": edited, "checked": [], "revision": rev, "form": kept, "unders": broken}).status_code == 422, bad
+
+        # reverting puts the page back on the piano, as it puts the form back to the automatic one
+        r = client.post(f"/api/jobs/{jid}/revert")
+        assert r.status_code == 200 and r.json()["lines"] == [] and r.json()["unders"] == []

@@ -1,4 +1,6 @@
-export type JobStatus = "queued" | "preprocessing" | "recognizing" | "postprocessing" | "done" | "failed";
+export type JobStatus = "queued" | "preprocessing" | "recognizing" | "importing" | "postprocessing" | "done" | "failed";
+/** Where the page came from (plan 0010): a photo the engine read, or a MusicXML file opened as it is. */
+export type JobSource = "image" | "musicxml" | "pdf";
 
 export interface Job {
   id: string;
@@ -7,10 +9,15 @@ export interface Job {
   created_at: string;
   updated_at: string;
   input_name: string;
+  source: JobSource;
   name: string;
   error: string | null;
-  result: { engine: string; seconds: number; stats: Stats } | null;
+  result: { engine: string; seconds: number; stats: Stats; pages?: PageInfo[]; text_source?: string } | null;
+  edited_at?: string | null;
 }
+
+/** One page of a PDF, as the reader found it (plan 0012). */
+export interface PageInfo { index: number; kind: "digital" | "outlined" | "scan"; dpi: number; measures: number; width_pt: number; height_pt: number }
 
 export interface Stats {
   measures: number; notes: number; rests: number; padded_measures: number; warnings: string[];
@@ -18,6 +25,7 @@ export interface Stats {
   chords_seen?: { system: number; text: string; reading: string; confidence: number; reason: string }[];
   lyrics_verses?: number; lyrics_syllables?: number; lyrics_read?: number; lyric_warnings?: string[];
   lyrics_seen?: { staff: number; text: string; reason: string }[];
+  doubts?: Doubt[];
 }
 
 export class ApiError extends Error {
@@ -34,9 +42,11 @@ async function check<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export async function createJob(file: File): Promise<Job> {
+/** `name` is for a caller that already knows the score's name: the file's own title does not override it. */
+export async function createJob(file: File, name?: string): Promise<Job> {
   const body = new FormData();
   body.append("file", file, file.name);
+  if (name) body.append("name", name);
   return check<Job>(await fetch("/api/jobs", { method: "POST", body }));
 }
 
@@ -81,4 +91,52 @@ export async function saveLyrics(id: string, verses: string[]): Promise<LyricsSt
 
 export function thumbUrl(id: string): string {
   return `/api/jobs/${id}/thumb.jpg`;
+}
+
+// ---- the editor (ADR 0005) ----
+
+export interface Doubt { measure: number; part?: number; kind: string; text: string; info?: boolean; [k: string]: unknown }
+export interface LayoutMeasure { index: number; x0: number; x1: number }
+export interface LayoutSystem { index: number; x0: number; x1: number; top: number; bottom: number; unit: number; staves: { top: number; bottom: number }[]; measures: LayoutMeasure[] }
+export interface Layout { width: number; height: number; systems: LayoutSystem[] }
+/**
+ * How the page is played (plan 0004): null is the automatic form from the repeat signs and the
+ * verses. The shape is the one `form.ts` works in and the one the server stores; it was declared
+ * twice until a `times` added on one side went missing on the other (plan 0007).
+ */
+import type { Form, Under } from "./form";
+import type { Voicing } from "./voices";
+export type { Form, FormPass, Section as FormSection } from "./form";
+export type { Under } from "./form";
+export type { Voicing } from "./voices";
+/**
+ * How the page sounds (plan 0011): `lines` is the instrument each staff plays over which measures,
+ * `unders` the staves that go on playing underneath the form. Both are playback only and both are
+ * empty for every score made before ADR 0008.
+ */
+export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[] }
+export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
+
+export async function getReview(id: string): Promise<ReviewState> {
+  return check<ReviewState>(await fetch(`/api/jobs/${id}/review`));
+}
+
+export async function getScoreText(id: string, version = 0): Promise<string> {
+  const r = await fetch(scoreUrl(id, version || Date.now()));
+  if (!r.ok) throw new ApiError(r.statusText, r.status);
+  return r.text();
+}
+
+export async function saveScore(id: string, body: { musicxml: string; checked: number[]; revision: number; doubts: Doubt[]; form: Form | null; lines?: Voicing[]; unders?: Under[] }): Promise<SaveResult> {
+  return check<SaveResult>(await fetch(`/api/jobs/${id}/score`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }));
+}
+
+export async function revertScore(id: string): Promise<SaveResult> {
+  return check<SaveResult>(await fetch(`/api/jobs/${id}/revert`, { method: "POST" }));
+}
+
+export function reviewImageUrl(id: string): string {
+  return `/api/jobs/${id}/review.webp`;
 }

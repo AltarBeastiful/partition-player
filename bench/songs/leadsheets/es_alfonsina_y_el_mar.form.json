@@ -1,0 +1,36 @@
+{
+ "note": "intro, repeat with two endings, the second ending runs to the end",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     9,
+     20
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     9,
+     19
+    ],
+    [
+     21,
+     33
+    ]
+   ],
+   "verse": 2
+  }
+ ]
+}

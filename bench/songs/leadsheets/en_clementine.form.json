@@ -1,0 +1,131 @@
+{
+ "note": "seven verses, chorus m10-18 after each",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     9,
+     17
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     9,
+     17
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     9,
+     17
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     9,
+     17
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 5
+  },
+  {
+   "ranges": [
+    [
+     9,
+     17
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 6
+  },
+  {
+   "ranges": [
+    [
+     9,
+     17
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 7
+  },
+  {
+   "ranges": [
+    [
+     9,
+     17
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

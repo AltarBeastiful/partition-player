@@ -1,0 +1,95 @@
+{
+ "note": "five verses, chorus m18-32 after each (m17 and m32 are transitions)",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     17,
+     31
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     17,
+     31
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     17,
+     31
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     17,
+     31
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     16
+    ]
+   ],
+   "verse": 5
+  },
+  {
+   "ranges": [
+    [
+     17,
+     31
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

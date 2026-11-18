@@ -1,0 +1,35 @@
+# Lead sheets: one staff, chord symbols above, words below — what a songbook page looks like.
+# From PDMX (https://zenodo.org/records/15571083), MuseScore scores whose licence is public
+# domain or CC0; the .mxl files are vendored in bench/songs/leadsheets/ so the set needs no
+# download. page = the page of the A4 verovio render; font = the music font it is engraved with.
+# source	ref	lang	page	font	name
+pdmx	fr_chanson_pour_l_auvergnat.mxl	fr	1	Leipzig	fr_chanson_pour_l_auvergnat
+pdmx	fr_les_gens_bien_eleves.mxl	fr	1	Leland	fr_les_gens_bien_eleves
+pdmx	fr_le_petit_cheval.mxl	fr	1	Leipzig	fr_le_petit_cheval
+pdmx	fr_la_marche_des_rois.mxl	fr	1	Bravura	fr_la_marche_des_rois
+pdmx	fr_nous_voici_dans_la_ville.mxl	fr	1	Leland	fr_nous_voici_dans_la_ville
+pdmx	fr_on_se_dit_joyeux_noel.mxl	fr	1	Gootville	fr_on_se_dit_joyeux_noel
+pdmx	fr_tendre_pays_darmor.mxl	fr	1	Leipzig	fr_tendre_pays_darmor
+pdmx	fr_the_sound_of_silence.mxl	fr	1	Leland	fr_the_sound_of_silence
+pdmx	fr_votre_divin_maitre.mxl	fr	1	Petaluma	fr_votre_divin_maitre
+pdmx	fr_la_clairiere.mxl	fr	1	Leipzig	fr_la_clairiere
+pdmx	fr_aupr_es_de_ma_blonde.mxl	fr	1	Leipzig	fr_aupr_es_de_ma_blonde
+pdmx	en_my_grandfathers_clock.mxl	en	1	Leland	en_my_grandfathers_clock
+pdmx	en_the_gypsy_rover.mxl	en	1	Leipzig	en_the_gypsy_rover
+pdmx	en_home_on_the_range.mxl	en	1	Bravura	en_home_on_the_range
+pdmx	en_the_wexford_carol.mxl	en	1	Leland	en_the_wexford_carol
+pdmx	en_kumbaya.mxl	en	1	Gootville	en_kumbaya
+pdmx	en_the_first_noel.mxl	en	1	Leipzig	en_the_first_noel
+pdmx	en_camptown_races.mxl	en	1	Leland	en_camptown_races
+pdmx	en_clementine.mxl	en	1	Petaluma	en_clementine
+pdmx	es_la_nave_del_olvido.mxl	es	1	Leipzig	es_la_nave_del_olvido
+pdmx	es_alfonsina_y_el_mar.mxl	es	1	Leipzig	es_alfonsina_y_el_mar
+pdmx	es_luna_tucumana.mxl	es	1	Leland	es_luna_tucumana
+pdmx	es_voy_caminando_en_la_noche.mxl	es	1	Leipzig	es_voy_caminando_en_la_noche
+pdmx	de_die_gedanken_sind_frei.mxl	de	1	Bravura	de_die_gedanken_sind_frei
+pdmx	de_an_die_baue_himmelsdecke.mxl	de	1	Leland	de_an_die_baue_himmelsdecke
+pdmx	de_probiers_mal_mit_gemutlichkeit.mxl	de	1	Gootville	de_probiers_mal_mit_gemutlichkeit
+pdmx	de_wiegenlied.mxl	de	1	Leipzig	de_wiegenlied
+pdmx	it_mattinata.mxl	it	1	Leland	it_mattinata
+pdmx	it_vieni_sul_mar.mxl	it	1	Petaluma	it_vieni_sul_mar
+pdmx	sv_kristallen_den_fina.mxl	sv	1	Leipzig	sv_kristallen_den_fina

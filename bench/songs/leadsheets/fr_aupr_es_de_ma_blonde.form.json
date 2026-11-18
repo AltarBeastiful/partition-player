@@ -1,0 +1,152 @@
+{
+ "note": "three verses; the first phrase is repeated (sign at m5), the refrain m11-15 has two endings; the truth's second ending is unmarked",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     5,
+     9
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     10,
+     13
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     10,
+     12
+    ],
+    [
+     14,
+     14
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     5,
+     9
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     10,
+     13
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     10,
+     12
+    ],
+    [
+     14,
+     14
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     5,
+     9
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     10,
+     13
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     10,
+     12
+    ],
+    [
+     14,
+     14
+    ]
+   ],
+   "verse": 2
+  }
+ ]
+}

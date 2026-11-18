@@ -71,8 +71,11 @@ Add a **chord stage** to the recognition pipeline, deterministic and benchmark-d
 5. **Playback.** The browser player reads the chord symbols from the loaded score and adds an
    accompaniment voice: bass note on the root plus a close voicing of the chord tones around C4, in a
    fixed pattern per time signature (2/4 and 4/4: bass on the strong beats, chord on every beat; 3/4:
-   bass then two chords; 6/8: bass and chord on each dotted quarter). Controls: accompaniment on or
-   off, melody on or off, so the singer can rehearse against chords alone. Nothing is added when the
+   bass then two chords; 6/8: bass and chord on each dotted quarter), minus any weak pulse over a
+   silence that lasts to the end of its measure: the comp is heard under the melody, and a pulse in
+   the rests that end a song or a section sounded as a small extra note after the singing had
+   stopped. Controls: accompaniment on or off, melody on or off, so the singer can rehearse against
+   chords alone. Nothing is added when the
    score has no chord symbols (a piano score already has its accompaniment written out).
 6. **Benchmark before merge.** `bench/chords/` renders 12 public-domain lead sheets with chord
    symbols (10 Nottingham folk tunes, Berlin's Alexander's Ragtime Band, Foster's Jeanie) as clean

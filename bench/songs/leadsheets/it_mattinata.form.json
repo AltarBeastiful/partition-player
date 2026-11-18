@@ -1,0 +1,27 @@
+{
+ "note": "repeat m20-27 with two endings",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     26
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     19,
+     24
+    ],
+    [
+     27,
+     28
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

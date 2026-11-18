@@ -1,0 +1,104 @@
+{
+ "note": "pickup, five verses under a forward repeat with no backward sign (the chorus m10-17 follows each verse), coda m18-21",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     9,
+     16
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     1,
+     8
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     9,
+     16
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     1,
+     8
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     9,
+     16
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     1,
+     8
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     9,
+     16
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     1,
+     8
+    ]
+   ],
+   "verse": 5
+  },
+  {
+   "ranges": [
+    [
+     9,
+     16
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     17,
+     20
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

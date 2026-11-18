@@ -1,0 +1,59 @@
+{
+ "note": "Refrain first (m1-16), Strophe (m17-32, two verses), refrain between and after; the last measure closes",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     15
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     16,
+     31
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     15
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     16,
+     31
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     15
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     32,
+     32
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

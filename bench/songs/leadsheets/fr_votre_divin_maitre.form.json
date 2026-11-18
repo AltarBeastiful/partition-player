@@ -1,0 +1,36 @@
+{
+ "note": "Refrain m1-9 with ending 1 (m10), couplet m11-19, refrain again with ending 2 (m20-28); uncertain print",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     9
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     10,
+     18
+    ]
+   ],
+   "verse": null
+  },
+  {
+   "ranges": [
+    [
+     0,
+     8
+    ],
+    [
+     19,
+     27
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

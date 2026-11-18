@@ -101,3 +101,28 @@ def save(path: Path, placed: list[Placement], warnings: list[str], seen: list[di
 def load(path: Path) -> list[Placement]:
     data = json.loads(path.read_text())
     return [Placement(**s) for s in data.get("syllables", [])]
+
+
+def read_placements(score: Path, part_index: int = 0) -> list[Placement]:
+    """The placements a document holds, read back from its <lyric> elements: after the editor has
+    changed the notes (ADR 0005) lyrics.json is rebuilt from this, so the lyrics panel keeps showing
+    what the score has."""
+    tree = ET.parse(score)
+    parts = tree.getroot().findall("part")
+    if not parts:
+        return []
+    placed: list[Placement] = []
+    for m, measure in enumerate(parts[min(part_index, len(parts) - 1)].findall("measure")):
+        for o, note in enumerate(sounding_notes(measure)):
+            for lyric in note.findall("lyric"):
+                try:
+                    verse = int(lyric.get("number") or 1)
+                except ValueError:
+                    verse = 1
+                texts = [t.text or "" for t in lyric.findall("text")]
+                if not texts:
+                    continue
+                syllabics = [s.text or "single" for s in lyric.findall("syllabic")]
+                placed.append(Placement(verse, m, o, ELISION.join(texts), syllabics[-1] if syllabics else "single",
+                                        lyric.find("extend") is not None, 1.0))
+    return placed

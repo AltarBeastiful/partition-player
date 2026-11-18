@@ -30,6 +30,9 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 2px sol
 .dropzone input { display: none; }
 .filelabel { display: inline-block; }
 .preview { max-height: 240px; width: auto; max-width: 100%; border-radius: 4px; border: 1px solid var(--line); }
+.filecard { display: grid; gap: 6px; justify-items: center; padding: 18px 24px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); max-width: 100%; overflow-wrap: anywhere; }
+.filecard-kind { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .progress { display: grid; gap: 8px; }
 .steps { display: flex; gap: 8px; flex-wrap: wrap; }
 .step { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
@@ -46,6 +49,15 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 2px sol
 .controls.loop input[type="number"] { width: 64px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
 .controls.loop input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
 
+/* plan 0009: the page can be taken away as it is printed or as it is played. The second is written
+   here in the browser from the document on screen, so it is a button and not a link — dressed as one,
+   since the two are the same offer made twice. */
+.downloads { display: inline-flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.downloads a, .downloads button { color: var(--accent); }  /* the two offers read as one pair, not as a link beside a control */
+.downloads button { border: none; background: none; padding: 0; margin: 0; font: inherit; text-decoration: underline; cursor: pointer; }
+.downloads button:hover { color: var(--ink); }
+.downloads .sep { color: var(--muted); }
+
 button.quiet { border-color: transparent; background: transparent; color: var(--muted); padding: 4px 8px; }
 button.quiet:hover { color: var(--ink); border-color: var(--line); }
 button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
@@ -55,6 +67,9 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .score-row.failed .score-name { color: var(--muted); }
 .thumb { width: 56px; height: 72px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--bg); display: block; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+/* a score opened from a file has no photo behind it (plan 0010) */
+.thumb-file { display: grid; place-items: center; width: 100%; height: 100%; font-size: 9px; letter-spacing: .04em;
+  color: var(--muted); background: repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 7px); }
 .score-main { min-width: 0; display: grid; gap: 2px; }
 .score-name { color: var(--ink); text-decoration: none; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score-name:hover { text-decoration: underline; }
@@ -77,3 +92,144 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 /* Lyrics editor: one text field per verse, monospace so hyphens and holds line up with the eye. */
 .lyrics .verse { display: grid; gap: 4px; }
 .lyrics textarea { font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); resize: vertical; width: 100%; box-sizing: border-box; }
+
+/* Editor (ADR 0005): the doubts and the selection are a layer under the notes. */
+.sheet { cursor: pointer; }
+.editor-layer rect.place { stroke-width: 1; }
+.editor-layer rect.place.doubt { fill: rgba(245, 158, 11, 0.16); stroke: rgba(217, 119, 6, 0.8); }
+.editor-layer rect.place.info { fill: rgba(56, 189, 248, 0.10); stroke: rgba(14, 116, 144, 0.35); }
+.editor-layer rect.place.checked { fill: rgba(34, 197, 94, 0.08); stroke: rgba(22, 163, 74, 0.45); stroke-dasharray: 4 3; }
+/* plan 0008: a measure that adds up but where a second reading of the print disagrees. Same amber
+   family as a doubt, no fill and a broken outline, so it reads as "worth a look", not "wrong". */
+.editor-layer rect.place.check { fill: none; stroke: rgba(217, 119, 6, 0.55); stroke-dasharray: 3 3; }
+.editor-layer rect.selected-measure { fill: none; stroke: #0e7490; stroke-width: 1.5; }
+.editor-layer rect.selected-note { fill: rgba(14, 116, 144, 0.28); stroke: #0e7490; stroke-width: 1.2; }
+.editor-layer text.badge { font: 700 11px system-ui, sans-serif; fill: #b45309; }
+.editor-layer text.badge.info { fill: #0e7490; }
+.editor-layer text.badge.quiet { fill: rgba(180, 83, 9, 0.6); font-weight: 400; }
+
+.review { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.review .ok { color: var(--ok); }
+.review .nav { display: inline-flex; gap: 6px; }
+.review .here { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; color: #b45309; }
+.review .here.info { color: var(--muted); }
+@media (prefers-color-scheme: dark) { .review .here { color: #fbbf24; } }
+.review .photo-toggle { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.review .photo-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.toolbar { position: sticky; bottom: 0; z-index: 4; display: grid; gap: 8px; padding: 10px 12px; margin: 0 -8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06); }
+.toolbar-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.toolbar-head .save-state { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.toolbar .bad { color: var(--bad); }
+.toolbar .groups { display: flex; gap: 8px; flex-wrap: wrap; }
+.toolbar .group { display: inline-flex; gap: 4px; align-items: center; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.toolbar .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-right: 4px; }
+.toolbar button { padding: 6px 9px; font-size: 14px; line-height: 1.2; min-width: 34px; }
+.toolbar button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* "Other readings" is the way out of a misread measure and the one tool a first user has to find, and
+   an accent outline lost it among the grey tools under it, which share its font, its size and nearly
+   its colour: it is the only filled button of the toolbar, set in the display serif of the headings,
+   larger than the tools and lifted off the bar by a ring of its own colour. When the selected measure
+   carries a mark on the sheet it takes that mark's amber, and the key that opens it is written on it. */
+.toolbar button.open-readings { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.18); font-family: "Newsreader", Georgia, serif; font-size: 17px; font-weight: 600; padding: 7px 16px; display: inline-flex; gap: 8px; align-items: center; }
+.toolbar button.open-readings:hover:not(:disabled) { filter: brightness(1.1); }
+.toolbar button.open-readings kbd { font: 600 11px/1 system-ui, sans-serif; padding: 3px 5px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.7; }
+.toolbar button.open-readings.flagged { background: #b45309; border-color: #b45309; color: #fff; box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.24); }
+@media (prefers-color-scheme: dark) {
+  .toolbar button.open-readings { box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22); }
+  .toolbar button.open-readings.flagged { background: #f59e0b; border-color: #f59e0b; color: #1a1e28; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.24); }
+}
+.toolbar input.chord { font: inherit; padding: 5px 8px; width: 7ch; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.toolbar .panel { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.toolbar .keys { font-size: 12px; }
+/* The form (plan 0004): the pass list and its panel; the verse layer dims the other verses' words. */
+.form { display: grid; gap: 8px; font-size: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.form-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.form .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.form .summary { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.form .summary .pass { padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); }
+.form .summary .pass.now, .form .chip.now { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.form-head > button { margin-left: auto; }
+.form-body { display: grid; gap: 8px; }
+.form .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.form input[type="number"] { width: 4.5em; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.form input.name { width: 8em; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.form .section, .form .chip { display: inline-flex; gap: 4px; align-items: center; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.form .chip input[type="number"] { width: 3em; }
+.form .chip.now input { color: var(--accent-ink); background: transparent; border-color: rgba(255, 255, 255, 0.4); }
+.form button.quiet { padding: 2px 6px; min-width: 0; }
+/* plan 0007: the chip a new pass lands after, the repeat count, and the form written as one line */
+.form .chip { cursor: pointer; }
+.form .chip.picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.form .chip button.times { font-variant-numeric: tabular-nums; color: var(--muted); }
+.form .chip.now button.times { color: inherit; }
+.form input.line { flex: 1 1 22em; min-width: 12em; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.form .error-text { color: var(--bad); }
+.form .chip button.times { font-variant-numeric: tabular-nums; }
+.form button.edge { color: var(--accent); border: 1px solid var(--line); border-radius: 999px; }
+/* plan 0007: the sections drawn over the measures they cover */
+.section-band { opacity: 0.55; rx: 2; }
+.section-name { font: 500 11px ui-sans-serif, system-ui, sans-serif; opacity: 0.9; }
+.band-0 { fill: #0e7490; } .band-1 { fill: #b45309; } .band-2 { fill: #4d7c0f; }
+.band-3 { fill: #7c3aed; } .band-4 { fill: #be185d; } .band-5 { fill: #0f766e; }
+.verse-layer rect.dim { fill: #fff; opacity: 0.72; }
+
+/* Edit mode: the frame around the sheet changes hue so the two kinds of click are told apart. */
+.review.toast { background: #fff6e3; border-color: #f0c36a; }
+.review.toast .edit { margin-left: auto; }
+.card.editing { border-color: #d97706; }
+.card.editing .sheet { border: 2px solid #d97706; box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.16); }
+.mode { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.mode-badge { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #b45309; background: rgba(217, 119, 6, 0.14); padding: 3px 9px; border-radius: 999px; }
+.edit-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+@media (prefers-color-scheme: dark) {
+  .review.toast { background: #3a2a10; border-color: #8a6420; }
+  .card.editing { border-color: #f59e0b; }
+  .card.editing .sheet { border-color: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2); }
+  .mode-badge { color: #fbbf24; background: rgba(245, 158, 11, 0.18); }
+}
+
+@media (max-width: 1100px) {
+  .toolbar .groups { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+  .toolbar .group { flex: 0 0 auto; }
+  .toolbar .keys { display: none; }
+}
+@media (max-width: 700px) {
+  .toolbar { margin: 0 -12px; border-radius: 8px 8px 0 0; }
+  .toolbar button { padding: 9px 11px; min-width: 40px; }
+  .toolbar button.open-readings { padding: 9px 16px; }
+  .toolbar button.open-readings kbd { display: none; } /* no keyboard to press it with */
+  .review .photo-toggle { margin-left: 0; }
+}
+
+.strip { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #eee; cursor: zoom-in; min-height: 60px; }
+.strip img { position: absolute; max-width: none; user-select: none; }
+.strip.whole img { position: static; width: 100%; height: auto; display: block; }
+.strip-box { position: absolute; border: 2px solid #0e7490; background: rgba(14, 116, 144, 0.10); border-radius: 3px; pointer-events: none; }
+.strip-none { position: absolute; left: 12px; top: 12px; }
+.lightbox { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.85); overflow: auto; padding: 16px; cursor: zoom-out; }
+.lightbox img { display: block; margin: 0 auto; max-width: none; width: min(100%, 1400px); cursor: default; }
+.lightbox .close { position: fixed; top: 16px; right: 16px; z-index: 21; }
+
+/* The other readings of a note (plan 0005): the print, then a card per reading, its measure engraved. */
+.readings { position: fixed; inset: 0; z-index: 20; overflow: auto; padding: 16px; background: rgba(0, 0, 0, 0.5); }
+.readings .panel { max-width: 960px; margin: 0 auto; display: grid; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.readings .head { display: flex; gap: 12px; align-items: baseline; }
+.readings .head button { margin-left: auto; }
+.readings .head button + button { margin-left: 0; }
+.readings .strip { max-height: 320px; }
+.readings p { margin: 0; }
+.readings .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.reading { display: grid; gap: 6px; align-content: start; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+.reading.current { border-color: var(--accent); }
+.reading .mini { background: #fff; border-radius: 4px; overflow: hidden; min-height: 90px; color: #1a1e28; }
+.reading .mini svg { max-width: 100%; height: auto; }
+.reading .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.reading .row .fixes { color: var(--ok); }
+.reading .row button { padding: 5px 10px; }
+.editor-layer rect.changed-note { fill: rgba(220, 38, 38, 0.18); stroke: #dc2626; stroke-width: 1.5; }
+@media (max-width: 600px) {
+  .readings { padding: 8px; }
+  .readings .panel { padding: 12px; }
+  .readings .cards { grid-template-columns: 1fr; }
+}

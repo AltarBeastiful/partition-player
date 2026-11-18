@@ -3,7 +3,7 @@ import { getLyrics, saveLyrics, type LyricsState } from "../api";
 
 /** The words under the notes, one text field per verse, in the convention notation programs use:
  *  "-" splits a word into syllables, "_" holds a syllable over the next note, "*" skips a note. */
-export function LyricsPanel({ jobId, onSaved }: { jobId: string; onSaved: () => void }) {
+export function LyricsPanel({ jobId, version = 0, beforeSave, onSaved }: { jobId: string; version?: number; beforeSave?: () => Promise<void>; onSaved: () => void }) {
   const [state, setState] = useState<LyricsState | null>(null);
   const [verses, setVerses] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -13,13 +13,14 @@ export function LyricsPanel({ jobId, onSaved }: { jobId: string; onSaved: () => 
   useEffect(() => {
     getLyrics(jobId).then((s) => { setState(s); setVerses(s.verses.length ? s.verses : [""]); setOpen(s.verses.length > 0); })
       .catch((e) => setError((e as Error).message));
-  }, [jobId]);
+  }, [jobId, version]);
 
   const dirty = state !== null && verses.join("\n") !== state.verses.join("\n");
 
   async function save() {
     setSaving(true); setError(null);
     try {
+      await beforeSave?.(); // a note edit still on its way must land first, or this save would be overwritten
       const s = await saveLyrics(jobId, verses);
       setState(s); setVerses(s.verses.length ? s.verses : [""]);
       onSaved();

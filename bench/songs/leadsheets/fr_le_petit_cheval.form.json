@@ -1,0 +1,59 @@
+{
+ "note": "six stacked verses",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 3
+  },
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 4
+  },
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 5
+  },
+  {
+   "ranges": [
+    [
+     0,
+     23
+    ]
+   ],
+   "verse": 6
+  }
+ ]
+}

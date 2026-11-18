@@ -1,0 +1,32 @@
+{
+ "note": "the first phrase repeated once per verse, then the rest once",
+ "passes": [
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 1
+  },
+  {
+   "ranges": [
+    [
+     0,
+     4
+    ]
+   ],
+   "verse": 2
+  },
+  {
+   "ranges": [
+    [
+     5,
+     15
+    ]
+   ],
+   "verse": null
+  }
+ ]
+}

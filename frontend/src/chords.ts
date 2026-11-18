@@ -5,6 +5,8 @@ import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 export interface ChordSymbol { time: number; measure: number; root: number; kind: number; bass: number | null; text: string }
 export interface MeasureInfo { start: number; duration: number; num: number; den: number }
 export interface AccompEvent { time: number; midi: number; length: number; velocity: number }
+/** A melody note of the printed score, absolute time in whole notes: what the comp plays under. */
+export interface SungNote { time: number; length: number }
 
 const NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 // ChordSymbolEnum (OSMD) -> intervals in semitones from the root
@@ -77,10 +79,24 @@ function pulses(m: MeasureInfo): { at: number; strong: boolean }[] {
   return Array.from({ length: count }, (_, i) => ({ at: i * beat, strong: i === 0 || (count === 4 && i === 2) }));
 }
 
-/** A simple piano accompaniment: bass on strong pulses and on every chord change, chord tones on every pulse. */
-export function accompaniment(chords: ChordSymbol[], measures: MeasureInfo[]): AccompEvent[] {
+/**
+ * A simple piano accompaniment: bass on strong pulses and on every chord change, chord tones on
+ * every pulse -- except a weak pulse over a silence that lasts to the end of its measure, which is
+ * left out. The comp is meant to be heard under the melody; the last measure of a song or of a
+ * section is written as a short note and then rests, and a pulse landing in those rests was heard
+ * as a small extra note after the singing had stopped, once every time round the chorus.
+ */
+export function accompaniment(chords: ChordSymbol[], measures: MeasureInfo[], sung: SungNote[]): AccompEvent[] {
   if (chords.length === 0) return [];
   const events: AccompEvent[] = [];
+  const notes = [...sung].sort((a, b) => a.time - b.time);
+  let ni = 0; // notes before this one have all stopped before the pulse being laid (pulses only move on)
+  const singing = (from: number, to: number): boolean => {
+    while (ni < notes.length && notes[ni].time + notes[ni].length <= from + 1e-9) ni++;
+    for (let j = ni; j < notes.length && notes[j].time < to - 1e-9; j++)
+      if (notes[j].time + notes[j].length > from + 1e-9) return true;
+    return false;
+  };
   let ci = -1;
   let last: ChordSymbol | null = null;
   for (const m of measures) {
@@ -95,6 +111,7 @@ export function accompaniment(chords: ChordSymbol[], measures: MeasureInfo[]): A
       const v = voicing(c);
       const changed = c !== last;
       last = c;
+      if (!p.strong && !changed && !singing(t, m.start + m.duration)) return; // nothing left to play under
       if (p.strong || changed) events.push({ time: t, midi: v.bass, length: len * 0.95, velocity: 0.55 });
       for (const n of v.tones) events.push({ time: t, midi: n, length: len * 0.85, velocity: p.strong || changed ? 0.42 : 0.32 });
     });
