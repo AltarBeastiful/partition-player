@@ -1,8 +1,56 @@
 # Plan 0014: Move to homr 0.7.1, then to homr `main`
 
-Status 2026-11-18: **not started.** Written after plan 0013's re-score, which still runs on homr 0.7.0.
-No ADR yet: if the trial of `main` ships, the decision to pin an engine by commit is one and gets
-written then (ADR 0002 already names homr as the engine and Audiveris as the fallback).
+Status 2026-11-18: **step 1 tried, NO-GO, pinned back to homr 0.7.0** (`homr==0.7.0` in `backend/pyproject.toml`).
+Step 2 (`main`) is not started and is blocked on a fix of the same kind in homr (see below).
+The driver patch for 0.7.1 works and is kept in git as commit `d1a2b61` (reverted right after, so
+it can be cherry-picked when homr moves again). No ADR yet: if the trial of `main` ships, the
+decision to pin an engine by commit is one and gets written then (ADR 0002 already names homr as the
+engine and Audiveris as the fallback).
+
+## Step 1 result: homr 0.7.1 (2026-11-18)
+
+Driver patched (`d1a2b61`): `load_and_preprocess_predictions` returns three values, `detect_staff`
+takes the symbols plane, `repair_systems` runs before parsing, the XML generator returns an
+ElementTree element, `autocrop_with_offset` replaces our replica, the title reader must be set up
+(`download_ocr_weights`), and each staff's raw stream is recorded by staff object and not by index
+(hidden staffs shift the index). Dependencies: `homr[cpu]>=0.7.1`. Backend tests: 144 passed. Anton
+photo: event error rate **0.00**, 55 of 55 notes, 19 of 19 measures. Run on rapidocr 3.9.2 (3.10.0
+breaks the chord reader: `ocr.text_rec` is `None`; unrelated to homr, and the pin `>=3.9,<4` allows it).
+
+Benchmark, same pages, plan 0013's results of the same day as baseline (homr 0.7.0), the three sets
+re-scored with `bench/songs/run_bench.py`:
+
+| criterion | lead sheets (60 pages) | voice and piano (60) | IMSLP scans (10) |
+|---|---|---|---|
+| right measure counts | 57 -> **45** (fail) | 58 -> 60 | 10 -> 10 |
+| pitch + duration | 6456 -> 6457 of 6480 | 4136 -> 4450 of 4526 | 466 -> 517 of 596 |
+| false syllables | 157 -> 115 | 17 -> 67 (rise) | 7 -> 2 |
+| false chords | 61 -> **62** (rise) | 19 -> 33 (rise) | 1 -> 4 (rise) |
+| Anton photo | error rate 0.00 | | |
+
+Verdict **no-go** by the gate as written: the tally of right measure counts drops on the lead
+sheets and false chords rise on all three sets. Why: homr 0.7.1's XML generator writes **extra
+measures**, 12 lead-sheet pages end up one to three measures over (Camptown Races 17 -> 18, La
+marche des rois 20 -> 23, Aupres de ma blonde 15 -> 17). `engine.musicxml` itself holds them: an
+attributes-only measure before a forward repeat bar (Camptown, Votre divin maitre), and empty
+measures in the middle of a system (La nave del olvido, La marche des rois, Mattinata). The lyrics
+then lose their alignment (syllables placed fall from 9946 to 7996 on the lead sheets). We could
+drop empty measures in `postprocess`, but the revert rule is to pin back and not patch around.
+
+Read with care: the voice-and-piano and scan baselines are the stored plan 0013 results, whose
+lyrics placement is visibly lower than today's (1138 against 4279 syllables placed); the rises in
+false syllables there come with that. Pitch and duration on those two sets goes up by 314 and 51
+notes, so 0.7.1 reads better there; a clean control run of `d63c27b` on 0.7.0 would be needed to
+say how much. It was not made because the lead sheets already decide the gate (their baseline equals
+plan 0013's table exactly: 6456, 157, 61, 57 of 60).
+
+Meter overlap (ticket check): on 130 run pages, 16 carry a mid-page time mark, and on 12 of those
+homr 0.7.1 writes its own `<time>` at a marked measure. `postprocess._set_time` removes any `<time>`
+in the measure before it writes ours, and when our rule decides nothing homr's guess stands, so there
+is one writer per measure and they do not double up. Not a reason for or against the step.
+
+To retry: homr must stop writing empty measures (a later 0.7.x, or `main`), then cherry-pick
+`d1a2b61`, install `homr[cpu]`, and re-run the three sets.
 
 ## Problem Statement
 
