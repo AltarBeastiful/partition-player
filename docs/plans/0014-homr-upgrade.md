@@ -1,6 +1,6 @@
 # Plan 0014: Move to homr 0.7.1, then to homr `main`
 
-Status 2026-11-18: **step 1 tried, NO-GO, pinned back to homr 0.7.0** (`homr==0.7.0` in `backend/pyproject.toml`).
+Status 2026-11-19: **step 1 tried twice, NO-GO both times, pinned back to homr 0.7.0** (`homr==0.7.0` in `backend/pyproject.toml`).
 Step 2 (`main`) is not started and is blocked on a fix of the same kind in homr (see below).
 The driver patch for 0.7.1 works and is kept in git as commit `d1a2b61` (reverted right after, so
 it can be cherry-picked when homr moves again). No ADR yet: if the trial of `main` ships, the
@@ -49,8 +49,53 @@ homr 0.7.1 writes its own `<time>` at a marked measure. `postprocess._set_time` 
 in the measure before it writes ours, and when our rule decides nothing homr's guess stands, so there
 is one writer per measure and they do not double up. Not a reason for or against the step.
 
-To retry: homr must stop writing empty measures (a later 0.7.x, or `main`), then cherry-pick
-`d1a2b61`, install `homr[cpu]`, and re-run the three sets.
+To retry: see the second attempt below (`a8d9df3` holds the driver patch and the empty-measure fix).
+
+## Step 1, second attempt: homr 0.7.1 with the empty measures dropped (2026-11-19)
+
+Cause of the extra measures, read in homr's generator (`music_xml_generator.build_measures`): the
+`repeatStart` token closes the current measure and opens a new one, whether or not anything was played
+since the barline before it, and a volta stop does the same. A repeat that opens a page or a system
+therefore leaves a measure with attributes, a print mark or a barline and no note (Camptown: measure 1
+holds only the clef, key and time; La marche des rois: three empty measures between the voltas).
+`drop_empty_measures` (`postprocess.py`, test in `test_postprocess.py`) removes a measure that no part
+plays in (a rest counts as played) and hands what it carried to its neighbour: attributes, directions
+and the new-system mark forward, a left barline forward, a right barline back, merged in schema order.
+Because the chord, lyrics, layout and time-mark stages index measures through `geometry.json`, the
+driver calls it on homr's XML and renumbers the per-system counts and the time marks with it
+(driver patch plus this wiring: commit `a8d9df3`). Counts came back (Camptown 17, La marche des rois
+20, La nave del olvido 29) and the Anton photo is **0.00** (55 of 55, 19 of 19). Backend tests: 146 passed.
+rapidocr is pinned `>=3.9,<3.10` (3.10.0 leaves `ocr.text_rec` None and breaks the chord reader);
+this pin stays whatever the verdict.
+
+Control: a fresh run of 3cc9f6e (homr 0.7.0, rapidocr 3.9.2) on all three sets, same pages. It equals
+the stored plan 0013 numbers (leadsheets 6456 / 57 / 157 / 61; voice and piano 1138 syllables placed),
+so those baselines were not stale: 0.7.0 really places few words on a grand staff.
+
+| criterion | lead sheets (60) | voice and piano (60) | IMSLP scans (10) |
+|---|---|---|---|
+| right measure counts | 57 -> **55** (fail) | 58 -> 60 | 10 -> 10 |
+| pitch + duration | 6456 -> 6457 of 6480 | 4143 -> 4450 of 4526 | 466 -> 517 of 596 |
+| syllables placed | 9946 -> 9650 | 1138 -> 4278 | 10 -> 575 |
+| false syllables | 157 -> 150 | 17 -> **67** (rise) | 7 -> 2 |
+| false chords | 61 -> 61 | 19 -> **33** (rise) | 1 -> **4** (rise) |
+| Anton photo | 0.00 | | |
+
+Verdict **no-go** again, by the gate as written: the right-measure tally drops on the lead sheets
+(57 -> 55) and false syllables and false chords rise on the voice and piano set (and false chords on
+the scans). Pinned back to 0.7.0 (the 0.7.1 driver stays in `a8d9df3`).
+
+Read with care. The measure counts of the 12 pages that broke the first attempt are all back to the
+control's; the two that remain are not empty measures but homr's own reading under 0.7.1:
+`en_home_on_the_range_photo` 32 -> 33 and `it_mattinata_photo` 29 -> 28. The rises in false syllables
+and chords on voice and piano come with a four-fold rise in syllables placed (1138 -> 4278): 0.7.1
+reads the grand staff well enough to place words that 0.7.0 never reached, and the words it places
+wrongly count as false; pitch and duration there rises by 307 of 4526 and by 51 of 596 on the scans.
+That is a trade the gate cannot see. If the maintainer decides the gate should weigh false against
+placed (for example false per syllable placed, 1.6 % against 1.5 % on voice and piano), the step is
+ready: cherry-pick `a8d9df3`, set `homr[cpu]>=0.7.1,<0.8`. One writer of time changes per measure
+still holds (`_set_time` removes any `<time>` before writing ours), and the marks are renumbered with
+the dropped measures.
 
 ## Problem Statement
 
