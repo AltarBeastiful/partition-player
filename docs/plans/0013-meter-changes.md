@@ -1,6 +1,11 @@
 # Plan 0013: A time signature that changes in the middle of the page
 
-Status 2026-09-24: **steps 1 to 3 done**, step 4 done on the page that asked for it and not yet on
+Status 2026-11-18: **steps 1 to 4 done.** The benchmark is re-scored against a control run of the commit
+before the plan (`f9b34e3`): the false counts held, the measure counts held, and pitch and duration on
+the voice and piano set fell by 19 notes of 4526. That loss was accepted by the maintainer (see
+step 4). Backend 144 tests, frontend 128.
+
+Earlier status, 2026-09-24: **steps 1 to 3 done**, step 4 done on the page that asked for it and not yet on
 the benchmark. Backend 144 tests (17 new, `tests/test_meter.py`). No ADR: nothing in the architecture
 moves, this is a recognition fix in the engine's own driver and in `postprocess`, the same shape as
 the tie-across-a-barline item in BACKLOG.md.
@@ -100,10 +105,29 @@ a time signature is printed there and the editor's `setTime` is one click away.
 
 **4. Check it on the page that asked for it, then on the benchmark.** Done for the page: measure 19
 is 6/4 with six quarters in both voices, measure 20 returns to 4/4, nothing is padded and the only
-doubts left are the two that say what was read. **Not yet done:** `bench/score.py` over the sample
-set, with the false count held where it is. Until that is run, what the two rules do to the note
-level of a whole page is known only from the counting above — the measures they move and the
-direction they move them — and not from a score against ground truth.
+doubts left are the two that say what was read. Done for the benchmark on 2026-11-18, with the
+commands in `bench/RESULTS.md` ("Meter changes (plan 0013)"):
+
+- **Lead sheets, 60 pages: every tally is identical** to the run of 2026-09-19, to the note, the
+  syllable and the chord (false syllables 157, false chords 61, both unchanged).
+- **The Anton photo** keeps an event error rate of 0.00: 55 of 55 notes, 19 of 19 measures.
+- **Voice and piano, 60 pages.** The run of 2026-09-19 is not a fair baseline: it was probably made before the
+  scorer was committed in its final form, and its ground-truth count differs (4262 events against
+  4526). So the plan was measured against a control run of `f9b34e3` with the same scorer and the same
+  pages. Measure counts right: 58 of 60 in both. Placed syllables 1138 and false syllables 17 in both.
+  The 19 chords read on this set (it has none in its ground truth) are **there before the plan too**:
+  19 in both runs. Pitch 4265 to 4248 (-17), pitch and duration 4155 to 4136 (-19, 0.4 %).
+- **Where the 19 went:** Ferrari -4 and -6 (clean and photo), Gounod's *Sérénade* -2 and -2, Puget -2,
+  Wolf -1 and -1, Butterworth -1, Burleigh's photo -1, and one gained on Berlioz's photo. On Ferrari a
+  note moves one position and a rest is added, on a page that already carries a dozen "padded" doubts.
+  Whether those moves are the re-anchoring of step 2 doing what it should or damage was **not
+  established**.
+- The criterion set for this step was that pitch and duration must not drop. It dropped, by that
+  margin, and the maintainer accepted it knowing the cause is not pinned down: the canon page is read
+  as printed, and the loss is on pages that were already unreliable. If Ferrari or Gounod are ever
+  reopened, start there.
+- The scans set (10 real prints) was run once after the plan and not against a control: pitch and
+  duration 78.2 % of 596 notes, 7 false syllables, 1 false chord.
 
 ## What this deliberately does not do
 

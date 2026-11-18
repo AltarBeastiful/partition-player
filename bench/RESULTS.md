@@ -348,6 +348,34 @@ S="--set voice_piano"
 .venv-oemer/bin/python bench/songs/review.py $S       # writes .../voice_piano/review.html
 ```
 
+## Meter changes (plan 0013), 2026-11-18
+
+Step 4 of plan 0013: the benchmark re-scored with the plan's code (`6db27fc`), against the run of
+2026-09-19 for the lead sheets and against a control run of `f9b34e3` (the commit before the plan) for
+the voice and piano set, because that set's old results appear to predate the scorer's final form.
+
+| set | pages | sung notes | pitch+duration before | after | measures right | false syllables | false chords |
+|---|---|---|---|---|---|---|---|
+| lead sheets | 60 | 6480 | 6456 | 6456 | 57 of 60 both | 157 both | 61 both |
+| voice and piano (control `f9b34e3`) | 60 | 4526 | 4155 | 4136 | 58 of 60 both | 17 both | 19 both |
+| IMSLP scans (after only) | 10 | 596 | | 78.2 % | | 7 | 1 |
+
+The Anton photo: event error rate 0.00. The voice and piano set loses 19 notes of 4526 on seven
+pages (Ferrari -10, Gounod -4, Puget -2, Wolf -2, Butterworth -1, Burleigh -1) and gains one
+(Berlioz); the loss was accepted, see the plan. Leadsheets and voice_piano tables above are not
+updated: the lead-sheet numbers did not move, and the voice and piano ones use a different scorer
+than this table.
+
+Reproduce (about 20 and 25 minutes):
+
+```
+.venv-oemer/bin/python bench/songs/run_bench.py
+.venv-oemer/bin/python bench/songs/run_bench.py --set voice_piano
+.venv-oemer/bin/python bench/songs/run_bench.py --set voice_piano --scans
+# the control: a worktree at f9b34e3 with the same pages copied in, then
+PYTHONPATH=<worktree>/backend .venv-oemer/bin/python bench/songs/run_bench.py --set voice_piano
+```
+
 ## Doubts: where the wrong measures are (ADR 0005)
 
 Date: 2026-09-19. The editor needs to say where to look. A measure of the engine's own output that is
