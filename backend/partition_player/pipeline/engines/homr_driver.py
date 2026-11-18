@@ -1,7 +1,7 @@
 """Run homr on one image and also export the geometry the chord and lyrics stages need (ADR 0003, 0004).
 
-Mirrors `homr.main.process_image` for the CPU path (no cache, no debug, no GPU) and inlines
-`detect_staffs_in_image` so the detected barline boxes stay available. Writes, in the working directory:
+Inlines `homr.main.detect_staffs_in_image` for the CPU path (no cache, no debug, no GPU) so the
+detected barline boxes stay available, and wraps homr's own `parse_staffs` to watch it. Writes, in the working directory:
 
 - `engine.musicxml`: homr's output (same as `python -m homr.main` would write);
 - `geometry.json`: per system (top staff of each connected staff group): interline, x extent, barline
@@ -38,11 +38,11 @@ from homr.main import download_weights, load_and_preprocess_predictions, predict
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
 from homr.note_detection import add_notes_to_staffs, combine_noteheads_with_stems
 from homr.staff_detection import break_wide_fragments, detect_staff
-from homr.staff_parsing import _ensure_same_number_of_staffs, _get_number_of_voices, parse_staff_image
-from homr.staff_regions import StaffRegions
+from homr import staff_parsing
+from homr.staff_parsing import parse_staffs
 from homr.title_detection import detect_title
 from homr.transformer.configs import Config
-from homr.transformer.vocabulary import EncodedSymbol, remove_duplicated_symbols
+from homr.transformer.vocabulary import EncodedSymbol
 from PIL import Image, ImageOps
 
 from ..chords.ocr import make_ocr, read_band
@@ -89,45 +89,62 @@ def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[i
     system, the staff groups it actually parsed (it may drop or split groups), and where a time
     signature was printed.
 
-    The last of those is why this walks the raw stream (plan 0013): homr reads a time-signature mark
-    in the right bar but cannot say how many beats it has — the token carries only the beat-type —
-    and `remove_duplicated_symbols` then drops the mark whenever that token repeats, which is every
-    change of numerator. The position is thrown away here and nowhere else, so it is kept here.
+    homr's own function does the parsing; this only watches it. Each staff goes through
+    `parse_staff_image`, which is wrapped to keep its raw token stream, and the staff groups homr
+    settles on reach `StaffRegions`, which is wrapped to keep them. The raw stream is why (plan
+    0013): homr reads a time-signature mark in the right bar but cannot say how many beats it has
+    (the token carries only the beat-type), and `remove_duplicated_symbols` then drops the mark
+    whenever that token repeats, which is every change of numerator. The position is thrown away
+    there and nowhere else, so it is kept there.
     """
-    multi_staffs = _ensure_same_number_of_staffs(multi_staffs, image)
-    regions = StaffRegions(multi_staffs)
+    raw: dict[int, list[EncodedSymbol]] = {}   # staff index (voice-major, as homr counts) -> stream
+    groups: list = []
+
+    original_parse_staff_image = staff_parsing.parse_staff_image
+    original_regions = staff_parsing.StaffRegions
+
+    def recording_parse_staff_image(debug, index, staff, image, regions, config):
+        result = original_parse_staff_image(debug, index, staff, image, regions, config)
+        raw[index] = list(result)   # parse_staffs appends a "newline" to this very list
+        return result
+
+    class RecordingRegions(original_regions):
+        def __init__(self, staffs):
+            super().__init__(staffs)
+            groups[:] = staffs
+
     config = Config()
     config.use_gpu_inference = False
-    voices, measures_per_system = [], []
+    staff_parsing.parse_staff_image = recording_parse_staff_image
+    staff_parsing.StaffRegions = RecordingRegions
+    try:
+        voices = parse_staffs(debug, multi_staffs, image, config)
+    finally:
+        staff_parsing.parse_staff_image = original_parse_staff_image
+        staff_parsing.StaffRegions = original_regions
+
+    systems = len(groups)
+    measures_per_system: list[int] = []
     marks: dict[tuple[int, int], int] = {}   # (system, bar within it) -> beat type
-    i = 0
-    for voice in range(_get_number_of_voices(multi_staffs)):
-        result_for_voice: list[EncodedSymbol] = []
-        for system, ms in enumerate(multi_staffs):
-            staff = ms.staffs[voice]
-            result = parse_staff_image(debug, i, staff, image, regions, config)
-            i += 1
-            if len(result) == 0:
-                log("Skipping empty staff", i - 1)
-                if voice == 0:
-                    measures_per_system.append(0)
-                continue
-            seen = 0
-            for s in result:
-                if is_barline(s.rhythm):
-                    seen += 1
-                elif s.rhythm.startswith("timeSignature"):
-                    marks.setdefault((system, seen), int(s.rhythm.split("/")[1]))
+    for index, result in sorted(raw.items()):
+        voice, system = divmod(index, systems)
+        if len(result) == 0:
             if voice == 0:
-                bars = sum(1 for s in result if is_barline(s.rhythm))
-                last_is_bar = is_barline(result[-1].rhythm)
-                measures_per_system.append(bars + (0 if last_is_bar else 1))
-            result.append(EncodedSymbol("newline"))
-            result_for_voice.extend(result)
-        voices.append(remove_duplicated_symbols(result_for_voice))
+                measures_per_system.append(0)
+            continue
+        seen = 0
+        for s in result:
+            if is_barline(s.rhythm):
+                seen += 1
+            elif s.rhythm.startswith("timeSignature"):
+                marks.setdefault((system, seen), int(s.rhythm.split("/")[1]))
+        if voice == 0:
+            bars = sum(1 for s in result if is_barline(s.rhythm))
+            last_is_bar = is_barline(result[-1].rhythm)
+            measures_per_system.append(bars + (0 if last_is_bar else 1))
     times = [{"measure": sum(measures_per_system[:system]) + bar, "beat_type": beat_type}
              for (system, bar), beat_type in sorted(marks.items())]
-    return voices, measures_per_system, multi_staffs, times
+    return voices, measures_per_system, groups, times
 
 
 def is_barline(rhythm: str) -> bool:
