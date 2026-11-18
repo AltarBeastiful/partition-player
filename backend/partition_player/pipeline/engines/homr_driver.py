@@ -49,6 +49,7 @@ from PIL import Image, ImageOps
 
 from ..chords.ocr import make_ocr, read_band
 from ..lyrics.ocr import make_lyrics_ocr, read_lyrics
+from ..postprocess import drop_empty_measures
 
 BAND_ABOVE_UNITS = 6.0   # band spans from this far above the top staff line ...
 BAND_BELOW_UNITS = -0.4  # ... down to this far above it (negative: stays above the line)
@@ -267,6 +268,14 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
         title = title_future.result(60)
         log("Found title:", title)
         xml = generate_xml(XmlGeneratorArguments(False, None, None), voices, title)
+        # homr 0.7.1 writes measures nobody plays in; they go, and the counts that say where the
+        # measures are (per system, and the time marks) are renumbered with them
+        for index, system in reversed(drop_empty_measures(xml)):
+            if system < len(measures_per_system):
+                measures_per_system[system] -= 1
+            for t in times:
+                if t["measure"] > index:
+                    t["measure"] -= 1
         ET.ElementTree(xml).write(str(xml_file), encoding="unicode", xml_declaration=True)
 
         chain = Chain(image_path, gray.shape, scale)
