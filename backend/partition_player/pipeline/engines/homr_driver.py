@@ -16,7 +16,7 @@ detected barline boxes stay available, and wraps homr's own `parse_staffs` to wa
 Coordinates in geometry.json are homr's working image: the input autocropped (`homr.autocrop`) and
 resized to 1920 px wide. `chain` records how to map them back to the upload.
 
-Pinned to homr 0.7: every imported name is used, so an API change fails at import time.
+Pinned to homr 0.7.1: every imported name is used, so an API change fails at import time.
 Usage: python -m partition_player.pipeline.engines.homr_driver <image> <out_dir> [--original <upload> --scale <s>]
 """
 from __future__ import annotations
@@ -24,12 +24,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
 import numpy as np
 import onnxruntime as ort
-from homr.autocrop import autocrop
+from homr.autocrop import autocrop_with_offset
 from homr.bar_line_detection import detect_bar_lines
 from homr.brace_dot_detection import find_braces_brackets_and_grand_staff_lines, prepare_brace_dot_image
 from homr.bounding_boxes import create_rotated_bounding_boxes
@@ -37,10 +38,11 @@ from homr.debug import Debug
 from homr.main import download_weights, load_and_preprocess_predictions, predict_symbols
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
 from homr.note_detection import add_notes_to_staffs, combine_noteheads_with_stems
-from homr.staff_detection import break_wide_fragments, detect_staff
+from homr.staff_detection import break_wide_fragments, detect_staff, estimate_unit_size_from_clefs
 from homr import staff_parsing
 from homr.staff_parsing import parse_staffs
-from homr.title_detection import detect_title
+from homr.system_repair import repair_systems
+from homr.title_detection import detect_title, download_ocr_weights
 from homr.transformer.configs import Config
 from homr.transformer.vocabulary import EncodedSymbol
 from PIL import Image, ImageOps
@@ -62,18 +64,22 @@ def log(*a) -> None:
 
 def detect(image_path: str):
     """`homr.main.detect_staffs_in_image`, keeping the barline boxes."""
-    predictions, debug = load_and_preprocess_predictions(image_path, False, False, False)
+    predictions, debug, _ = load_and_preprocess_predictions(image_path, False, False, False)
     symbols = predict_symbols(debug, predictions)
     symbols.staff_fragments = break_wide_fragments(symbols.staff_fragments)
     noteheads_with_stems = combine_noteheads_with_stems(symbols.noteheads, symbols.stems_rest)
-    if not noteheads_with_stems:
-        raise RuntimeError("No noteheads found")
-    avg_head = float(np.median([n.notehead.size[1] for n in noteheads_with_stems]))
+    if noteheads_with_stems:
+        avg_head = float(np.median([n.notehead.size[1] for n in noteheads_with_stems]))
+    else:
+        unit = estimate_unit_size_from_clefs(symbols.staff_fragments, symbols.clefs_keys)
+        if unit is None:
+            raise RuntimeError("No noteheads or clefs found")
+        avg_head = unit
     heads = [n.notehead for n in noteheads_with_stems]
     stems = [n.stem for n in noteheads_with_stems if n.stem is not None]
     candidates = [b for b in symbols.bar_lines if not b.is_overlapping_with_any(heads) and not b.is_overlapping_with_any(stems)]
     bar_lines = detect_bar_lines(candidates, avg_head)
-    staffs = detect_staff(debug, predictions.staff, symbols.staff_fragments, symbols.clefs_keys, bar_lines)
+    staffs = detect_staff(debug, predictions.staff, symbols.staff_fragments, symbols.clefs_keys, bar_lines, predictions.symbols)
     if not staffs:
         raise RuntimeError("No staffs found")
     title_future = detect_title(debug, staffs[0])
@@ -81,6 +87,7 @@ def detect(image_path: str):
     add_notes_to_staffs(staffs, noteheads_with_stems, predictions.symbols, predictions.notehead)
     multi_staffs = find_braces_brackets_and_grand_staff_lines(debug, staffs, brace_dot)
     multi_staffs.sort(key=lambda ms: ms.staffs[0].min_y)
+    multi_staffs = repair_systems(debug, multi_staffs)
     return multi_staffs, bar_lines, predictions.preprocessed, debug, title_future
 
 
@@ -90,22 +97,22 @@ def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[i
     signature was printed.
 
     homr's own function does the parsing; this only watches it. Each staff goes through
-    `parse_staff_image`, which is wrapped to keep its raw token stream, and the staff groups homr
+    `parse_staff_image`, which is wrapped to keep its raw token stream (by staff, not by index, so hidden staffs cannot shift it), and the staff groups homr
     settles on reach `StaffRegions`, which is wrapped to keep them. The raw stream is why (plan
     0013): homr reads a time-signature mark in the right bar but cannot say how many beats it has
     (the token carries only the beat-type), and `remove_duplicated_symbols` then drops the mark
     whenever that token repeats, which is every change of numerator. The position is thrown away
     there and nowhere else, so it is kept there.
     """
-    raw: dict[int, list[EncodedSymbol]] = {}   # staff index (voice-major, as homr counts) -> stream
+    raw: dict[int, list[EncodedSymbol]] = {}   # id of the Staff object -> its raw stream
     groups: list = []
 
     original_parse_staff_image = staff_parsing.parse_staff_image
     original_regions = staff_parsing.StaffRegions
 
-    def recording_parse_staff_image(debug, index, staff, image, regions, config):
-        result = original_parse_staff_image(debug, index, staff, image, regions, config)
-        raw[index] = list(result)   # parse_staffs appends a "newline" to this very list
+    def recording_parse_staff_image(debug, index, staff, *args, **kwargs):
+        result = original_parse_staff_image(debug, index, staff, *args, **kwargs)
+        raw[id(staff)] = list(result)   # parse_staffs appends a "newline" to this very list
         return result
 
     class RecordingRegions(original_regions):
@@ -123,25 +130,28 @@ def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[i
         staff_parsing.parse_staff_image = original_parse_staff_image
         staff_parsing.StaffRegions = original_regions
 
-    systems = len(groups)
     measures_per_system: list[int] = []
     marks: dict[tuple[int, int], int] = {}   # (system, bar within it) -> beat type
-    for index, result in sorted(raw.items()):
-        voice, system = divmod(index, systems)
-        if len(result) == 0:
-            if voice == 0:
-                measures_per_system.append(0)
-            continue
-        seen = 0
-        for s in result:
-            if is_barline(s.rhythm):
-                seen += 1
-            elif s.rhythm.startswith("timeSignature"):
-                marks.setdefault((system, seen), int(s.rhythm.split("/")[1]))
-        if voice == 0:
-            bars = sum(1 for s in result if is_barline(s.rhythm))
-            last_is_bar = is_barline(result[-1].rhythm)
-            measures_per_system.append(bars + (0 if last_is_bar else 1))
+    for system, group in enumerate(groups):
+        # Staffs homr hides in a system have no stream; the first one it parsed gives the count
+        # (the same as voice 0 when nothing is hidden).
+        streams = [raw[id(staff)] for staff in group.staffs if id(staff) in raw]
+        counted = False
+        for result in streams:
+            if len(result) == 0:
+                continue
+            seen = 0
+            for s in result:
+                if is_barline(s.rhythm):
+                    seen += 1
+                elif s.rhythm.startswith("timeSignature"):
+                    marks.setdefault((system, seen), int(s.rhythm.split("/")[1]))
+            if not counted:
+                counted = True
+                last_is_bar = is_barline(result[-1].rhythm)
+                measures_per_system.append(seen + (0 if last_is_bar else 1))
+        if not counted:
+            measures_per_system.append(0)
     times = [{"measure": sum(measures_per_system[:system]) + bar, "beat_type": beat_type}
              for (system, bar), beat_type in sorted(marks.items())]
     return voices, measures_per_system, groups, times
@@ -155,23 +165,9 @@ def is_barline(rhythm: str) -> bool:
 # ---- coordinate chain -----------------------------------------------------------------------------
 
 def autocrop_offset(image: np.ndarray) -> tuple[int, int, int, int]:
-    """(x, y, w, h) of the crop `homr.autocrop` takes (same decision, replicated so the offset is known)."""
-    cropped = autocrop(image)
-    if cropped.shape == image.shape:
-        return 0, 0, image.shape[1], image.shape[0]
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    hist = cv2.calcHist([image], [0], None, [256], [0, 256])
-    dominant = int(np.argmax(hist.flatten()))
-    thresh = cv2.threshold(gray, dominant - 30, 255, cv2.THRESH_BINARY)[1]
-    morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
-    morph = cv2.morphologyEx(morph, cv2.MORPH_ERODE, np.ones((9, 9), np.uint8))
-    contours = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = contours[0] if len(contours) == 2 else contours[1]
-    big = max(contours, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(big)
-    if (w, h) != (cropped.shape[1], cropped.shape[0]):
-        raise RuntimeError("autocrop replica disagrees with homr.autocrop")
-    return x, y, w, h
+    """(x, y, w, h) of the crop `homr.autocrop` takes."""
+    cropped, (x, y) = autocrop_with_offset(image)
+    return x, y, cropped.shape[1], cropped.shape[0]
 
 
 class Chain:
@@ -259,6 +255,7 @@ def dedup_bars(xs: list[float], unit: float) -> list[float]:
 def main(image_path: str, out_dir: str, original: str | None = None, scale: float = 1.0, read_text: bool = True) -> None:
     ort.set_default_logger_severity(3)
     download_weights(False, False, False)
+    download_ocr_weights()   # the title reader is no longer set up on first use
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     xml_file = out / "engine.musicxml"
@@ -270,7 +267,7 @@ def main(image_path: str, out_dir: str, original: str | None = None, scale: floa
         title = title_future.result(60)
         log("Found title:", title)
         xml = generate_xml(XmlGeneratorArguments(False, None, None), voices, title)
-        xml.write(str(xml_file))
+        ET.ElementTree(xml).write(str(xml_file), encoding="unicode", xml_declaration=True)
 
         chain = Chain(image_path, gray.shape, scale)
         upload = load_upload(original) if original else None
