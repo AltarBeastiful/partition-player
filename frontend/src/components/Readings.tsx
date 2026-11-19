@@ -94,11 +94,12 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
   // Engrave one card and fit it: shrunk so the whole measure shows, never below the readable zoom;
   // a card that still does not fit is flagged wide (it takes the full row). An expanded card keeps the
   // normal zoom and scrolls sideways when it is still wider than the dialog.
-  const engrave = useMemo(() => async function (osmd: OpenSheetMusicDisplay, host: HTMLElement, card: Card, open: boolean) {
+  const engrave = useMemo(() => async function (osmd: OpenSheetMusicDisplay, host: HTMLElement, card: Card, open: boolean, stale: () => boolean = () => false) {
     const base = window.innerWidth < 600 ? 0.55 : 0.7;
     const draw = () => { osmd.render(); if (card.key) markNotes(osmd, [{ ...card.key, measure: 0 }]); };
     osmd.Zoom = base;
     await loadScore(osmd, card.xml);
+    if (stale()) return;
     draw();
     if (open) return;
     const fit = (available: number) => fitZoom({ natural: naturalWidth(osmd, host), available, zoom: osmd.Zoom, minZoom: MIN_READING_ZOOM });
@@ -134,7 +135,8 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
         });
         made.set(cards[i].id, osmd);
         try {
-          await engrave(osmd, host, cards[i], expandedNow.current.has(cards[i].id));
+          await engrave(osmd, host, cards[i], expandedNow.current.has(cards[i].id), () => cancelled);
+          if (cancelled) return;
         } catch {
           host.textContent = "This reading could not be engraved.";
         }
@@ -158,7 +160,9 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
     const host = hosts.current[i];
     const osmd = engraved.current.get(card.id);
     if (!host || !osmd) return;
-    requestAnimationFrame(() => { void engrave(osmd, host, card, open).catch(() => { /* keeps what it had */ }); });
+    requestAnimationFrame(() => {
+      if (engraved.current.get(card.id) !== osmd) return;   // the readings were regenerated meanwhile
+      void engrave(osmd, host, card, open, () => engraved.current.get(card.id) !== osmd).catch(() => { /* keeps what it had */ }); });
   };
 
   if (!key || !data) return null;
