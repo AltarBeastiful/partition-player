@@ -109,3 +109,33 @@ Tried `PP_ORT_THREADS=1` (an option of the driver, off by default): no gain. 10 
 163 s with 1 worker, 137 s with 2, 132 s with 4, 163 s with 8; results equal the default run's. The
 thread count is not the cause. Stopping here as planned: use `--jobs 2` or 4 for a gain of 15 to 20 %,
 and treat a re-score as costing about 13 s a page. Step 2 (GPU) is judged against that figure.
+
+## Step 2 result: GPU trial, 2026-11-19: no-go
+
+The Radeon 680M (gfx1035) does run homr's AMD path, and it is slower than the CPU. Dropped.
+
+- **Setup, no root needed.** A separate venv outside the repo (`~/.cache/pp-rocmtrial`, Python 3.12,
+  the backend installed editable, onnxruntime swapped for AMD's `onnxruntime_rocm 1.22.1` wheel from
+  `repo.radeon.com/rocm/manylinux/rocm-rel-7.0/`, ROCm libraries from AMD's pip index
+  `repo.amd.com/rocm/whl/gfx103X-all/`: `rocm-sdk-core` and `rocm-sdk-libraries-gfx103x-all` 7.13.0).
+  Nothing system-wide was installed and nothing in the backend's dependencies changed. Needed:
+  `HSA_OVERRIDE_GFX_VERSION=10.3.0`; `CPLUS_INCLUDE_PATH` pointing at the system libstdc++ headers
+  (MIOpen compiles kernels at run time and fails on a missing `type_traits` otherwise); a symlink
+  `librocm_smi64.so.7` to the wheel's `.so.1`; the fp16 models, which homr downloads for its GPU
+  path.
+- **homr 0.7.1 is not needed.** homr 0.7.0 already ships `onnx_providers.py` with the ROCm provider
+  and the `use_gpu_inference` switches. Our driver passes `False` to both; the trial set them true
+  (a one-line change per switch, not kept).
+- **Segmentation network alone, on the GPU:** 9 s for the first call (kernel compilation), then
+  40 ms for a batch of 2 tiles of 320 x 320. The GPU works.
+- **Whole pages, 10 lead-sheet pages (`--only de_`, `--jobs 1`, same venv for both, machine idle,
+  load average 2 at the start):** CPU 13.6 s a page (137 s), GPU 21.5 s a page twice in a row (216 s;
+  the second run, with MIOpen's cache warm, was no faster). That is **58 % slower**, not 25 % faster.
+  Each page is its own process, so every page pays the provider's start-up and the fp16 decoder's
+  per-token launches; the 3.7 s of segmentation it could save does not cover that.
+- **Scores:** `results.json` of the GPU run is identical to the CPU run's in every field but
+  `seconds`, on all 10 pages. Accuracy is not the reason for the verdict.
+- **Verdict:** gain under 25 % per page (it is a loss), so the option is not added: no `PP_GPU`
+  variable in the driver. A re-score stays at about 13 s a page, `--jobs 2` for a 15 to 20 % gain.
+  Reopen only if recognition moves to a long-lived process that keeps the GPU sessions warm, which
+  this plan refuses.
