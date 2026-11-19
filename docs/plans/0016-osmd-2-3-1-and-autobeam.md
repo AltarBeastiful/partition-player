@@ -25,6 +25,9 @@ and endings expanded as before); Anton's expanded score (145 measures) loaded an
 in jsdom (145 source measures); four benchmark pages (Anton, two lead sheets, one voice and piano page)
 engraved with 2.1.3 and 2.3.1 in headless Chrome, same layout and same line breaks.
 
+`package-lock.json` shrank because OSMD 2.3.1 dropped the optional `gl`/node-gyp chain (`npm ci`
+verified). Click-to-play, edit mode and the doubt markers were not exercised in a live app.
+
 ## Step 2: autoBeam, only for a score with no beam elements
 
 homr writes no beams (plan 0006), so every eighth note on a read page prints with a flag. OSMD's

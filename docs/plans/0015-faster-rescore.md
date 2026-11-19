@@ -107,7 +107,7 @@ rule should be judged against 13 s a page, the sequential figure.
 
 Tried `PP_ORT_THREADS=1` (an option of the driver, off by default): no gain. 10 pages, wall clock:
 163 s with 1 worker, 137 s with 2, 132 s with 4, 163 s with 8; results equal the default run's. The
-thread count is not the cause. Stopping here as planned: use `--jobs 2` or 4 for a gain of 15 to 20 %,
+thread count is not the cause. Stopping here as planned: use `--jobs 2` or 4 for a gain of 12 to 16 % (131 s to 115 s with 4 workers is 12 %; bench/RESULTS.md has the runs),
 and treat a re-score as costing about 13 s a page. Step 2 (GPU) is judged against that figure.
 
 ## Step 2 result: GPU trial, 2026-11-19: no-go
@@ -136,6 +136,6 @@ The Radeon 680M (gfx1035) does run homr's AMD path, and it is slower than the CP
 - **Scores:** `results.json` of the GPU run is identical to the CPU run's in every field but
   `seconds`, on all 10 pages. Accuracy is not the reason for the verdict.
 - **Verdict:** gain under 25 % per page (it is a loss), so the option is not added: no `PP_GPU`
-  variable in the driver. A re-score stays at about 13 s a page, `--jobs 2` for a 15 to 20 % gain.
+  variable in the driver. A re-score stays at about 13 s a page, `--jobs 2` for a 12 to 16 % gain (bench/RESULTS.md).
   Reopen only if recognition moves to a long-lived process that keeps the GPU sessions warm, which
   this plan refuses.

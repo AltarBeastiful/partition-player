@@ -252,7 +252,9 @@ commit of its own. The two are never active at once.
   force nor twice it) is checked against that guess so the two do not double up.
 - **Wrap, do not mirror.** The driver captures each staff's raw token stream by wrapping homr's own
   staff parsing, and keeps the marks and the measure counts as it does today. The copy of the
-  surrounding flow is deleted.
+  surrounding flow is deleted. One exception: `detect()` in `homr_driver.py` is still an inline copy
+  of homr's `detect_staffs_in_image`, because the barline boxes are needed, so ticket 01's "no copy"
+  holds for the page-reading flow except that function.
 - **Benchmark criteria, unchanged from plan 0013.** Over the leadsheets, voice_piano and scans sets and
   the Anton photo: false syllables do not rise, false chords do not rise, pitch+duration does not drop,
   the tally of right measure counts does not drop, and the Anton page keeps an event error rate of 0.00.
