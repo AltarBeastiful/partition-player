@@ -72,3 +72,30 @@ def test_a_token_guards_export_and_import_when_configured(settings):
     assert client.post(f"/api/jobs/{jid}/model-pass/export", json={}, headers=bad).status_code == 401
     ok = {"Authorization": "Bearer s3cret"}
     assert client.post(f"/api/jobs/{jid}/model-pass/export", json={}, headers=ok).status_code == 404  # past the door: no such job
+
+
+def test_a_second_import_will_not_replace_an_open_draft_unless_told_to(settings):
+    client, jid = start(settings, FakeModel(GOOD))
+    t = client.post(f"/api/jobs/{jid}/model-pass/export", json={"spans": [{"staff": 0, "from": 0, "to": 1, "lyrics_source": SOURCE}]}).json()["tasks"][0]
+    reply = [{"text": w, "note": i} for i, w in enumerate(["Lors-", "que", "nous", "é-", "tions"])]
+    answers = {"answers": [{"span": t["span"], "verse": t["verse"], "reply": reply}]}
+    assert client.post(f"/api/jobs/{jid}/model-pass/import", json=answers).status_code == 200
+    r = client.post(f"/api/jobs/{jid}/model-pass/import", json=answers)
+    assert r.status_code == 409 and "replace" in r.json()["error"]
+    assert client.post(f"/api/jobs/{jid}/model-pass/import", json={**answers, "replace": True}).status_code == 200
+
+
+def test_a_header_that_is_not_ascii_is_refused_not_a_server_error(settings):
+    client = TestClient(create_app(replace(settings, api_token="s3cret"), model_client=FakeModel(GOOD)))
+    client.__enter__()
+    r = client.post("/api/jobs/x/model-pass/export", json={}, headers={"Authorization": "Bearer é".encode()})
+    assert r.status_code == 401
+
+
+def test_default_doubt_spans_skip_the_staves_the_notes_pass_cannot_read(settings):
+    client, jid = start(settings, FakeModel(GOOD))
+    review = settings.jobs_dir / jid / "review.json"
+    data = json.loads(review.read_text())
+    data["doubts"] = [{"measure": 1, "part": 1, "text": "does not add up", "level": "wrong"}]
+    review.write_text(json.dumps(data))
+    assert client.post(f"/api/jobs/{jid}/model-pass/export", json={}).status_code == 422

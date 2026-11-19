@@ -2,7 +2,7 @@
 """Talk to a partition-player site for the model pass (ADR 0010, the Claude Code route). Standard library only.
 
   pp.py fetch  <score url or id> [--span STAFF:FROM:TO[:WORDSFILE]]... [--note TEXT] [-o DIR]
-  pp.py submit <score url or id> <answers.json>
+  pp.py submit <score url or id> <answers.json> [--replace]
 
 A score url looks like https://host/s/<id>. A bare id needs PP_URL (the site's address). When the site has a token,
 put it in PP_API_TOKEN. Measures are counted from 0 and inclusive. Without --span, the spans are the engine's doubts.
@@ -94,6 +94,8 @@ def fetch(args) -> int:
 def submit(args) -> int:
     base, job = parse_target(args.target)
     answers = json.loads(Path(args.answers).read_text())
+    if args.replace:
+        answers["replace"] = True
     draft = call("POST", f"{base}/api/jobs/{job}/model-pass/import", answers)
     changes, dropped = draft.get("changes", []), draft.get("dropped", [])
     print(f"draft stored: {len(changes)} change(s), {len(dropped)} answer(s) dropped")
@@ -115,6 +117,7 @@ def main(argv=None) -> int:
     s = sub.add_parser("submit")
     s.add_argument("target")
     s.add_argument("answers")
+    s.add_argument("--replace", action="store_true", help="replace the draft already open on the site (the user may be reviewing it)")
     args = p.parse_args(argv)
     return fetch(args) if args.cmd == "fetch" else submit(args)
 

@@ -115,3 +115,12 @@ The decisions below are the answers to a design interview with the maintainer; t
 - AGPL is unaffected: the providers are called over HTTP.
 - A Claude Code runner cannot be audited the way an API call can; recording the route is how that
   is kept honest.
+
+## Amendment 2026-11-19: the Claude Code route over HTTP
+
+A session on another machine uses the site itself: `POST /api/jobs/{id}/model-pass/export` returns the repair bundles as
+JSON (with no spans, the engine's doubts on the first staff, the surest wrong first, each with what the engine said),
+the session answers, and the answers go to `POST .../model-pass/import`, which refuses to replace an open draft unless
+told to. The user's own skill (`skills/partition-player-fix`) takes a score URL. A site may set `PP_API_TOKEN`; then
+these two endpoints, and only they, require it as a bearer token. Nothing else changed: the validators, the draft and
+its review are the same, and the session never edits the score.

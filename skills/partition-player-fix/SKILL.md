@@ -12,13 +12,13 @@ user reviews in the browser and applies in one step. You never edit the score yo
 
 The helper is `pp.py` next to this file (Python 3, standard library only). Below, `PP` is
 `python3 ~/.claude/skills/partition-player-fix/pp.py`. A site token, if it has one, is read from `PP_API_TOKEN`;
-a bare id needs `PP_URL` (the site's address).
+a bare id needs `PP_URL` (the site's address); prefer the full URL.
 
 ## Steps
 
 1. **Fetch.** `PP fetch <url or id>` writes `model-pass-<id>/` with `index.json`, `page.webp` (the photo of the
    page) and one `task-NN/` folder per question (`prompt.txt`, `task.json`, `score.musicxml`).
-   - With no `--span`, the questions are the engine's doubts, the surest wrong first (at most 10).
+   - With no `--span`, the questions are the engine's doubts, the surest wrong first (at most the server's cap, 10 by default; only staff 0 is asked).
    - To target something else: `--span STAFF:FROM:TO` (measures counted from 0, inclusive), repeated, with
      `--note "the second bar is a triplet"` for what the user noticed.
    - To place lyrics the user gives you: `--span STAFF:FROM:TO:WORDSFILE`. The words are authoritative; verses are
@@ -38,9 +38,18 @@ a bare id needs `PP_URL` (the site's address).
    A task you cannot answer is left out.
 4. **Submit.** `PP submit <url or id> model-pass-<id>/answers.json`. It prints how many changes were kept and why
    any answer was dropped. If answers were dropped for fixable reasons (a wrong note index, a letter off), correct
-   them and submit again: a new import replaces the stored draft.
+   them and submit again with `--replace`. Without it the site refuses (409) when a draft is already open, because the
+   user may be reviewing it: do not replace a draft you did not make in this session without asking.
 5. **Hand back.** Tell the user the link printed by `submit`: they open *Check with a model*, flip *as read* /
    *as corrected*, untick what they disagree with and apply once (one undo takes it all back).
+
+## When it fails
+
+- `401`: the site has a token. Ask the user to `export PP_API_TOKEN=...` (it is never printed or stored by the skill).
+- `404`: no such score: check the id in the URL.
+- `409 a model draft is already open`: see step 4. `409 job is ...`: the score is still being read; try later.
+- `422 the engine has no doubts`: nothing to fix automatically. Ask the user which measures look wrong and use `--span`.
+- Cannot reach the host: say so; do not guess another address.
 
 ## Rules
 

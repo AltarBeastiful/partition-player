@@ -283,7 +283,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
 
     def guard(request: Request) -> None:
         """The Claude Code route's two doors ask for PP_API_TOKEN when one is set (ADR 0010 decision 11)."""
-        if settings.api_token and not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {settings.api_token}"):
+        if settings.api_token and not hmac.compare_digest(request.headers.get("authorization", "").encode(), f"Bearer {settings.api_token}".encode()):
             raise HTTPException(401, "this endpoint needs the server's token: send it as `Authorization: Bearer <token>`")
 
     @app.post("/api/jobs/{job_id}/model-pass/export")
@@ -295,7 +295,8 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         d = store.dir(job_id)
         spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source, "note": s.note} for s in body.spans]
         if not spans:
-            spans = claude_code.doubt_spans(review.load(d)["doubts"])[:settings.model_max_spans]
+            # the notes pass reads the first staff only (ADR 0010), so a doubt on another staff is not a question to ask
+            spans = [s for s in claude_code.doubt_spans(review.load(d)["doubts"]) if s["staff"] == 0][:settings.model_max_spans]
             if not spans:
                 raise HTTPException(422, "the engine has no doubts about this score: give the spans to check")
         try:
@@ -312,6 +313,9 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         guard(request)
         done(job_id)
         d = store.dir(job_id)
+        if (d / "model-draft.json").exists() and not body.get("replace"):
+            raise HTTPException(409, "a model draft is already open for this score (the user may be reviewing it): "
+                                     "send `\"replace\": true` with the answers to replace it")
         with store.lock:
             try:
                 return claude_code.import_answers(d, body, review.load(d)["revision"])

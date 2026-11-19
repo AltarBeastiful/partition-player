@@ -60,7 +60,7 @@ The image builds for amd64 and arm64. Recognition data lives in the `pp-data` vo
 All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_ENGINE` (`homr`),
 `PP_FALLBACK_ENGINE` (`none` or `audiveris`, which also needs `PP_AUDIVERIS_BIN`),
 `PP_ANTHROPIC_API_KEY` (server key for Check with a model, off when unset; nothing is sent to a model unless a pass is asked for and confirmed), `PP_ANTHROPIC_LARGER_MODEL` (Sonnet by default: where a failed answer is retried once, and "Try harder"),
-`PP_MODEL_MAX_SPANS` (spans per model pass on the server key, default 10),
+`PP_MODEL_MAX_SPANS` (spans per model pass on the server key, default 10), `PP_API_TOKEN` (when set, the export and import of the Claude Code route ask for it as a bearer token; nothing else does),
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
@@ -218,7 +218,7 @@ first; or spans and a note you give it), the session answers them, and the answe
 (`POST .../model-pass/import`). The site validates them and stores a draft; you open the score, flip *as read* /
 *as corrected* in **Check with a model**, untick what you disagree with and apply once. The session never edits
 the score. A site that sets `PP_API_TOKEN` asks for it, as a bearer token, on these two endpoints only. What leaves
-the site is the score text and the page photo, to your own Claude Code session.
+the site is the score text and the page photo, to your own Claude Code session (the photo is served to anyone who has the score's id, token or not). An import refuses to replace a draft that is already open unless it says `"replace": true`.
 
 ## MusicXML in
 
