@@ -11,8 +11,8 @@ add up, the measure count is unchanged, nothing outside the span moves). What su
 user reviews in the browser and applies in one step. You never edit the score yourself.
 
 The helper is `pp.py` next to this file (Python 3, standard library only). Below, `PP` is
-`python3 ~/.claude/skills/partition-player-fix/pp.py`. A site token, if it has one, is read from `PP_API_TOKEN`;
-a bare id needs `PP_URL` (the site's address); prefer the full URL.
+`python3 ~/.claude/skills/partition-player-fix/pp.py`. A site token, if it has one, is read from `PP_API_TOKEN` or `~/.config/partition-player/token`;
+a bare id needs `PP_URL` or `~/.config/partition-player/url` (the site's address); prefer the full URL.
 
 ## Steps
 
@@ -45,7 +45,7 @@ a bare id needs `PP_URL` (the site's address); prefer the full URL.
 
 ## When it fails
 
-- `401`: the site has a token. Ask the user to `export PP_API_TOKEN=...` (it is never printed or stored by the skill).
+- `401`: the site has a token. Ask the user to set the token (`PP_API_TOKEN`, or the file `~/.config/partition-player/token`); the skill never prints it.
 - `404`: no such score: check the id in the URL.
 - `409 a model draft is already open`: see step 4. `409 job is ...`: the score is still being read; try later.
 - `422 the engine has no doubts`: nothing to fix automatically. Ask the user which measures look wrong and use `--span`.

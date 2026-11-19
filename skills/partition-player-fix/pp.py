@@ -5,7 +5,7 @@
   pp.py submit <score url or id> <answers.json> [--replace]
 
 A score url looks like https://host/s/<id>. A bare id needs PP_URL (the site's address). When the site has a token,
-put it in PP_API_TOKEN. Measures are counted from 0 and inclusive. Without --span, the spans are the engine's doubts.
+put it in PP_API_TOKEN or in ~/.config/partition-player/token (and the address in .../url). Measures are counted from 0 and inclusive. Without --span, the spans are the engine's doubts.
 """
 from __future__ import annotations
 
@@ -19,9 +19,20 @@ import urllib.request
 from pathlib import Path
 
 
+CONFIG = Path.home() / ".config" / "partition-player"
+
+
+def saved(name: str) -> str:
+    """A value kept in ~/.config/partition-player/<name> (token, url), so no variable has to be exported."""
+    try:
+        return (CONFIG / name).read_text().strip()
+    except OSError:
+        return ""
+
+
 def parse_target(target: str, env: dict | None = None) -> tuple[str, str]:
     """(site base url, job id) from a score url, or from a bare id and PP_URL."""
-    env = os.environ if env is None else env
+    env = {"PP_URL": saved("url"), **os.environ} if env is None else env
     m = re.match(r"^(https?://[^/]+)/s/([A-Za-z0-9]+)/?(?:[?#].*)?$", target.strip())
     if m:
         return m.group(1), m.group(2)
@@ -32,8 +43,8 @@ def parse_target(target: str, env: dict | None = None) -> tuple[str, str]:
 
 def call(method: str, url: str, body: dict | None = None, binary: bool = False):
     headers = {"Content-Type": "application/json", "User-Agent": "partition-player-skill"}
-    if os.environ.get("PP_API_TOKEN"):
-        headers["Authorization"] = f"Bearer {os.environ['PP_API_TOKEN']}"
+    if token := os.environ.get("PP_API_TOKEN") or saved("token"):
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, method=method, headers=headers, data=json.dumps(body).encode() if body is not None else None)
     try:
         with urllib.request.urlopen(req, timeout=120) as r:

@@ -18,6 +18,11 @@ services:
       PP_JOB_TTL_DAYS: "7"      # failed jobs (input photo + logs) are dropped after a week
       PP_MAX_SCORES: "500"      # finished scores are ~50 KB each, so this is ~25 MB at most
       PP_MAX_UPLOAD_MB: "25"
+    # Secrets live outside the synced directory (deploy.sh rsyncs with --delete): ~/partition-player.env on the host,
+    # e.g. PP_API_TOKEN=... (the bearer token of the Claude Code route's export and import). Optional.
+    env_file:
+      - path: ${HOME}/partition-player.env
+        required: false
     volumes:
       - data:/data
     # homr peaks around 1.5 GB per page on the benchmark; one job runs at a time.
