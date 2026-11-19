@@ -79,3 +79,53 @@ def test_driver_caps_onnxruntime_threads_only_when_asked(monkeypatch):
     d.cap_ort_threads(FakeOrt)
     FakeOrt.InferenceSession("m")
     assert seen[-1].intra_op_num_threads == 1
+
+
+def _fake_ort():
+    seen = []
+
+    class Opts:
+        def __init__(self):
+            self.intra_op_num_threads = 0
+            self.inter_op_num_threads = 0
+
+    class Ort:
+        SessionOptions = Opts
+
+        @staticmethod
+        def InferenceSession(path, sess_options=None, **kw):
+            seen.append(sess_options)
+
+    return Ort, seen, Opts
+
+
+def test_driver_caps_sessions_that_bring_their_own_options_unless_they_chose_a_count(monkeypatch):
+    from partition_player.pipeline.engines import homr_driver as d
+    ort, seen, Opts = _fake_ort()
+    monkeypatch.setenv("PP_ORT_THREADS", "2")
+    d.cap_ort_threads(ort)
+    ort.InferenceSession("m", sess_options=Opts())
+    assert seen[-1].intra_op_num_threads == 2
+    chosen = Opts()
+    chosen.intra_op_num_threads = 5
+    ort.InferenceSession("m", sess_options=chosen)
+    assert seen[-1].intra_op_num_threads == 5
+
+
+def test_a_bad_pp_ort_threads_says_so_when_a_session_is_made(monkeypatch):
+    import pytest
+    from partition_player.pipeline.engines import homr_driver as d
+    ort, _, _ = _fake_ort()
+    monkeypatch.setenv("PP_ORT_THREADS", "four")
+    d.cap_ort_threads(ort)  # importing the driver must not fail on it
+    with pytest.raises(ValueError, match="PP_ORT_THREADS"):
+        ort.InferenceSession("m")
+
+
+def test_the_staff_count_has_to_be_a_whole_number_of_voices_per_system():
+    import pytest
+    from partition_player.pipeline.engines.homr_driver import check_staff_count
+    check_staff_count(6, 3)
+    for staffs, systems in ((7, 3), (4, 0)):
+        with pytest.raises(RuntimeError, match="multiple of the number of systems"):
+            check_staff_count(staffs, systems)

@@ -57,18 +57,34 @@ LYRICS_BOTTOM_UNITS = 12.0  # ... to this far below it, or one interline above t
 LYRICS_GAP_UNITS = 1.0
 
 
+def ort_thread_count() -> int | None:
+    """PP_ORT_THREADS as a positive int, None when unset; anything else is a clear error."""
+    raw = os.environ.get("PP_ORT_THREADS")
+    if not raw:
+        return None
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 0
+    if n < 1:
+        raise ValueError(f"PP_ORT_THREADS must be a positive whole number of threads, got {raw!r}")
+    return n
+
+
 def cap_ort_threads(ort_module=ort) -> None:
     """With PP_ORT_THREADS=n set (the benchmark's --jobs does), every onnxruntime session made from
-    here on, homr's and ours, gets n intra-op threads; unset, sessions are left as they are."""
-    n = os.environ.get("PP_ORT_THREADS")
-    if not n:
+    here on, homr's and ours, gets n intra-op threads unless its caller already chose a number;
+    unset, sessions are left as they are. The value is checked when a session is made."""
+    if not os.environ.get("PP_ORT_THREADS"):
         return
     make = ort_module.InferenceSession
 
     def capped(path, sess_options=None, *a, **kw):
+        n = ort_thread_count()
         if sess_options is None:
             sess_options = ort_module.SessionOptions()
-            sess_options.intra_op_num_threads = int(n)
+        if n and not sess_options.intra_op_num_threads:
+            sess_options.intra_op_num_threads = n
             sess_options.inter_op_num_threads = 1
         return make(path, sess_options, *a, **kw)
 
@@ -146,6 +162,7 @@ def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[i
         staff_parsing.StaffRegions = original_regions
 
     systems = len(groups)
+    check_staff_count(len(raw), systems)
     measures_per_system: list[int] = []
     marks: dict[tuple[int, int], int] = {}   # (system, bar within it) -> beat type
     for index, result in sorted(raw.items()):
@@ -167,6 +184,14 @@ def parse(debug, multi_staffs, image) -> tuple[list[list[EncodedSymbol]], list[i
     times = [{"measure": sum(measures_per_system[:system]) + bar, "beat_type": beat_type}
              for (system, bar), beat_type in sorted(marks.items())]
     return voices, measures_per_system, groups, times
+
+
+def check_staff_count(staffs: int, systems: int) -> None:
+    """The indexing in `parse` (voice, system = divmod(index, systems)) holds only when every voice
+    has one captured staff per system; say so plainly when homr's behaviour changes under us."""
+    if systems < 1 or staffs % systems:
+        raise RuntimeError(f"homr parsed {staffs} staffs for {systems} systems: the staff count must be a "
+                           f"multiple of the number of systems, so homr's staff grouping has changed")
 
 
 def is_barline(rhythm: str) -> bool:
