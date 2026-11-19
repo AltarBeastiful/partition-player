@@ -45,6 +45,21 @@ describe("the score's own tempo", () => {
   it("falls back to a metronome mark", () => {
     expect(markedTempo(score(`<direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>76</per-minute></metronome></direction-type></direction>`))).toBe(76);
   });
+  const mm = (unit: string, dot: boolean, pm: number, sound = "") =>
+    score(`<direction><direction-type><metronome><beat-unit>${unit}</beat-unit>${dot ? "<beat-unit-dot/>" : ""}<per-minute>${pm}</per-minute></metronome></direction-type>${sound}</direction>`);
+  it("scales a metronome mark to quarters per minute by its beat unit", () => {
+    expect(markedTempo(mm("half", false, 60))).toBe(120);
+    expect(markedTempo(mm("quarter", true, 60))).toBe(90);
+    expect(markedTempo(mm("eighth", false, 120))).toBe(60);
+    expect(markedTempo(mm("eighth", true, 120))).toBe(90);
+  });
+  it("prefers the sound tempo of the same direction, already in quarters", () => {
+    expect(markedTempo(mm("half", false, 60, `<sound tempo="118"/>`))).toBe(118);
+  });
+  it("stays inside what the server accepts, 40 to 400", () => {
+    expect(defaultTempo(score(`<direction><sound tempo="20"/></direction>`))).toBe(40);
+    expect(defaultTempo(score(`<direction><sound tempo="900"/></direction>`))).toBe(400);
+  });
   it("takes the first marking of the score", () => {
     expect(markedTempo(score(`<direction><sound tempo="60"/></direction><direction><sound tempo="140"/></direction>`))).toBe(60);
   });

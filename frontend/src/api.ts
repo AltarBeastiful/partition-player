@@ -135,9 +135,9 @@ export async function saveScore(id: string, body: { musicxml: string; checked: n
 }
 
 /** The tempo this score is played at, remembered on the server (null forgets it). Not an edit: no revision moves. */
-export async function saveTempo(id: string, tempo: number | null): Promise<void> {
+export async function saveTempo(id: string, tempo: number | null, keepalive = false): Promise<void> {
   await check<{ tempo: number | null }>(await fetch(`/api/jobs/${id}/playback`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tempo }),
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tempo }), keepalive,
   }));
 }
 

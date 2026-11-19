@@ -55,6 +55,9 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
   const [defaultBpm, setDefaultBpm] = useState(90);        // the score's own marking, or 90
   const [controlsRow, setControlsRow] = useState<HTMLElement | null>(null);  // watched by the transport bar
   const tempoSave = useRef<number | undefined>(undefined);
+  const tempoPending = useRef<{ value: number | null } | null>(null);  // a change not yet confirmed saved
+  const tempoTouched = useRef(false);                                   // the user has set a tempo on this page
+  const [tempoNote, setTempoNote] = useState<string | null>(null);
   const [transpose, setTranspose] = useState(0);
   const [chordCount, setChordCount] = useState(0);
   const [melodyOn, setMelodyOn] = useState(true);
@@ -122,7 +125,8 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
         osmdRef.current = osmd;
         const own = defaultTempo(s.xml);
         setDefaultBpm(own);
-        setBpm(review.tempo != null ? clampTempo(review.tempo, tempoRange(own)) : own);
+        // A reload (a new version of the score) keeps the tempo the user set; the server's value only seeds the first load.
+        if (!tempoTouched.current) setBpm(review.tempo != null ? clampTempo(review.tempo, tempoRange(own)) : own);
         const player = new Player(osmd, setState);
         player.onPass = setCurrentPass;
         // A sample set that will not come: the line plays the piano and the page says so once.
@@ -312,13 +316,29 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
   useEffect(() => { playerRef.current?.setBpm(bpm); }, [bpm]);
 
   // A tempo change is remembered on the server a moment after the last one (reset forgets it). It is not an
-  // edit of the score, so it never touches the session, the revision or the saved state.
-  const changeTempo = useCallback((next: number | null) => {
-    setBpm(next ?? defaultBpm);
+  // edit of the score, so it never touches the session, the revision or the saved state. A failed save is
+  // said on the page and stays pending, so the next change or leaving the page sends it again.
+  const sendTempo = useCallback((id: string, keepalive = false) => {
     window.clearTimeout(tempoSave.current);
-    tempoSave.current = window.setTimeout(() => { saveTempo(job.id, next).catch(() => {}); }, 400);
-  }, [defaultBpm, job.id]);
-  useEffect(() => () => window.clearTimeout(tempoSave.current), []);
+    const p = tempoPending.current;
+    if (!p) return;
+    saveTempo(id, p.value, keepalive).then(
+      () => { if (tempoPending.current === p) { tempoPending.current = null; setTempoNote(null); } },
+      () => { if (tempoPending.current === p) setTempoNote("The tempo could not be saved; it will be tried again at the next change."); },
+    );
+  }, []);
+  const changeTempo = useCallback((next: number | null) => {
+    tempoTouched.current = true;
+    setBpm(next ?? defaultBpm);
+    tempoPending.current = { value: next };
+    window.clearTimeout(tempoSave.current);
+    tempoSave.current = window.setTimeout(() => sendTempo(job.id), 400);
+  }, [defaultBpm, job.id, sendTempo]);
+  // Leaving the page (or the score) sends what is still waiting instead of dropping it, and the next score starts clean.
+  useEffect(() => {
+    const id = job.id;
+    return () => { sendTempo(id, true); tempoPending.current = null; tempoTouched.current = false; setTempoNote(null); };
+  }, [job.id, sendTempo]);
   useEffect(() => { playerRef.current?.setTranspose(transpose); }, [transpose]);
   useEffect(() => { playerRef.current?.setTrack("melody", melodyOn); }, [melodyOn]);
   useEffect(() => { playerRef.current?.setTrack("accompaniment", accompOn); }, [accompOn]);
@@ -490,6 +510,7 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
         <button onClick={restart} disabled={loading || !!error} title="Back to the beginning (Home): keeps playing from there, or stops at the start">⏮ Start</button>
         <TempoControl bpm={bpm} range={tempoRange(defaultBpm)} differs={bpm !== defaultBpm} disabled={loading}
           onChange={changeTempo} onReset={() => changeTempo(null)} />
+        {tempoNote && <p className="tempo-note" role="status">{tempoNote}</p>}
         <label className="transpose" title="Shift every note by this many semitones during playback; the sheet stays as printed">
           Transpose
           <button id="transpose-down" onClick={() => setTranspose((t) => Math.max(-12, t - 1))} disabled={loading} aria-label="One semitone down">−</button>
