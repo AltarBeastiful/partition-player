@@ -12,7 +12,7 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python-headless>=4.10",
     "rapidocr>=3.9,<3.10",  # word boxes for the lyrics stage; pinned, they have regressed before (3.10.0: ocr.text_rec is None, breaks the chord reader)
-    "homr==0.7.0",  # 0.7.1 was tried twice and fails the benchmark gate (plan 0014): driver patch in a8d9df3
+    "homr[cpu] @ git+https://github.com/liebharc/homr.git@83130ba7a190aa83c3ca32b6638199652eb0d778",  # TRIAL (plan 0014 step 2): homr main, pinned by commit; unreleased, after 0.7.1
     "httpx>=0.27",  # the optional lyrics polish (ADR 0004)
     "pymupdf>=1.24",  # PDF input (ADR 0009): pages, text objects and vector marks. AGPL, as this is.
 ]
@@ -26,6 +26,9 @@ partition-player = "partition_player.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["partition_player"]
