@@ -42,6 +42,18 @@ button:focus-visible, input:focus-visible, label:focus-within { outline: 2px sol
 .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .controls label { display: flex; gap: 8px; align-items: center; }
 .controls input[type="range"] { width: 140px; }
+.tempo-control { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tempo-control .step { min-width: 34px; padding: 6px 9px; line-height: 1.2; touch-action: none; user-select: none; }
+.tempo-control .tempo-value { width: 5ch; text-align: center; font: inherit; font-variant-numeric: tabular-nums; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.tempo-control .tempo-unit { color: var(--muted); font-size: 14px; }
+.tempo-control .tempo-reset { padding: 4px 8px; font-size: 13px; }
+/* The transport bar: Play/Pause, Stop, Start and the tempo, only while the main controls are scrolled away. Top on
+   desktop, where the editor's toolbar holds the bottom; on a phone it sits at the bottom, above that toolbar. */
+.transport-bar { position: fixed; z-index: 5; left: 0; right: 0; top: 0; display: flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
+.transport-bar .transport-tempo { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) {
+  .transport-bar { top: auto; bottom: var(--toolbar-h, 0px); border-bottom: 0; border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08); }
+}
 .sheet { background: #fff; border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; padding: 8px; }
 .sheet svg { max-width: 100%; height: auto; }
 .stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }

@@ -1,7 +1,7 @@
 """The editor's server side (ADR 0005): the review record, saving an edited document, reverting.
 
 review.json: {"doubts": [...], "checked": [measure indices], "revision": n, "form": null | {...},
-"lines": [...], "unders": [...], "model_readings": [...]}. The
+"lines": [...], "unders": [...], "tempo": null | bpm, "model_readings": [...]}. The
 form (plan 0004) is how the page is played: sections over measure ranges and passes through them,
 null when the automatic form (the repeat signs and the verses) is what plays. A pass may carry
 `times` and a section a `fromOnset` / `toOnset` beat inside its first and last measure (plan 0007);
@@ -41,14 +41,29 @@ class StaleRevision(ValueError):
 def load(d: Path) -> dict:
     p = d / "review.json"
     if not p.exists():  # a score recognized before the editor existed
-        return {"doubts": [], "checked": [], "revision": 0, "form": None, "lines": [], "unders": [], "model_readings": []}
+        return {"doubts": [], "checked": [], "revision": 0, "form": None, "lines": [], "unders": [], "model_readings": [], "tempo": None}
     data = json.loads(p.read_text())
     # Every key is named here or it is dropped at the next save: that is how the form's times and
     # onsets were silently stripped once (plan 0008), and why `lines` and `unders` are listed the
     # same day they are first written.
     return {"doubts": data.get("doubts", []), "checked": data.get("checked", []), "revision": int(data.get("revision", 0)),
             "form": data.get("form"), "lines": data.get("lines", []), "unders": data.get("unders", []),
+            "tempo": data.get("tempo"),
             "model_readings": data.get("model_readings", [])}  # ADR 0010: what the model proposed, kept with the job
+
+
+MIN_TEMPO, MAX_TEMPO = 40, 400  # bpm. The page's slider is 40 to 180 and widens to the score's own marking; 400 is past any real one
+
+
+def set_tempo(d: Path, tempo: object) -> None:
+    """The tempo the player was last left at (player controls): playback only, so the revision does not
+    move and the score is not edited. None forgets it, and the page falls back to the score's own marking.
+    Raises InvalidDocument for anything but a whole number of bpm in range. Caller holds the store lock."""
+    if tempo is not None and (type(tempo) is not int or not MIN_TEMPO <= tempo <= MAX_TEMPO):
+        raise InvalidDocument(f"the tempo must be a whole number of beats per minute from {MIN_TEMPO} to {MAX_TEMPO}")
+    current = load(d)
+    current["tempo"] = tempo
+    (d / "review.json").write_text(json.dumps(current, indent=1))
 
 
 MAX_ONSET = 16.0   # whole notes from a measure start: far past any real measure, the browser clamps to its length
@@ -278,6 +293,7 @@ def save(store: JobStore, job: Job, musicxml: str, checked: list[int], revision:
                   "checked": sorted(set(int(c) for c in checked)), "revision": current["revision"] + 1, "form": form,
                   "lines": voicings if lines is not None else current["lines"],
                   "unders": going_under if unders is not None else current["unders"],
+                  "tempo": current["tempo"],
                   "model_readings": current["model_readings"]}
         (d / "review.json").write_text(json.dumps(record, indent=1))
         placed = lyrics_inject.read_placements(score)

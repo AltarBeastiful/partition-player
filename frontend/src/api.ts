@@ -115,7 +115,7 @@ export type { Voicing } from "./voices";
  * `unders` the staves that go on playing underneath the form. Both are playback only and both are
  * empty for every score made before ADR 0008.
  */
-export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[]; model_readings?: AnyReading[] }
+export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[]; tempo?: number | null; model_readings?: AnyReading[] }
 export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
 
 export async function getReview(id: string): Promise<ReviewState> {
@@ -131,6 +131,13 @@ export async function getScoreText(id: string, version = 0): Promise<string> {
 export async function saveScore(id: string, body: { musicxml: string; checked: number[]; revision: number; doubts: Doubt[]; form: Form | null; lines?: Voicing[]; unders?: Under[] }): Promise<SaveResult> {
   return check<SaveResult>(await fetch(`/api/jobs/${id}/score`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }));
+}
+
+/** The tempo this score is played at, remembered on the server (null forgets it). Not an edit: no revision moves. */
+export async function saveTempo(id: string, tempo: number | null): Promise<void> {
+  await check<{ tempo: number | null }>(await fetch(`/api/jobs/${id}/playback`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tempo }),
   }));
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { loadScore } from "../score/beaming";
-import { createJob, getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
+import { createJob, getReview, getScoreText, saveTempo, scoreUrl, type Form, type Job, type Stats } from "../api";
 import { defaultPasses, expandForm, formFromPasses, passNames, resolveUnders, samePasses, versesByMeasure, type Pass } from "../form";
 import { clearVerses, dimVerses } from "../verses";
 import { commands, shortcut } from "../editor/commands";
@@ -10,6 +10,9 @@ import { clearSections, drawOverlay, drawSections, hitTest, keepOverlay, markNot
 import { markKeys } from "../score/draft";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
+import { clampTempo, defaultTempo, tempoRange } from "../tempo";
+import { TempoControl } from "./TempoControl";
+import { TransportBar } from "./TransportBar";
 import type { Line } from "../lines";
 import { LinesPanel } from "./Lines";
 import { expandScore, slicesOf } from "../score/expand";
@@ -49,6 +52,9 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState>("stopped");
   const [bpm, setBpm] = useState(90);
+  const [defaultBpm, setDefaultBpm] = useState(90);        // the score's own marking, or 90
+  const [controlsRow, setControlsRow] = useState<HTMLElement | null>(null);  // watched by the transport bar
+  const tempoSave = useRef<number | undefined>(undefined);
   const [transpose, setTranspose] = useState(0);
   const [chordCount, setChordCount] = useState(0);
   const [melodyOn, setMelodyOn] = useState(true);
@@ -114,6 +120,9 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
         osmd.render();
         osmd.cursor.show();
         osmdRef.current = osmd;
+        const own = defaultTempo(s.xml);
+        setDefaultBpm(own);
+        setBpm(review.tempo != null ? clampTempo(review.tempo, tempoRange(own)) : own);
         const player = new Player(osmd, setState);
         player.onPass = setCurrentPass;
         // A sample set that will not come: the line plays the piano and the page says so once.
@@ -301,6 +310,15 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
   }, [bpm]);
 
   useEffect(() => { playerRef.current?.setBpm(bpm); }, [bpm]);
+
+  // A tempo change is remembered on the server a moment after the last one (reset forgets it). It is not an
+  // edit of the score, so it never touches the session, the revision or the saved state.
+  const changeTempo = useCallback((next: number | null) => {
+    setBpm(next ?? defaultBpm);
+    window.clearTimeout(tempoSave.current);
+    tempoSave.current = window.setTimeout(() => { saveTempo(job.id, next).catch(() => {}); }, 400);
+  }, [defaultBpm, job.id]);
+  useEffect(() => () => window.clearTimeout(tempoSave.current), []);
   useEffect(() => { playerRef.current?.setTranspose(transpose); }, [transpose]);
   useEffect(() => { playerRef.current?.setTrack("melody", melodyOn); }, [melodyOn]);
   useEffect(() => { playerRef.current?.setTrack("accompaniment", accompOn); }, [accompOn]);
@@ -462,16 +480,16 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
 
   return (
     <section className={"card" + (editing ? " editing" : "")}>
-      <div className="controls">
+      <TransportBar watch={controlsRow} state={state} bpm={bpm} loading={loading} error={!!error} preparing={preparing}
+        onToggle={toggle} onStop={stop} onRestart={restart} />
+      <div className="controls" ref={setControlsRow}>
         <button className="primary" onClick={toggle} disabled={loading || !!error || preparing}>
           {state === "playing" ? "Pause" : preparing ? "Loading sounds…" : "Play"}
         </button>
         <button onClick={stop} disabled={loading || state === "stopped"}>Stop</button>
         <button onClick={restart} disabled={loading || !!error} title="Back to the beginning (Home): keeps playing from there, or stops at the start">⏮ Start</button>
-        <label>
-          Tempo <input id="tempo" type="range" min={40} max={180} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} />
-          <span style={{ fontVariantNumeric: "tabular-nums" }}>{bpm} bpm</span>
-        </label>
+        <TempoControl bpm={bpm} range={tempoRange(defaultBpm)} differs={bpm !== defaultBpm} disabled={loading}
+          onChange={changeTempo} onReset={() => changeTempo(null)} />
         <label className="transpose" title="Shift every note by this many semitones during playback; the sheet stays as printed">
           Transpose
           <button id="transpose-down" onClick={() => setTranspose((t) => Math.max(-12, t - 1))} disabled={loading} aria-label="One semitone down">−</button>
