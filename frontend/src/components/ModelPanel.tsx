@@ -74,10 +74,12 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
   /** The words of the staff, typed or as a picture: the model places them under the notes. */
   async function start() {
     const range = { staff, from: from - 1, to: to - 1 };
+    const flag = session.flagged.find((f) => f.staff === range.staff && f.from === range.from && f.to === range.to);
+    const said = flag?.note.trim() ? { note: flag.note.trim() } : {};   // a flagged range with words: the note goes along (ticket 11)
     try {
       await ask([picture
-        ? { ...range, lyrics_picture: await pictureToBase64(picture), needs_image: true }
-        : { ...range, lyrics_source: text, needs_image: false }]);
+        ? { ...range, ...said, lyrics_picture: await pictureToBase64(picture), needs_image: true }
+        : { ...range, ...said, lyrics_source: text, needs_image: false }]);
     } catch (e) { setError((e as Error).message); }
   }
 
@@ -149,6 +151,29 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
               </button>
             </div>
           )}
+          {session.flagged.length > 0 && (
+            <div className="flagged-spans">
+              <span className="muted">You flagged as wrong; say what you see, if you like:</span>
+              {session.flagged.map((f, i) => (
+                <div className="controls" key={`${f.staff}:${f.from}`}>
+                  <strong>{staves > 1 ? `Staff ${f.staff + 1}, ` : ""}measure{f.from === f.to ? "" : "s"} {f.from + 1}{f.from === f.to ? "" : `-${f.to + 1}`}</strong>
+                  <input type="text" maxLength={300} value={f.note} placeholder="A note to the model, e.g. the second bar is a triplet"
+                    aria-label={`Note for measures ${f.from + 1} to ${f.to + 1}`} onChange={(e) => session.setFlagNote(i, e.target.value)} />
+                  <button className="quiet" onClick={() => session.unflag(i)}>Remove</button>
+                </div>
+              ))}
+              <button onClick={() => void ask(session.flaggedSpans())} disabled={running || !!estimate}
+                title="The model re-reads the notes and chords of the flagged measures; you look at the draft before anything is kept">
+                Check the {session.flagged.length} flagged
+              </button>
+            </div>
+          )}
+          <div className="controls">
+            <button className="quiet" onClick={() => session.flagSelected()} disabled={!session.selected}
+              title="Flag the measure selected on the sheet as wrong">This looks wrong: the selected measure</button>
+            <button className="quiet" onClick={() => session.flag({ staff, from: from - 1, to: to - 1 })}
+              title="Flag the measures below as wrong">This looks wrong: measures {from}-{to}</button>
+          </div>
           <div className="controls">
             {staves > 1 && (
               <label>Staff <select value={staff} onChange={(e) => setStaff(Number(e.target.value))}>

@@ -308,10 +308,16 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         d = store.dir(job_id)
         score = d / "score.musicxml"
         now = datetime.now(timezone.utc).isoformat()
+        asked = {(sp["staff"], sp["from"], sp["to"]): sp.get("note", "") for sp in draft["spans"]}
+
+        def with_note(span: dict) -> dict:  # the user's note travels with the span into the stored readings (ticket 11)
+            note = asked.get((span["staff"], span["from"], span["to"]), "")
+            return {**span, "note": note} if note else span
+
         def reading(c: dict, status: str) -> dict:
             where = {"measure": c["measure"], "onset": c["onset"], "verse": c["verse"]} if c.get("kind", "lyric") == "lyric" else \
                 {"kind": c["kind"], "measure": c["measure"], "ops": c["ops"]}
-            return {"id": f"{draft['id']}-{c['id']}", "draft": draft["id"], "span": c["span"], **where, "old": c["old"], "new": c["new"],
+            return {"id": f"{draft['id']}-{c['id']}", "draft": draft["id"], "span": with_note(c["span"]), **where, "old": c["old"], "new": c["new"],
                     "route": draft["route"]["kind"], "model": draft["route"]["model"], "time": now, "status": status}
 
         with store.lock:

@@ -189,6 +189,48 @@ export class EditorSession {
     return [...said].slice(0, 6).join("; ");
   }
 
+  // ---- "this looks wrong" (ticket 11) --------------------------------------------------------------
+
+  /** Measure ranges the user flagged as wrong, with a note to the model; they go through the same pass as the doubts. */
+  flagged: { staff: number; from: number; to: number; note: string }[] = [];
+
+  /** Flag a range; one that touches or overlaps a flag of the same staff joins it (notes are kept, joined with a space). */
+  flag(span: { staff: number; from: number; to: number }, note = ""): void {
+    let merged = { ...span, note };
+    const rest = this.flagged.filter((f) => {
+      if (f.staff !== span.staff || f.to + 1 < merged.from || f.from > merged.to + 1) return true;
+      merged = { staff: f.staff, from: Math.min(f.from, merged.from), to: Math.max(f.to, merged.to), note: [f.note, merged.note].filter(Boolean).join(" ") };
+      return false;
+    });
+    this.flagged = [...rest, merged].sort((a, b) => a.staff - b.staff || a.from - b.from);
+    this.emit();
+  }
+
+  /** Flag the measure under the selection (the same selection the editing commands use). */
+  flagSelected(): void {
+    if (!this.selected) return;
+    this.flag({ staff: 0, from: this.selected.measure, to: this.selected.measure });
+  }
+
+  setFlagNote(index: number, note: string): void {
+    if (!this.flagged[index]) return;
+    this.flagged = this.flagged.map((f, i) => (i === index ? { ...f, note } : f));
+    this.emit();
+  }
+
+  unflag(index: number): void {
+    this.flagged = this.flagged.filter((_, i) => i !== index);
+    this.emit();
+  }
+
+  /** The flagged ranges as spans of a pass: no words, a note made of the user's sentence and then what the engine doubted there. */
+  flaggedSpans(): { staff: number; from: number; to: number; needs_image: false; note: string }[] {
+    return this.flagged.map((f) => ({
+      staff: f.staff, from: f.from, to: f.to, needs_image: false as const,
+      note: [f.note.trim(), this.doubtNote(f)].filter(Boolean).join(" | ").slice(0, 500),
+    }));
+  }
+
   /** The places still to look at: not checked, or the live check still complains. */
   open(): Place[] {
     return this.places().filter((p) => !p.info && (!p.checked || p.live));
