@@ -15,13 +15,16 @@ export const visitorKey = { get: () => key, set: (k: string) => { key = k.trim()
 export class ModelFlow {
   estimate: ModelEstimate | null = null;
   error: string | null = null;
+  /** The route the visitor picked (a preset name); empty is the server's default. */
+  routeId = "";
   private spans: ModelPassRequest["spans"] = [];
 
   constructor(private readonly jobId: string) {}
 
   private request(): ModelPassRequest {
     const k = visitorKey.get();
-    return k ? { spans: this.spans, api_key: k } : { spans: this.spans };
+    const route = this.routeId ? { route: this.routeId } : {};
+    return k ? { spans: this.spans, api_key: k, ...route } : { spans: this.spans, ...route };
   }
 
   async ask(spans: ModelPassRequest["spans"]): Promise<void> {

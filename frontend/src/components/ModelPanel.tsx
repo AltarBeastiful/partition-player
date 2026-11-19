@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { getModelDraft } from "../api";
+import { getModelDraft, getModelRoutes } from "../api";
 import type { ModelEstimate } from "../api";
+import { initialRoute, spanRefusal, type ModelRoute } from "../modelRoute";
 import { changeLine } from "../score/draft";
 import type { EditorSession } from "../editor/session";
 import { MODEL_NOTICE, ModelFlow, visitorKey } from "../editor/modelFlow";
@@ -23,11 +24,20 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState<number | null>(null);
+  const [routes, setRoutes] = useState<ModelRoute[]>([]);
+  const [routeId, setRouteId] = useState("");
+  const route = routes.find((r) => r.id === routeId);
   const [estimate, setEstimate] = useState<ModelEstimate | null>(null);
   const [key, setKey] = useState(visitorKey.get());
   const flow = useRef<ModelFlow | null>(null);
   if (!flow.current) flow.current = new ModelFlow(session.jobId);
   const draft = session.draft;
+
+  useEffect(() => {
+    let live = true;
+    getModelRoutes().then((rs) => { if (live) { setRoutes(rs); setRouteId(initialRoute(rs)?.id ?? ""); } }).catch(() => { /* the default route is used */ });
+    return () => { live = false; };
+  }, []);
 
   // A draft left from an earlier visit comes back in the sheet.
   useEffect(() => {
@@ -43,7 +53,11 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
     try {
       if (session.dirty) await session.save(); // the pass reads the score as the server holds it
       visitorKey.set(key);
-      await flow.current!.ask([{ staff, from: from - 1, to: to - 1, lyrics_source: text }]);
+      const span = { staff, from: from - 1, to: to - 1, lyrics_source: text, needs_image: false };
+      const refused = spanRefusal(route, span);
+      if (refused) { setError(refused); return; }
+      flow.current!.routeId = routeId;
+      await flow.current!.ask([span]);
       setEstimate(flow.current!.estimate); setError(flow.current!.error);
     } catch (e) { setError((e as Error).message); } finally { setRunning(false); }
   }
@@ -75,6 +89,14 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
       </div>
       {open && !draft && (
         <>
+          {routes.length > 1 && (
+            <div className="controls">
+              <label>Model <select value={routeId} onChange={(e) => setRouteId(e.target.value)}>
+                {routes.map((r) => <option key={r.id} value={r.id}>{r.label} ({r.model})</option>)}
+              </select></label>
+              {route && !route.vision && <span className="muted">No image reading on this route: typed words only.</span>}
+            </div>
+          )}
           <div className="controls">
             {staves > 1 && (
               <label>Staff <select value={staff} onChange={(e) => setStaff(Number(e.target.value))}>

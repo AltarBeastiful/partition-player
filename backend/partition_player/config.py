@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .model.route import Route
+from .model.route import DEEPSEEK_MODEL, DEEPSEEK_URL, Route
 
 
 def _env_int(name: str, default: int) -> int:
@@ -25,13 +25,25 @@ class Settings:
     max_side_px: int = field(default_factory=lambda: _env_int("PP_MAX_SIDE_PX", 2500))
     frontend_dir: Path = field(default_factory=lambda: Path(os.environ.get("PP_FRONTEND_DIR", "../frontend/dist")))
     anthropic_api_key: str = field(default_factory=lambda: os.environ.get("PP_ANTHROPIC_API_KEY", ""))  # lyrics text polish (ADR 0004), off when empty
+    default_route: str = field(default_factory=lambda: os.environ.get("PP_MODEL_ROUTE", "anthropic"))
+    deepseek_api_key: str = field(default_factory=lambda: os.environ.get("PP_DEEPSEEK_API_KEY", ""))
+    deepseek_base_url: str = field(default_factory=lambda: os.environ.get("PP_DEEPSEEK_BASE_URL", DEEPSEEK_URL))
+    deepseek_model: str = field(default_factory=lambda: os.environ.get("PP_DEEPSEEK_MODEL", DEEPSEEK_MODEL))
+    deepseek_vision: bool = field(default_factory=lambda: os.environ.get("PP_DEEPSEEK_VISION", "").lower() in ("1", "true", "yes"))
+
+    @property
+    def model_routes(self) -> dict[str, Route]:
+        """The model routes (ADR 0010) by name: the Anthropic preset keyed by PP_ANTHROPIC_API_KEY and the
+        DeepSeek preset keyed by PP_DEEPSEEK_API_KEY. A route with no key is off."""
+        return {"anthropic": Route.anthropic(self.anthropic_api_key),
+                "deepseek": Route.deepseek(self.deepseek_api_key, self.deepseek_model, self.deepseek_base_url, self.deepseek_vision)}
 
     model_max_spans: int = field(default_factory=lambda: _env_int("PP_MODEL_MAX_SPANS", 10))  # spans per model pass on the server's key (ADR 0010); a visitor's own key is not capped
 
     @property
     def model_route(self) -> Route:
-        """The model route (ADR 0010): Anthropic preset keyed by PP_ANTHROPIC_API_KEY; no key means off."""
-        return Route.anthropic(self.anthropic_api_key)
+        """The route used when a request names none (PP_MODEL_ROUTE, `anthropic` unless set)."""
+        return self.model_routes.get(self.default_route) or self.model_routes["anthropic"]
 
     @property
     def jobs_dir(self) -> Path:

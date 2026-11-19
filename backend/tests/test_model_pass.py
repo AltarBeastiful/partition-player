@@ -172,6 +172,51 @@ def test_rejecting_a_reading_keeps_it_with_status_rejected_and_survives_a_save(s
     assert client.post(f"/api/jobs/{jid}/model-readings/nope/reject").status_code == 404
 
 
+
+# ---- DeepSeek preset and the vision flag (ADR 0010, decision 9, ticket 09) ----
+
+class Recorder(FakeModel):
+    def post(self, url, **k):
+        self.urls = getattr(self, "urls", []) + [(url, k["headers"])]
+        return super().post(url, **k)
+
+
+def test_deepseek_route_places_typed_words_with_its_own_url_key_and_model(settings, monkeypatch):
+    monkeypatch.setenv("PP_DEEPSEEK_API_KEY", "ds-server-key")
+    monkeypatch.setenv("PP_DEEPSEEK_MODEL", "deepseek-test")
+    from partition_player.config import load_settings
+    model = Recorder(GOOD)
+    client, jid = start(load_settings(), model)
+    routes = {r["id"]: r for r in client.get("/api/model-routes").json()}
+    assert routes["deepseek"]["model"] == "deepseek-test" and routes["deepseek"]["vision"] is False and routes["deepseek"]["configured"] is True
+    assert routes["anthropic"]["vision"] is True and routes["anthropic"]["configured"] is False
+    r = client.post(f"/api/jobs/{jid}/model-pass", json={**body(confirm=True), "api_key": "", "route": "deepseek"})
+    assert r.status_code == 200, r.text
+    url, headers = model.urls[0]
+    assert url == "https://api.deepseek.com/anthropic/v1/messages" and headers["x-api-key"] == "ds-server-key"
+    assert r.json()["route"]["model"] == "deepseek-test" and r.json()["changes"]
+
+
+def test_a_span_that_needs_the_picture_is_refused_with_a_reason_on_a_route_without_vision(settings, monkeypatch):
+    monkeypatch.setenv("PP_DEEPSEEK_API_KEY", "ds")
+    from partition_player.config import load_settings
+    model = FakeModel(GOOD)
+    client, jid = start(load_settings(), model)
+    b = body(confirm=True)
+    b["spans"][0]["needs_image"] = True
+    r = client.post(f"/api/jobs/{jid}/model-pass", json={**b, "route": "deepseek"})
+    assert r.status_code == 422 and "cannot read images" in r.json()["error"] and model.calls == 0
+    r = client.post(f"/api/jobs/{jid}/model-pass", json={**b, "route": "deepseek", "confirm": False})
+    assert r.status_code == 422  # the estimate refuses too: no cost for a call that cannot work
+    monkeypatch.setenv("PP_DEEPSEEK_VISION", "true")
+    client2, jid2 = start(load_settings(), model)
+    assert client2.post(f"/api/jobs/{jid2}/model-pass", json={**b, "route": "deepseek", "confirm": False}).status_code == 200
+
+
+def test_unknown_route_is_refused(settings):
+    client, jid = start(settings, FakeModel(GOOD))
+    assert client.post(f"/api/jobs/{jid}/model-pass", json={**body(), "route": "nope"}).status_code == 422
+
 def test_the_visitors_key_is_never_logged_even_when_the_model_fails(settings, caplog):
     import logging
 
