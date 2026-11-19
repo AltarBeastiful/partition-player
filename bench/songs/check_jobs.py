@@ -10,11 +10,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from make_pages import out_dir, which_set  # noqa: E402
-
-
-def arg(flag, default):
-    return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else default
+from make_pages import flag_value, out_dir, which_set  # noqa: E402
 
 
 def strip(rows):
@@ -23,9 +19,9 @@ def strip(rows):
 
 def main() -> int:
     out = out_dir(which_set(sys.argv))
-    passthru = [a for f in ("--set", "--only") if f in sys.argv for a in (f, arg(f, ""))]
+    passthru = [a for f in ("--set", "--only") if f in sys.argv for a in (f, flag_value(sys.argv, f, ""))]
     runs = {}
-    for jobs in ("1", arg("--jobs", "4")):
+    for jobs in ("1", flag_value(sys.argv, "--jobs", "4")):
         t0 = time.time()
         subprocess.run([sys.executable, str(HERE / "run_bench.py"), *passthru, "--jobs", jobs], check=True)
         print(f"\n--jobs {jobs}: {time.time() - t0:.0f} s wall")

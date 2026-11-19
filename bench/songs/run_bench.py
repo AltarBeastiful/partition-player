@@ -14,7 +14,7 @@ run's in every field but the seconds (bench/songs/check_jobs.py). A failed page 
 --scans runs the voice_piano set's second tier instead: the real IMSLP prints in <out>/scans/, whose
 ground truth bench/songs/pin_scan.py cuts from the same transcriptions.
 """
-import json, subprocess, sys, time
+import json, subprocess, sys
 from pathlib import Path
 
 # bench/lyrics has its own make_pages.py, so this directory has to come first on the path
@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lyrics"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "chords"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from make_pages import out_dir, which_set  # noqa: E402
+from make_pages import flag_value, out_dir, which_set  # noqa: E402
 from score import align, tokens  # noqa: E402
 from score_chords import score as score_chords  # noqa: E402
 from score_lyrics import score as score_lyrics  # noqa: E402
@@ -59,13 +59,13 @@ def score_notes(gt: Path, cand: Path) -> dict:
 
 
 def main() -> None:
-    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
+    only = flag_value(sys.argv, "--only")
     skip, clean_only, scans = "--skip-run" in sys.argv, "--clean-only" in sys.argv, "--scans" in sys.argv
     rows = []
     head = (f"{'page':46} {'kind':6} {'meas':>7} {'notes':>5} {'p+d':>6} {'syl':>4} {'placed':>6} "
             f"{'text':>5} {'verses':>6} {'false':>5} {'cer':>5} {'chrd':>5} {'right':>5} {'cfls':>4} {'s':>4}")
     print(head)
-    jobs = int(sys.argv[sys.argv.index("--jobs") + 1]) if "--jobs" in sys.argv else 1
+    jobs = int(flag_value(sys.argv, "--jobs", 1))
     todo = [(n, i, g, k) for n, i, g, k in pages(clean_only, scans) if not only or only in n]
     need = [(n, i, RUN / n) for n, i, g, k in todo if not skip or not (RUN / n / "score.musicxml").exists()]
     done = {r["name"]: r for r in recognize_all(need, CLI, jobs)}
@@ -75,7 +75,7 @@ def main() -> None:
         if r and not r["ok"]:
             print(f"{name:46} {kind:6} FAILED: {r['error']}")
             continue
-        secs = r["seconds"] if r else 0.0
+        secs = r["seconds"] if r else None   # None: the page was not run (--skip-run)
         cand = out / "score.musicxml"
         notes = score_notes(gt, cand)
         lyr = score_lyrics(str(gt), str(cand))
@@ -89,7 +89,7 @@ def main() -> None:
         print(f"{name:46} {kind:6} {notes['measures'][0]:3}/{notes['measures'][1]:<3} {notes['events']:5} "
               f"{notes['both']:6} {lyr['gt']:4} {placed:>6} {lyr['text']:5} "
               f"{lyr['verses_found']:2}/{lyr['verses_gt']:<3} {lyr['false']:5} {str(lyr['cer']):>5} "
-              f"{ch['gt']:5} {ch['right']:5} {ch['false']:4} {secs:4.0f}")
+              f"{ch['gt']:5} {ch['right']:5} {ch['false']:4} {'skip' if secs is None else format(secs, '4.0f'):>4}")
     (OUT / ("results_scans.json" if scans else "results.json")).write_text(json.dumps(rows, ensure_ascii=False, indent=1))
     print()
     for kind in ("clean", "photo", "scan"):

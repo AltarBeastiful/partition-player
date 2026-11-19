@@ -3,6 +3,7 @@
 The real check is bench/songs/check_jobs.py (parallel vs sequential on real pages); this one only
 needs a fake CLI, so it runs in the normal suite.
 """
+import os
 import stat
 import sys
 from pathlib import Path
@@ -41,7 +42,8 @@ def test_results_come_back_in_page_order_and_a_failure_does_not_stop_the_rest(tm
 def test_workers_times_threads_stay_within_the_cores(tmp_path):
     assert thread_cap(4, 16) == 4 and thread_cap(3, 16) == 5 and thread_cap(32, 16) == 1
     res = recognize_all(tasks(tmp_path, ["a", "c"]), fake_cli(tmp_path), jobs=4, cores=16)
-    assert (tmp_path / "run" / "a" / "threads").read_text().strip() == "4"
+    usable = min(16, len(os.sched_getaffinity(0)))  # the cap follows the cores we may really use
+    assert (tmp_path / "run" / "a" / "threads").read_text().strip() == str(thread_cap(4, usable))
 
 
 def test_each_running_worker_is_pinned_to_its_own_cores(tmp_path):

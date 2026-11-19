@@ -39,6 +39,11 @@ def which_set(argv: list[str]) -> str:
     return argv[argv.index("--set") + 1] if "--set" in argv else "leadsheets"
 
 
+def flag_value(argv: list[str], flag: str, default=None):
+    """The word after `flag` on the command line, or `default`."""
+    return argv[argv.index(flag) + 1] if flag in argv else default
+
+
 def out_dir(name: str) -> Path:
     return ROOT / "bench" / "out" / "songs" / name
 

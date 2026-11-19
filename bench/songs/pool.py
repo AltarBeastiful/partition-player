@@ -8,6 +8,7 @@ Results come back in the order of the page list, and a page that fails is report
 import os
 import queue
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,28 +20,45 @@ def thread_cap(jobs: int, cores: int) -> int:
     return max(1, cores // max(1, jobs))
 
 
+def available_cores(cores: int | None = None) -> list[int]:
+    """The cores this process may use (at most `cores` of them): the one list the thread caps and the
+    slots both come from. Without sched_getaffinity (not Linux) it is range(cpu_count)."""
+    if hasattr(os, "sched_getaffinity"):
+        mine = sorted(os.sched_getaffinity(0))
+    else:
+        mine = list(range(os.cpu_count() or 1))
+    return mine[:cores] if cores else mine
+
+
+# Run in a fresh interpreter: pin to the given cores, then replace itself with the real command.
+# Done in the child, after the fork, so the parent (and the other worker threads) are untouched, and
+# without preexec_fn, which is not safe to use from threads.
+_PIN = "import os,sys; os.sched_setaffinity(0, {int(c) for c in sys.argv[1].split(',')}); os.execv(sys.argv[2], sys.argv[2:])"
+
+
 def recognize_all(tasks, cli, jobs: int = 1, cores: int | None = None) -> list[dict]:
     """tasks: (name, image, out_dir). Returns {name, ok, seconds, error} per task, in task order."""
-    cores = cores or os.cpu_count() or 1
+    avail = available_cores(cores)
     env = None
     if jobs > 1:
-        env = dict(os.environ, **{v: str(thread_cap(jobs, cores)) for v in THREAD_VARS})
+        env = dict(os.environ, **{v: str(thread_cap(jobs, len(avail))) for v in THREAD_VARS})
 
     slots: queue.Queue = queue.Queue()
-    if jobs > 1:
-        avail = sorted(os.sched_getaffinity(0))[:cores]
+    pin = jobs > 1 and hasattr(os, "sched_setaffinity")
+    if pin:
         per = thread_cap(jobs, len(avail))
         for k in range(jobs):
-            slots.put(set(avail[k * per:(k + 1) * per]) or set(avail))
+            slots.put(avail[k * per:(k + 1) * per] or avail)
 
     def one(task):
         name, img, out = task
         t0 = time.time()
-        mine = slots.get() if jobs > 1 else None
+        mine = slots.get() if pin else None
         try:
-            r = subprocess.run([str(cli), "recognize", str(img), "-o", str(out)],
-                               capture_output=True, text=True, env=env,
-                               preexec_fn=(lambda: os.sched_setaffinity(0, mine)) if mine else None)
+            argv = [str(cli), "recognize", str(img), "-o", str(out)]
+            if mine:
+                argv = [sys.executable, "-c", _PIN, ",".join(map(str, mine)), *argv]
+            r = subprocess.run(argv, capture_output=True, text=True, env=env)
         finally:
             if mine:
                 slots.put(mine)
