@@ -1,5 +1,5 @@
 /**
- * Lyric spans from the engine's doubts (ADR 0010, ticket 08) and "Try harder": which stretches of the
+ * Lyric spans from the engine's doubts (ADR 0010, plan 0016) and "Try harder": which stretches of the
  * score the panel offers, strongest doubt first, and that one span can be retried on its own with the
  * larger model. Only the network is replaced.
  */

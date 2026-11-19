@@ -13,7 +13,7 @@ dependencies = [
     "opencv-python-headless>=4.10",
     "rapidocr>=3.9,<3.10",  # word boxes for the lyrics stage; pinned, they have regressed before (3.10.0 re-scored 2026-11-19, plan 0014 step 3: chords identical, lyrics move by one syllable; make_ocr() already works on it)
     "homr==0.7.0",  # 0.7.1 was tried twice and fails the benchmark gate (plan 0014): driver patch in a8d9df3
-    "httpx>=0.27",  # the optional lyrics polish (ADR 0004)
+    "httpx>=0.27",  # the model pass (ADR 0010)
     "pymupdf>=1.24",  # PDF input (ADR 0009): pages, text objects and vector marks. AGPL, as this is.
 ]
 

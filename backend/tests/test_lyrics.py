@@ -174,40 +174,6 @@ def test_deal_keeps_positions_when_counts_match_and_deals_otherwise():
     assert [(p.verse, p.measure, p.onset, p.text) for p in dealt] == [(1, 0, 0, "a"), (1, 0, 1, "b"), (1, 0, 2, "c"), (2, 0, 0, "x")]
 
 
-# ---- the optional language-model polish ---------------------------------------------------------
-
-def test_polish_keeps_structure_and_rejects_changed_counts(tmp_path):
-    from partition_player.pipeline.lyrics.polish import polish, verse_string
-
-    band = tmp_path / "lyrics_0.png"
-    band.write_bytes(b"\x89PNG fake")
-    placed = [Placement(1, 0, 0, "Lors", "begin", False, 1.0, 0), Placement(1, 0, 1, "que", "end", False, 1.0, 0),
-              Placement(1, 0, 2, "To", "begin", False, 0.7, 0), Placement(1, 1, 0, "han", "middle", False, 1.0, 0), Placement(1, 1, 1, "na", "end", False, 1.0, 0)]
-    assert verse_string(placed) == "Lors-que To-han-na"
-
-    class Reply:
-        def __init__(self, text): self._t = text
-        def raise_for_status(self): pass
-        def json(self): return {"content": [{"type": "text", "text": self._t}]}
-
-    class Client:
-        def __init__(self, text): self.text, self.calls = text, 0
-        def post(self, *a, **k): self.calls += 1; return Reply(self.text)
-
-    route = Route.anthropic("key")
-    changed, warnings = polish(placed, {0: band}, route, client=Client("Lors-que Jo-han-na"))
-    assert changed == 1 and placed[2].text == "Jo" and not warnings
-    changed, warnings = polish(placed, {0: band}, route, client=Client("Lorsque Johanna et moi"))
-    assert changed == 0 and placed[2].text == "Jo" and "structure" in warnings[0]
-
-    # a route with no key turns the feature off: no call, no change
-    off = Client("Lors-que Zo-han-na")
-    assert polish(placed, {0: band}, Route.anthropic(""), client=off) == (0, []) and off.calls == 0
-    # a route that cannot read images is not asked to polish from a band
-    blind = Client("Lors-que Zo-han-na")
-    assert polish(placed, {0: band}, Route(base_url="https://x", api_key="k", model="m", vision=False), client=blind) == (0, []) and blind.calls == 0
-
-
 def test_route_sends_an_anthropic_messages_request_to_its_own_base_url():
     seen = {}
 

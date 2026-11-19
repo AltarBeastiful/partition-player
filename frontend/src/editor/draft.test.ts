@@ -89,7 +89,7 @@ describe("applying", () => {
     session.tick("c2", false);
     await session.applyDraft();
     expect(api.applyModelDraft).toHaveBeenCalledTimes(1);
-    expect(api.applyModelDraft).toHaveBeenCalledWith("t", ["c1"]);
+    expect(api.applyModelDraft).toHaveBeenCalledWith("t", ["c1"], []);
     expect(session.revision).toBe(4);
     expect(session.draft).toBeNull();
     expect(first()).toBe("Lorsque");
@@ -126,7 +126,7 @@ describe("applying", () => {
   });
 });
 
-/** Your edits win (ticket 05): a place edited by hand is a conflict, unticked, and the rest still applies. */
+/** Your edits win (ADR 0010): a place edited by hand is a conflict, unticked, and the rest still applies. */
 describe("conflicts with hand edits", () => {
   const edit = (measure: number, text: string) => session.apply((d) => {
     const m = part(d, 0).getElementsByTagName("measure")[measure];
@@ -156,7 +156,7 @@ describe("conflicts with hand edits", () => {
     vi.mocked(api.getScoreText).mockImplementation(async () => session.shownXml);
     edit(0, "Lers");
     await session.applyDraft();
-    expect(api.applyModelDraft).toHaveBeenCalledWith("t", ["c2"]);
+    expect(api.applyModelDraft).toHaveBeenCalledWith("t", ["c2"], []);
     expect(first()).toBe("Lers");
   });
 
@@ -164,6 +164,15 @@ describe("conflicts with hand edits", () => {
     edit(0, "Lers");
     session.tick("c1", true);
     expect(first(session.shownXml)).toBe("Lorsque");
+  });
+
+  it("tells the server which ticked changes were ticked on purpose over a conflict", async () => {
+    vi.mocked(api.applyModelDraft).mockResolvedValue({ ...review, revision: 5 });
+    vi.mocked(api.getScoreText).mockImplementation(async () => session.shownXml);
+    edit(0, "Lers");
+    session.tick("c1", true);
+    await session.applyDraft();
+    expect(api.applyModelDraft).toHaveBeenCalledWith("t", expect.arrayContaining(["c1", "c2"]), ["c1"]);
   });
 
   it("clears the conflict, and ticks the change again, when the hand edit is undone", () => {

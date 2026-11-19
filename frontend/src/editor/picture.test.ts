@@ -1,4 +1,4 @@
-/** The lyrics picture the panel sends (ticket 07): a file becomes bare base64, and the route says whether it may be used. */
+/** The lyrics picture the panel sends (ADR 0010): a file becomes bare base64, and the route says whether it may be used. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { spanRefusal } from "../modelRoute";
 import { pictureToBase64 } from "./picture";

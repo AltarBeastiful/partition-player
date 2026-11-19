@@ -5,7 +5,7 @@ from .align import Placement
 
 
 def split_reply(reply: str) -> list[tuple[str, str]]:
-    """(text, syllabic) per syllable of a line in the polish notation: hyphen joins syllables of a word, space separates words."""
+    """(text, syllabic) per syllable of a line in the notation of a model reply: hyphen joins syllables of a word, space separates words."""
     items = []
     for word in reply.strip().split():
         parts = [p for p in word.split("-") if p]

@@ -10,10 +10,11 @@ from dataclasses import dataclass, replace
 
 ANTHROPIC_URL = "https://api.anthropic.com"
 HAIKU = "claude-haiku-4-5-20251001"
-SONNET = "claude-sonnet-4-5-20250929"  # the larger model a failed answer escalates to (ticket 08)
+SONNET = "claude-sonnet-4-5-20250929"  # the larger model a failed answer escalates to (ADR 0010)
 DEEPSEEK_URL = "https://api.deepseek.com/anthropic"  # DeepSeek's Anthropic-compatible endpoint
 DEEPSEEK_MODEL = "deepseek-flash"
 DEEPSEEK_LARGER = "deepseek-v4-pro"
+PRICES = {HAIKU: (1.0, 5.0), SONNET: (3.0, 15.0)}  # USD per million tokens, (in, out); a model not listed has no known price
 NO_VISION = "this route cannot read images"
 
 
@@ -76,6 +77,11 @@ class Route:
         )
         r.raise_for_status()
         return "".join(block.get("text", "") for block in r.json().get("content", []))
+
+
+def price(model: str) -> tuple[float, float] | None:
+    """(input, output) dollars per million tokens of a model, or None when its price is not known here."""
+    return PRICES.get(model)
 
 
 def image_refusal(route: Route, spans: list[dict]) -> str | None:

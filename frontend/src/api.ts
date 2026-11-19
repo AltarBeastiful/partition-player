@@ -187,7 +187,7 @@ export interface ModelDraft {
   /** Verses the larger model had to answer after the first answer failed validation. */
   escalated?: { span: ModelSpan; verse: number; model: string }[];
 }
-export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; vision?: boolean; confirm: false }
+export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number | null; cost_known?: boolean; model: string; vision?: boolean; confirm: false }
 /** A span's words are typed (`lyrics_source`) or a picture of them (`lyrics_picture`, bare base64 PNG/JPEG/WebP), not both.
  *  `needs_image` is set on a picture span so a route without vision refuses it before any call. */
 export interface ModelSpanIn extends ModelSpan { lyrics_source?: string; lyrics_picture?: string; needs_image?: boolean; note?: string }
@@ -223,9 +223,13 @@ export async function rejectModelReading(id: string, readingId: string): Promise
   return check<ReviewState>(await fetch(`/api/jobs/${id}/model-readings/${encodeURIComponent(readingId)}/reject`, { method: "POST" }));
 }
 
-/** Apply the ticked changes as one revision; the others stay as stored readings. */
-export async function applyModelDraft(id: string, ticked: string[]): Promise<ReviewState> {
-  return check<ReviewState>(await fetch(`/api/jobs/${id}/model-draft/apply`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticked }),
+/**
+ * Apply the ticked changes as one revision; the others stay as stored readings. `overwrite` names the ticked changes
+ * shown as conflicting that the user ticked on purpose: the server checks conflicts again and skips any other
+ * ticked change whose place was edited since (`model_apply.skipped`, kept as proposed readings).
+ */
+export async function applyModelDraft(id: string, ticked: string[], overwrite: string[] = []): Promise<ReviewState & { model_apply?: { skipped: string[] } }> {
+  return check<ReviewState & { model_apply?: { skipped: string[] } }>(await fetch(`/api/jobs/${id}/model-draft/apply`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticked, overwrite }),
   }));
 }

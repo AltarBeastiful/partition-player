@@ -4,6 +4,7 @@ Jobs double as the score library: a finished job is a saved score with a name, r
 """
 from __future__ import annotations
 
+import copy
 import json
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, Query, Request, UploadFile
+from fastapi import Body, FastAPI, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 from . import __version__, review
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
-from .model import lyrics_pass, notes_pass
+from .model import claude_code, lyrics_pass, notes_pass
 from .model.route import image_refusal
 from .pipeline import musicxml, pdf
 from .pipeline.lyrics import edit as lyrics_edit
@@ -75,6 +76,7 @@ class ModelPass(BaseModel):
 
 class Apply(BaseModel):
     ticked: list[str] = Field(max_length=5000)
+    overwrite: list[str] = Field(default_factory=list, max_length=5000)  # ticked changes the user knowingly lets overwrite an edit
 
 
 def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
@@ -260,7 +262,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                 if s.get("lyrics_picture"):
                     lyrics_pass.picture_bytes(s["lyrics_picture"])
             root = ET.parse(d / "score.musicxml").getroot()
-            estimate = lyrics_pass.estimate(root, spans)
+            estimate = lyrics_pass.estimate(root, spans, route.model)
             if not body.confirm:
                 return {**estimate, "model": route.model, "vision": route.vision, "confirm": False}
             spans, unread = lyrics_pass.read_pictures(spans, route, client=model_client)
@@ -269,7 +271,22 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         except lyrics_pass.SpanError as e:
             raise HTTPException(422, str(e)) from e
         with store.lock:
-            return lyrics_pass.save_draft(d, d / "score.musicxml", route, spans, result, review.load(d)["revision"])
+            try:
+                return lyrics_pass.save_draft(d, d / "score.musicxml", route, spans, result, review.load(d)["revision"])
+            except lyrics_pass.SpanError as e:
+                raise HTTPException(422, str(e)) from e
+
+    @app.post("/api/jobs/{job_id}/model-pass/import")
+    def import_model_answers(job_id: str, body: dict = Body(...)) -> dict:
+        """Answers written by the user's own Claude Code session (the same JSON as the CLI's import): they pass the
+        validators of any route and become a stored draft."""
+        done(job_id)
+        d = store.dir(job_id)
+        with store.lock:
+            try:
+                return claude_code.import_answers(d, body, review.load(d)["revision"])
+            except lyrics_pass.SpanError as e:
+                raise HTTPException(422, str(e)) from e
 
     @app.get("/api/model-routes")
     def model_routes() -> list[dict]:
@@ -310,7 +327,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         now = datetime.now(timezone.utc).isoformat()
         asked = {(sp["staff"], sp["from"], sp["to"]): sp.get("note", "") for sp in draft["spans"]}
 
-        def with_note(span: dict) -> dict:  # the user's note travels with the span into the stored readings (ticket 11)
+        def with_note(span: dict) -> dict:  # the user's note travels with the span into the stored readings (ADR 0010)
             note = asked.get((span["staff"], span["from"], span["to"]), "")
             return {**span, "note": note} if note else span
 
@@ -322,17 +339,28 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
 
         with store.lock:
             tree = ET.parse(score)
-            held = set(lyrics_pass.apply_changes_by_staff(tree.getroot(), [c for c in draft["changes"] if c["id"] in body.ticked]))
-            # a notes or chord change that no longer holds on the score as it is stays a proposed reading
-            readings = [reading(c, "accepted" if c["id"] in body.ticked and (c.get("kind", "lyric") == "lyric" or c["id"] in held) else "proposed")
-                        for c in draft["changes"] if c["old"] != c["new"]]
+            before = copy.deepcopy(tree.getroot())
+            # my own edits win: a place edited since the draft was fetched is checked again now, and a ticked change
+            # there is applied only when the user let it overwrite (`overwrite`), else it stays a proposed reading
+            now = {c["id"]: c["conflict"] for c in lyrics_pass.flag_conflicts(before, draft["changes"])}
+            let = set(body.overwrite)
+            blocked = {i for i in body.ticked if now[i] and i not in let}
+            skipped = [c["id"] for c in draft["changes"] if c["id"] in blocked and c["old"] != c["new"]]  # a no-op has no reading to keep
+            go = set(body.ticked) - blocked
+            held = set(lyrics_pass.apply_changes_by_staff(tree.getroot(), [c for c in draft["changes"] if c["id"] in go]))
+            try:
+                lyrics_pass.check_measure_count(before, tree.getroot())
+            except lyrics_pass.SpanError as e:
+                raise HTTPException(409, str(e)) from e
+            # a change that did not hold on the score as it is stays a proposed reading
+            readings = [reading(c, "accepted" if c["id"] in held else "proposed") for c in draft["changes"] if c["old"] != c["new"]]
             tree.write(score, encoding="UTF-8", xml_declaration=True)
             lyrics_file = d / "lyrics.json"
             old = json.loads(lyrics_file.read_text()) if lyrics_file.exists() else {}
             lyrics_inject.save(lyrics_file, lyrics_inject.read_placements(score), old.get("warnings", []), old.get("seen", []))
             review.bump(d, readings)
             lyrics_pass.drop_draft(d)
-        return review.state(store, job_id)
+        return {**review.state(store, job_id), "model_apply": {"skipped": skipped}}
 
     @app.post("/api/jobs/{job_id}/model-readings/{reading_id}/reject")
     def reject_model_reading(job_id: str, reading_id: str) -> dict:

@@ -1,4 +1,4 @@
-"""The lyrics source as a picture, through the HTTP API with a fake route (ADR 0010, ticket 07)."""
+"""The lyrics source as a picture, through the HTTP API with a fake route (ADR 0010, plan 0016)."""
 import base64
 
 from test_model_pass import GOOD, SOURCE, FakeModel, Reply, body, start

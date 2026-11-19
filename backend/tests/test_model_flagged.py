@@ -1,4 +1,4 @@
-"""Spans the user flagged as wrong, with a note to the model (ADR 0010, ticket 11), through the HTTP API."""
+"""Spans the user flagged as wrong, with a note to the model (ADR 0010, plan 0016), through the HTTP API."""
 from test_model_notes import FakeOps, ask, span
 from test_model_pass import GOOD, FakeModel, SOURCE, start
 

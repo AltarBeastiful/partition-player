@@ -3,7 +3,7 @@ import type { ModelDraft, ModelEstimate, ModelPassRequest } from "../api";
 
 /** Shown with the button (ADR 0010): what leaves the server. */
 export function modelNotice(provider = "Anthropic"): string {
-  return `Crops of your score, the words you pasted and any picture of words you add are sent to the model's provider (${provider}).`;
+  return `The notes of the measures you ask about, written out as text, with the words you pasted, any picture of words you add and any note you write, are sent to the model's provider (${provider}).`;
 }
 export const MODEL_NOTICE = modelNotice();
 
@@ -12,7 +12,7 @@ let key = "";
 export const visitorKey = { get: () => key, set: (k: string) => { key = k.trim(); } };
 
 /**
- * Ask, then confirm (ticket 04): `ask` fetches the estimate and runs nothing, `confirm` runs exactly
+ * Ask, then confirm (ADR 0010): `ask` fetches the estimate and runs nothing, `confirm` runs exactly
  * the spans that were estimated, once, and only after an estimate came back.
  */
 export class ModelFlow {
@@ -37,7 +37,7 @@ export class ModelFlow {
     await this.estimateFor(spans);
   }
 
-  /** Try harder (ticket 08): this one span again, straight to the route's larger model. */
+  /** Try harder (ADR 0010): this one span again, straight to the route's larger model. */
   async askHarder(span: ModelPassRequest["spans"][number]): Promise<void> {
     this.larger = true;
     await this.estimateFor([span]);

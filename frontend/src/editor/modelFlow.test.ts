@@ -1,5 +1,5 @@
 /**
- * The confirm step of Check with a model (ADR 0010, ticket 04): nothing that costs money runs until
+ * The confirm step of Check with a model (ADR 0010, plan 0016): nothing that costs money runs until
  * the user has seen the estimate and said yes, and the visitor's key lives in memory only. The
  * network is the only thing replaced.
  */
@@ -74,5 +74,7 @@ describe("ModelFlow", () => {
     expect(MODEL_NOTICE).toMatch(/sent to/i);
     expect(modelNotice("DeepSeek")).toMatch(/DeepSeek/);
     expect(MODEL_NOTICE).toMatch(/picture of words/);
+    expect(MODEL_NOTICE).toMatch(/notes of the measures[^.]*as text/);
+    expect(MODEL_NOTICE).not.toMatch(/crops/i);
   });
 });

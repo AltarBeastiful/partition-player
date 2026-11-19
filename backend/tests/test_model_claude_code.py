@@ -1,4 +1,4 @@
-"""The Claude Code route (ADR 0010 decision 11, ticket 13): bundles out through the CLI, answers in through the CLI,
+"""The Claude Code route (ADR 0010 decision 11): bundles out through the CLI, answers in through the CLI,
 and a draft that looks and applies like one from an API route. No model is called anywhere."""
 import json
 import xml.etree.ElementTree as ET

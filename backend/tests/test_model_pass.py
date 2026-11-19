@@ -1,4 +1,4 @@
-"""The model pass through the HTTP API with a fake route (ADR 0010, plan 0016 slice 1, ticket 02)."""
+"""The model pass through the HTTP API with a fake route (ADR 0010, plan 0016 slice 1)."""
 import json
 
 from fastapi.testclient import TestClient
@@ -173,7 +173,7 @@ def test_rejecting_a_reading_keeps_it_with_status_rejected_and_survives_a_save(s
 
 
 
-# ---- DeepSeek preset and the vision flag (ADR 0010, decision 9, ticket 09) ----
+# ---- DeepSeek preset and the vision flag (ADR 0010, decision 9) ----
 
 class Recorder(FakeModel):
     def post(self, url, **k):
@@ -253,7 +253,7 @@ def test_a_job_over_the_server_key_cap_is_refused_with_a_reason(settings, monkey
     assert client.post(f"/api/jobs/{jid}/model-pass", json={**payload, "api_key": "sk-visitor", "confirm": False}).status_code == 200
 
 
-# ---- ticket 08: the larger model, Try harder, and no silent polish ---------------------------------
+# ---- ADR 0010: the larger model, Try harder, and no silent polish ---------------------------------
 
 class TwoModels(FakeModel):
     """Answers well only when asked as `good_model`; remembers which model each call named."""

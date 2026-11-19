@@ -1,5 +1,5 @@
 /**
- * Notes and chords in a model draft (ADR 0010, ticket 10): the draft logic. A change is the editor's operations
+ * Notes and chords in a model draft (ADR 0010, plan 0016): the draft logic. A change is the editor's operations
  * (score/edit.ts) replayed on a clone of the score as read, checked the way the server checked them: nothing
  * outside the span, no measure that added up stops adding up. The same cases as backend/tests/test_model_notes.py,
  * on the Anton ground truth (2/4, three flats; bar 1 has a Cm chord, bar 2 is four eighths G4 Ab4 Ab4 G4).
@@ -117,7 +117,7 @@ describe("in the session", () => {
     vi.mocked(api.getScoreText).mockImplementation(async () => session.shownXml);
     session.tick("h1", false);
     await session.applyDraft();
-    expect(api.applyModelDraft).toHaveBeenCalledWith("t", ["n1"]);
+    expect(api.applyModelDraft).toHaveBeenCalledWith("t", ["n1"], []);
     expect(bar(session.doc, 1)).toBe("Ab4 eighth, Ab4 eighth, Ab4 eighth, G4 eighth");
     expect(chordTextAt(session.doc, 0, 0)).toBe("Cm");
   });

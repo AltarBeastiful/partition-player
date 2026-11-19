@@ -98,8 +98,18 @@ The decisions below are the answers to a design interview with the maintainer; t
 
 - `review.json` (or a file beside it) gains drafts and stored readings; both must be named in
   `load()` and asserted to survive `PUT /score`, which is how `lines` and `unders` were once lost.
-- `polish.py` stops being called unconditionally from `pipeline/run.py`; its prompt and
-  structure check become the lyrics validator.
+- `polish.py` stopped being called from `pipeline/run.py` and has been deleted, with its test. Its
+  structure check survives as `pipeline/lyrics/validator.py` (`same_structure`, tested on its own); it has
+  no live caller, because the lyrics pass checks letters (`parse_answer`) and a lyrics answer always
+  comes with a source. It is the check to wire in if a pass ever answers with no source.
+- Applying a draft checks conflicts again against the score as it is then: a ticked change at a place
+  edited since the draft was fetched is skipped and kept as a proposed reading, unless the client names
+  it in `overwrite` (the user ticked a conflict knowingly). The response lists the skipped ids in
+  `model_apply.skipped`. A write that would change the measure count is refused (409), and a reading is
+  `accepted` only when its write held.
+- The estimate prices the chosen model (`route.PRICES`: Haiku, Sonnet); a model with no listed price
+  gets tokens and calls and `cost_known: false`.
+- `POST /api/jobs/{id}/model-pass/import` takes the same answers JSON as the CLI import.
 - The hosted app now has a path where data leaves the server. This is opt-in per pass, and the
   notice is part of the feature, not an afterthought.
 - AGPL is unaffected: the providers are called over HTTP.

@@ -1,5 +1,5 @@
 /**
- * Notes and chords of a model draft (ADR 0010, ticket 10): the operations the model answered with, replayed on a
+ * Notes and chords of a model draft (ADR 0010, plan 0016): the operations the model answered with, replayed on a
  * clone of the score with the editor's own functions (`edit.ts`). The server validated them on the MusicXML
  * (`backend/partition_player/model/notes_pass.py`, a port of the same functions); this is the browser's second
  * check, on the document the sheet and the player show, so a draft that cannot hold here is not shown as if it did.

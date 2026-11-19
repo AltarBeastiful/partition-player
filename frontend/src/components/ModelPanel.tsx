@@ -75,7 +75,7 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
   async function start() {
     const range = { staff, from: from - 1, to: to - 1 };
     const flag = session.flagged.find((f) => f.staff === range.staff && f.from === range.from && f.to === range.to);
-    const said = flag?.note.trim() ? { note: flag.note.trim() } : {};   // a flagged range with words: the note goes along (ticket 11)
+    const said = flag?.note.trim() ? { note: flag.note.trim() } : {};   // a flagged range with words: the note goes along (ADR 0010)
     try {
       await ask([picture
         ? { ...range, ...said, lyrics_picture: await pictureToBase64(picture), needs_image: true }
@@ -83,12 +83,12 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
     } catch (e) { setError((e as Error).message); }
   }
 
-  /** Ticket 10: no words; the model re-reads the notes and chords of the span, told what the engine doubted there. */
+  /** ADR 0010: no words; the model re-reads the notes and chords of the span, told what the engine doubted there. */
   async function checkNotes(spans: { staff: number; from: number; to: number }[]) {
     await ask(spans.map((sp) => ({ ...sp, needs_image: false, note: session.doubtNote(sp) })));
   }
 
-  /** Try harder (ticket 08): one span of the draft again, on the larger model; its draft replaces this one once confirmed. */
+  /** Try harder (ADR 0010): one span of the draft again, on the larger model; its draft replaces this one once confirmed. */
   async function tryHarder(span: { staff: number; from: number; to: number; lyrics_source: string; note?: string }) {
     setRunning(true); setError(null);
     try {
@@ -201,7 +201,7 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
           </label>
           {estimate ? (
             <div className="controls">
-              <span>{estimate.calls} call{estimate.calls === 1 ? "" : "s"} to {estimate.model}, about {estimate.estimated_tokens} tokens, about ${estimate.estimated_cost_usd.toFixed(4)}.</span>
+              <span>{estimate.calls} call{estimate.calls === 1 ? "" : "s"} to {estimate.model}, about {estimate.estimated_tokens} tokens, {estimate.estimated_cost_usd == null ? "cost unknown for this model" : `about $${estimate.estimated_cost_usd.toFixed(4)}`}.</span>
               <button className="primary" onClick={confirm} disabled={running}>{running ? "Asking the model…" : "Confirm and run"}</button>
               <button onClick={cancel} disabled={running}>Cancel</button>
             </div>
@@ -246,7 +246,7 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
           ))}
           {estimate && (
             <div className="controls">
-              <span>{estimate.calls} call{estimate.calls === 1 ? "" : "s"} to {estimate.model}, about ${estimate.estimated_cost_usd.toFixed(4)}. The draft shown is replaced by this span's new one.</span>
+              <span>{estimate.calls} call{estimate.calls === 1 ? "" : "s"} to {estimate.model}, {estimate.estimated_cost_usd == null ? "cost unknown for this model" : `about $${estimate.estimated_cost_usd.toFixed(4)}`}. The draft shown is replaced by this span's new one.</span>
               <button className="primary" onClick={confirm} disabled={running}>{running ? "Asking the model…" : "Confirm and run"}</button>
               <button onClick={cancel} disabled={running}>Cancel</button>
             </div>

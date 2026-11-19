@@ -1,5 +1,5 @@
 /**
- * Model readings in the session (ticket 06, ADR 0010): the changes the user did not take stay as
+ * Model readings in the session (ADR 0010, plan 0016): the changes the user did not take stay as
  * stored readings; accepting one is an ordinary undoable edit, rejecting hides it on the server.
  */
 import { readFileSync } from "node:fs";

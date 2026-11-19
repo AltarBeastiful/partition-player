@@ -1,5 +1,5 @@
 /**
- * "This looks wrong" (ADR 0010, ticket 11): in edit mode the user flags a measure range, with a note to the
+ * "This looks wrong" (ADR 0010, plan 0016): in edit mode the user flags a measure range, with a note to the
  * model. The flags are session state beside the doubts; they go through the same pass, flow and draft.
  */
 import { readFileSync } from "node:fs";

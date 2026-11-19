@@ -1,4 +1,4 @@
-"""Your edits win (ticket 05): conflicts with hand edits, on every staff, through the HTTP API."""
+"""Your edits win (ADR 0010): conflicts with hand edits, on every staff, through the HTTP API."""
 import copy
 import xml.etree.ElementTree as ET
 

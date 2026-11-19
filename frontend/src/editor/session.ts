@@ -153,7 +153,7 @@ export class EditorSession {
   }
 
   /**
-   * The stretches the engine doubted, as spans for a model pass (ticket 08): one per run of
+   * The stretches the engine doubted, as spans for a model pass (ADR 0010): one per run of
    * neighbouring doubtful measures on a staff, the strongest first. A doubt that is only information
    * is not offered. The words themselves still come from the user.
    */
@@ -179,7 +179,7 @@ export class EditorSession {
     return spans.sort((a, b) => RANK[b.level] - RANK[a.level] || a.staff - b.staff || a.from - b.from);
   }
 
-  /** What the engine said about a span, in a sentence for the model (ticket 10): the doubts of its measures, without repeats. */
+  /** What the engine said about a span, in a sentence for the model (ADR 0010): the doubts of its measures, without repeats. */
   doubtNote(span: { staff: number; from: number; to: number }): string {
     const said = new Set<string>();
     for (const d of this.doubts) {
@@ -189,7 +189,7 @@ export class EditorSession {
     return [...said].slice(0, 6).join("; ");
   }
 
-  // ---- "this looks wrong" (ticket 11) --------------------------------------------------------------
+  // ---- "this looks wrong" (ADR 0010) --------------------------------------------------------------
 
   /** Measure ranges the user flagged as wrong, with a note to the model; they go through the same pass as the doubts. */
   flagged: { staff: number; from: number; to: number; note: string }[] = [];
@@ -365,7 +365,8 @@ export class EditorSession {
         if (this.saving) await this.inflight; else await this.save();
         if (this.status === "error" || this.status === "stale") return;
       }
-      const result = await applyModelDraft(this.jobId, [...d.ticked]);
+      const knowing = d.draft.changes.filter((c) => c.conflict && d.ticked.has(c.id)).map((c) => c.id);
+      const result = await applyModelDraft(this.jobId, [...d.ticked], knowing);
       const xml = await getScoreText(this.jobId);
       const before = this.snapshot();
       this.doc = parse(xml);
@@ -376,7 +377,8 @@ export class EditorSession {
       this.draft = null;
       this.selected = before.selected ? nearest(this.measures, before.selected)?.key ?? null : null;
       this.push(before);
-      this.message = null;
+      const skipped = result.model_apply?.skipped.length ?? 0;
+      this.message = skipped ? `${skipped} change${skipped === 1 ? " was" : "s were"} not applied because that place was edited meanwhile; ${skipped === 1 ? "it stays" : "they stay"} as proposed readings.` : null;
       this.docVersion++;
       this.status = "saved";
     } catch (e) {
@@ -385,7 +387,7 @@ export class EditorSession {
     this.emit();
   }
 
-  // ---- model readings (ticket 06) ----------------------------------------------------------------
+  // ---- model readings (ADR 0010) ----------------------------------------------------------------
 
   /** The readings the model proposed for a measure and the sheet does not already say; rejected and accepted ones are not offered. */
   modelReadingsAt(measure: number): ModelReading[] {

@@ -10,6 +10,7 @@ next one, `note` is the index of the note among the span's sounding notes, in sc
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -20,7 +21,7 @@ from pathlib import Path
 
 from ..pipeline.lyrics import inject as lyrics_inject
 from . import notes_pass
-from .route import Route, image_type
+from .route import Route, image_type, price
 
 DRAFT = "model-draft.json"
 DRAFT_SCORE = "model-draft.musicxml"
@@ -124,12 +125,13 @@ def _pitch(note: ET.Element) -> str:
 def prompt_for(root: ET.Element, staff: int, notes: list[tuple[int, int]], text: str, note: str = "") -> str:
     measures = _parts(root)[staff].findall("measure")
     lines = [f"{i}: bar {m + 1}, {_pitch(lyrics_inject.sounding_notes(measures[m])[o])}" for i, (m, o) in enumerate(notes)]
-    known = (note or "").strip()[:notes_pass.MAX_NOTE]   # the user's own sentence about the span (ticket 11)
+    known = (note or "").strip()[:notes_pass.MAX_NOTE]   # the user's own sentence about the span (ADR 0010)
     return PROMPT.format(text=text, notes="\n".join(lines)) + (f"\n\nWhat is known: {known}" if known else "")
 
 
-def estimate(root: ET.Element, spans: list[dict]) -> dict:
-    """Calls and a rough cost (Haiku-class prices, per million tokens: $1 in, $5 out), before anything runs."""
+def estimate(root: ET.Element, spans: list[dict], model: str = "") -> dict:
+    """Calls, tokens and a rough cost at the price of `model` (route.PRICES), before anything runs. A model with
+    no known price gets its tokens and calls, `estimated_cost_usd` None and `cost_known` false."""
     calls, tokens_in, tokens_out = 0, 0, 0
     for span in spans:
         notes = span_notes(root, span["staff"], span["from"], span["to"])
@@ -147,8 +149,9 @@ def estimate(root: ET.Element, spans: list[dict]) -> dict:
             calls += 1
             tokens_in += len(prompt_for(root, span["staff"], notes, verse)) // 3
             tokens_out += 40 + 6 * len(verse.split())
-    return {"calls": calls, "estimated_tokens": tokens_in + tokens_out,
-            "estimated_cost_usd": round(tokens_in * 1e-6 + tokens_out * 5e-6, 4)}
+    rates = price(model)
+    cost = round(tokens_in * rates[0] * 1e-6 + tokens_out * rates[1] * 1e-6, 4) if rates else None
+    return {"calls": calls, "estimated_tokens": tokens_in + tokens_out, "estimated_cost_usd": cost, "cost_known": rates is not None}
 
 
 def parse_answer(reply: str, source: str, note_count: int) -> list[tuple[str, str, int]]:
@@ -217,7 +220,7 @@ def run(score: Path, spans: list[dict], route: Route, client=None) -> dict:
             try:
                 syls = ask(route, prompt, text, len(notes), client)
             except SpanError as e:
-                # A failed validation goes once to the larger model (ticket 08); its answer is checked the same way.
+                # A failed validation goes once to the larger model (ADR 0010); its answer is checked the same way.
                 bigger = route.larger()
                 if bigger is None:
                     dropped.append({"span": where, "verse": verse_no, "reason": str(e)})
@@ -261,14 +264,25 @@ def apply_changes(root: ET.Element, changes: list[dict], staff: int = 0) -> None
     lyrics_inject.inject(part, list(placed.values()))
 
 
+def check_measure_count(before: ET.Element, after: ET.Element) -> None:
+    """SpanError unless every part still has as many measures as it had: a pass never adds or drops a measure."""
+    a, b = [len(p.findall("measure")) for p in _parts(before)], [len(p.findall("measure")) for p in _parts(after)]
+    if a != b:
+        raise SpanError(f"the change would alter the number of measures ({a} before, {b} after)")
+
+
 def apply_changes_by_staff(root: ET.Element, changes: list[dict]) -> list[str]:
     """apply_changes for changes that span several staves: each goes to the staff of its span. Returns the ids of
-    the notes and chords changes that held (words are always written)."""
+    the changes that held: lyrics read back from the written score, notes and chords by their own transaction."""
     lyric = [c for c in changes if c.get("kind", "lyric") == "lyric"]
+    held: list[str] = []
     for staff in sorted({c["span"]["staff"] for c in lyric}):
-        apply_changes(root, [c for c in lyric if c["span"]["staff"] == staff], staff)
+        mine = [c for c in lyric if c["span"]["staff"] == staff]
+        apply_changes(root, mine, staff)
+        now = current_lyrics(root, staff)
+        held += [c["id"] for c in mine if now.get((c["verse"], c["measure"], c["onset"])) == c["new"]]
     # notes and chords after the words: they name notes by place in the score as read, which the lyrics never move
-    return notes_pass.apply_changes(root, [c for c in changes if c.get("kind") in ("notes", "chord")])
+    return held + notes_pass.apply_changes(root, [c for c in changes if c.get("kind") in ("notes", "chord")])
 
 
 def flag_conflicts(root: ET.Element, changes: list[dict]) -> list[dict]:
@@ -291,7 +305,9 @@ def flag_conflicts(root: ET.Element, changes: list[dict]) -> list[dict]:
 def save_draft(d: Path, score: Path, route: Route, spans: list[dict], result: dict, revision: int, kind: str = "api") -> dict:
     root = ET.parse(score).getroot()
     result = {**result, "changes": flag_conflicts(root, result["changes"])}  # the score may have changed while the model answered
+    before = copy.deepcopy(root)
     apply_changes_by_staff(root, result["changes"])
+    check_measure_count(before, root)
     ET.ElementTree(root).write(d / DRAFT_SCORE, encoding="UTF-8", xml_declaration=True)
     draft = {"id": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"), "created": datetime.now(timezone.utc).isoformat(),
              "route": {"kind": kind, "model": route.model}, "base_revision": revision, "spans": spans, **result}

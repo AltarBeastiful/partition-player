@@ -1,4 +1,4 @@
-"""Notes and chords from engine doubts (ADR 0010, ticket 10), through the HTTP API with a fake route.
+"""Notes and chords from engine doubts (ADR 0010, plan 0016), through the HTTP API with a fake route.
 
 The Anton ground truth is 2/4 with 10080 divisions. Measure 0 holds E-flat4 dotted-eighth, F4 16th, G4 eighth,
 G4 eighth under a Cm chord; measure 1 holds G4, A-flat4, A-flat4, G4 eighths. An answer is a list of the editor's

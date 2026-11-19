@@ -1,4 +1,4 @@
-"""Counting notes fixed and notes broken against the ground truth (the gate of ticket 12).
+"""Counting notes fixed and notes broken against the ground truth (the gate of ADR 0010, plan 0016).
 
 Per measure of the span, the events of the first part (notes, rests, chord tones, no grace notes) are lined up by
 position. A slot is right when its event equals the ground truth's at the same position (pitch or rest, and length

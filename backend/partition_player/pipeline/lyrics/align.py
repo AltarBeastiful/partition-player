@@ -47,7 +47,7 @@ class Placement:
     syllabic: str
     extend: bool
     confidence: float
-    staff: int = -1   # index of the staff whose band it was read from (for the polish step)
+    staff: int = -1   # index of the staff whose band it was read from
 
 
 @dataclass
