@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..pipeline.lyrics import inject as lyrics_inject
+from . import notes_pass
 from .route import Route, image_type
 
 DRAFT = "model-draft.json"
@@ -83,7 +84,8 @@ def read_pictures(spans: list[dict], route: Route, client=None) -> tuple[list[di
         if not text or UNREADABLE in text:
             text = ""
             dropped.append({"span": where, "verse": 1, "reason": why})
-        out.append({k: v for k, v in span.items() if k != "lyrics_picture"} | {"lyrics_source": text})
+        # an unread picture is a span with words that could not be had, never one to be checked for notes
+        out.append({k: v for k, v in span.items() if k != "lyrics_picture"} | {"lyrics_source": text} | ({} if text else {"unreadable": True}))
     return out, dropped
 
 
@@ -130,6 +132,10 @@ def estimate(root: ET.Element, spans: list[dict]) -> dict:
     calls, tokens_in, tokens_out = 0, 0, 0
     for span in spans:
         notes = span_notes(root, span["staff"], span["from"], span["to"])
+        if notes_pass.is_notes_span(span):  # no words: notes and chords, one call
+            c, i, o = notes_pass.estimate(root, [span]) if span["staff"] == 0 else (0, 0, 0)
+            calls, tokens_in, tokens_out = calls + c, tokens_in + i, tokens_out + o
+            continue
         source = span["lyrics_source"]
         if span.get("lyrics_picture"):  # one call to read it, then an average verse is placed
             calls += 1
@@ -201,6 +207,10 @@ def run(score: Path, spans: list[dict], route: Route, client=None) -> dict:
         now = current_lyrics(root, span["staff"])
         notes = span_notes(root, span["staff"], span["from"], span["to"])
         where = {"staff": span["staff"], "from": span["from"], "to": span["to"]}
+        if notes_pass.is_notes_span(span):
+            got = notes_pass.run_span(root, span, route, client)
+            changes += got["changes"]; dropped += got["dropped"]; escalated += got["escalated"]
+            continue
         for verse_no, text in enumerate(verses_of(span["lyrics_source"]), start=1):
             prompt = prompt_for(root, span["staff"], notes, text)
             try:
@@ -250,10 +260,14 @@ def apply_changes(root: ET.Element, changes: list[dict], staff: int = 0) -> None
     lyrics_inject.inject(part, list(placed.values()))
 
 
-def apply_changes_by_staff(root: ET.Element, changes: list[dict]) -> None:
-    """apply_changes for changes that span several staves: each goes to the staff of its span."""
-    for staff in sorted({c["span"]["staff"] for c in changes}):
-        apply_changes(root, [c for c in changes if c["span"]["staff"] == staff], staff)
+def apply_changes_by_staff(root: ET.Element, changes: list[dict]) -> list[str]:
+    """apply_changes for changes that span several staves: each goes to the staff of its span. Returns the ids of
+    the notes and chords changes that held (words are always written)."""
+    lyric = [c for c in changes if c.get("kind", "lyric") == "lyric"]
+    for staff in sorted({c["span"]["staff"] for c in lyric}):
+        apply_changes(root, [c for c in lyric if c["span"]["staff"] == staff], staff)
+    # notes and chords after the words: they name notes by place in the score as read, which the lyrics never move
+    return notes_pass.apply_changes(root, [c for c in changes if c.get("kind") in ("notes", "chord")])
 
 
 def flag_conflicts(root: ET.Element, changes: list[dict]) -> list[dict]:
@@ -262,6 +276,10 @@ def flag_conflicts(root: ET.Element, changes: list[dict]) -> list[dict]:
     out = []
     for c in changes:
         staff = c["span"]["staff"]
+        if c.get("kind") in ("notes", "chord"):
+            conflict = notes_pass.current_text(_parts(root)[0], c) != c["old"]["text"]
+            out.append({**c, "conflict": conflict, "ticked": c["ticked"] and not conflict})
+            continue
         if staff not in seen:
             seen[staff] = current_lyrics(root, staff)
         conflict = seen[staff].get((c["verse"], c["measure"], c["onset"])) != c["old"]

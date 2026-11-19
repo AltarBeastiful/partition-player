@@ -3,10 +3,11 @@
  * undo and redo as serializations, the doubts and the checked measures, and the autosave that sends
  * the whole document with the revision it was edited from. React reads it through subscribe().
  */
-import { applyModelDraft, getScoreText, rejectModelReading, revertScore, saveScore, type Doubt, type Form, type Layout, type ModelDraft, type ModelReading, type ReviewState, type Stats, type Under, type Voicing } from "../api";
+import { applyModelDraft, getScoreText, isLyricReading, isScoreChange, rejectModelReading, revertScore, saveScore, type AnyReading, type Doubt, type Form, type Layout, type ModelDraft, type ModelReading, type ReviewState, type Stats, type Under, type Voicing } from "../api";
 import { remapForm } from "../form";
 import { checkMeasures, checkText, type MeasureCheck } from "../score/check";
 import { correctedXml, lyricAt, setLyric } from "../score/draft";
+import { currentText } from "../score/modelOps";
 import { EditError } from "../score/edit";
 import { find, nearest, parse, part, serialize, walk, type EventKey, type MeasureInfo } from "../score/xml";
 
@@ -51,7 +52,7 @@ export class EditorSession {
   lines: Voicing[];
   unders: Under[];
   /** What a model pass proposed and the user did not take (ADR 0010); kept by the server, shown in the readings dialog. */
-  modelReadings: ModelReading[];
+  modelReadings: AnyReading[];
   readonly layout: Layout | null;
   readonly hasImage: boolean;
   readonly hasOriginal: boolean;
@@ -178,6 +179,16 @@ export class EditorSession {
     return spans.sort((a, b) => RANK[b.level] - RANK[a.level] || a.staff - b.staff || a.from - b.from);
   }
 
+  /** What the engine said about a span, in a sentence for the model (ticket 10): the doubts of its measures, without repeats. */
+  doubtNote(span: { staff: number; from: number; to: number }): string {
+    const said = new Set<string>();
+    for (const d of this.doubts) {
+      const staff = typeof d.part === "number" ? d.part : 0;
+      if (staff === span.staff && d.measure >= span.from && d.measure <= span.to && !d.info) said.add(`measure ${d.measure}: ${d.text}`);
+    }
+    return [...said].slice(0, 6).join("; ");
+  }
+
   /** The places still to look at: not checked, or the live check still complains. */
   open(): Place[] {
     return this.places().filter((p) => !p.info && (!p.checked || p.live));
@@ -227,6 +238,16 @@ export class EditorSession {
     return d && d.view === "corrected" ? correctedXml(this.xml, d.draft.changes, d.ticked) : this.xml;
   }
 
+  private shownCache: { xml: string; measures: MeasureInfo[] } | null = null;
+
+  /** The measures of the version on show: what the marks on the sheet and the player's positions are found in. */
+  get shownMeasures(): MeasureInfo[] {
+    const xml = this.shownXml;
+    if (xml === this.xml) return this.measures;
+    if (this.shownCache?.xml !== xml) this.shownCache = { xml, measures: walk(part(parse(xml))) };
+    return this.shownCache.measures;
+  }
+
   /** Review a draft: the corrected version first, every change ticked unless the server says it conflicts. */
   openDraft(draft: ModelDraft): void {
     // our own copy of the changes: their conflict flags follow the document while the draft is open
@@ -253,8 +274,12 @@ export class EditorSession {
     if (!d) return;
     let moved = false;
     for (const c of d.draft.changes) {
-      const now = lyricAt(this.doc, c.span.staff, c.measure, c.onset, c.verse);
-      const conflict = d.fromServer.has(c.id) || now?.text !== c.old?.text || now?.syllabic !== c.old?.syllabic;
+      let conflict: boolean;
+      if (isScoreChange(c)) conflict = d.fromServer.has(c.id) || currentText(this.doc, c) !== c.old.text;
+      else {
+        const now = lyricAt(this.doc, c.span.staff, c.measure, c.onset, c.verse);
+        conflict = d.fromServer.has(c.id) || now?.text !== c.old?.text || now?.syllabic !== c.old?.syllabic;
+      }
       if (conflict === c.conflict) continue;
       c.conflict = conflict;
       if (conflict) d.ticked.delete(c.id); else d.ticked.add(c.id);
@@ -322,7 +347,7 @@ export class EditorSession {
 
   /** The readings the model proposed for a measure and the sheet does not already say; rejected and accepted ones are not offered. */
   modelReadingsAt(measure: number): ModelReading[] {
-    return this.modelReadings.filter((r) => {
+    return this.modelReadings.filter(isLyricReading).filter((r) => {
       if (r.status !== "proposed" || r.measure !== measure) return false;
       const now = lyricAt(this.doc, r.span.staff, r.measure, r.onset, r.verse);
       return (now?.text ?? null) !== (r.new?.text ?? null) || (now?.syllabic ?? null) !== (r.new?.syllabic ?? null);
@@ -331,7 +356,7 @@ export class EditorSession {
 
   /** Take a reading: the syllable is written like any hand edit, so it is saved with the score and one undo takes it back. */
   acceptModelReading(id: string): boolean {
-    const r = this.modelReadings.find((x) => x.id === id);
+    const r = this.modelReadings.filter(isLyricReading).find((x) => x.id === id);
     if (!r) return false;
     return this.apply((doc) => {
       if (!setLyric(doc, r.span.staff, r.measure, r.onset, r.verse, r.new)) throw new EditError("The note this reading is about is no longer there.");

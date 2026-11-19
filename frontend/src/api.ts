@@ -115,7 +115,7 @@ export type { Voicing } from "./voices";
  * `unders` the staves that go on playing underneath the form. Both are playback only and both are
  * empty for every score made before ADR 0008.
  */
-export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[]; model_readings?: ModelReading[] }
+export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[]; model_readings?: AnyReading[] }
 export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
 
 export async function getReview(id: string): Promise<ReviewState> {
@@ -152,22 +152,45 @@ export interface Syllable { text: string; syllabic: "single" | "begin" | "middle
  * measure's sounding notes (the convention of lyrics.json); `verse` is 1-based. `old` null is a new
  * syllable, `new` null one that goes. `conflict` is a place edited by hand since the pass.
  */
-export interface ModelChange { id: string; span: ModelSpan; verse: number; measure: number; onset: number; old: Syllable | null; new: Syllable | null; ticked: boolean; conflict: boolean }
+export interface ModelChange { id: string; kind?: "lyric"; span: ModelSpan; verse: number; measure: number; onset: number; old: Syllable | null; new: Syllable | null; ticked: boolean; conflict: boolean }
+/** One operation of the editor's vocabulary (score/edit.ts), naming a note by `measure` and `event`: its place among the
+ *  measure's <note> elements as the score was read, which an earlier operation of the same answer does not move. */
+export interface ScoreOp { op: string; measure: number; event: number; [param: string]: unknown }
+/**
+ * What the pass would do to the notes of one measure (`kind` notes: all its operations, kept or dropped together
+ * because they must add up together) or to one chord symbol (`kind` chord). `old` and `new` are the values in words:
+ * the measure's notes ("G4 eighth, Ab4 eighth"), or the chord ("Cm"; empty is none). `marks` are the event indices
+ * that differ, for the marks on the sheet; a chord change marks `event`.
+ */
+export interface ScoreChange {
+  id: string; kind: "notes" | "chord"; span: ModelSpan; measure: number; event?: number; ops: ScoreOp[]; marks?: number[];
+  old: { text: string }; new: { text: string }; ticked: boolean; conflict: boolean;
+}
+export type AnyChange = ModelChange | ScoreChange;
+export const isScoreChange = (c: AnyChange): c is ScoreChange => c.kind === "notes" || c.kind === "chord";
 /** A change the user did not take, stored with the job (ADR 0010); `rejected` hides it, nothing deletes it. */
 export interface ModelReading {
-  id: string; draft: string; span: ModelSpan; verse: number; measure: number; onset: number; old: Syllable | null; new: Syllable | null;
+  kind?: "lyric"; id: string; draft: string; span: ModelSpan; verse: number; measure: number; onset: number; old: Syllable | null; new: Syllable | null;
   route: string; model: string; time: string; status: "proposed" | "accepted" | "rejected";
 }
+export interface ScoreReading {
+  id: string; draft: string; kind: "notes" | "chord"; span: ModelSpan; measure: number; ops: ScoreOp[]; old: { text: string }; new: { text: string };
+  route: string; model: string; time: string; status: "proposed" | "accepted" | "rejected";
+}
+export type AnyReading = ModelReading | ScoreReading;
+export const isLyricReading = (r: AnyReading): r is ModelReading => r.kind !== "notes" && r.kind !== "chord";
 export interface ModelDraft {
   id: string; created: string; base_revision: number; route: { kind: string; model: string };
-  spans: (ModelSpan & { lyrics_source: string })[]; changes: ModelChange[]; dropped: { span: ModelSpan; verse: number; reason: string }[];
+  spans: (ModelSpan & { lyrics_source: string; note?: string })[]; changes: AnyChange[];
+  /** `kind` notes is a span checked for notes and chords (its `verse` is 0). */
+  dropped: { span: ModelSpan; verse: number; reason: string; kind?: "notes" }[];
   /** Verses the larger model had to answer after the first answer failed validation. */
   escalated?: { span: ModelSpan; verse: number; model: string }[];
 }
 export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; vision?: boolean; confirm: false }
 /** A span's words are typed (`lyrics_source`) or a picture of them (`lyrics_picture`, bare base64 PNG/JPEG/WebP), not both.
  *  `needs_image` is set on a picture span so a route without vision refuses it before any call. */
-export interface ModelSpanIn extends ModelSpan { lyrics_source?: string; lyrics_picture?: string; needs_image?: boolean }
+export interface ModelSpanIn extends ModelSpan { lyrics_source?: string; lyrics_picture?: string; needs_image?: boolean; note?: string }
 export interface ModelPassRequest { spans: ModelSpanIn[]; api_key?: string; route?: string; larger?: boolean }
 
 /** The routes the server offers (Anthropic, DeepSeek), with whether each holds a key and can read images. */

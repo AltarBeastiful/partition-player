@@ -7,7 +7,8 @@
  * A change names a note by measure and onset rank: the rank among the measure's sounding notes
  * (rests, grace notes and chord tones do not count), the convention of lyrics.json.
  */
-import type { ModelChange, Syllable } from "../api";
+import { isScoreChange, type AnyChange, type ModelChange, type ScoreChange, type Syllable } from "../api";
+import { applyScoreChanges } from "./modelOps";
 import { child, children, insertOrdered, make, parse, part, serialize, type EventKey, type MeasureInfo } from "./xml";
 
 const ELISION = "‿";
@@ -53,19 +54,31 @@ export function setLyric(doc: XMLDocument, staff: number, measure: number, onset
 }
 
 /** The read score with the ticked changes written in. With none ticked, the text comes back as it was. */
-export function correctedXml(xml: string, changes: ModelChange[], ticked: ReadonlySet<string>): string {
+export function correctedXml(xml: string, changes: AnyChange[], ticked: ReadonlySet<string>): string {
   const chosen = changes.filter((c) => ticked.has(c.id));
   if (chosen.length === 0) return xml;
   const doc = parse(xml);
-  for (const c of chosen) setLyric(doc, c.span.staff, c.measure, c.onset, c.verse, c.new);
+  // the words first, then the notes and chords: the server does the same, and a note is named by where it was read
+  for (const c of chosen) if (!isScoreChange(c)) setLyric(doc, c.span.staff, c.measure, c.onset, c.verse, c.new);
+  applyScoreChanges(doc, chosen.filter(isScoreChange));
   return serialize(doc);
 }
 
-/** The sounding note of every change on part 0, for the marks on the sheet. */
-export function markKeys(measures: MeasureInfo[], changes: ModelChange[]): EventKey[] {
+/**
+ * The notes of every change, for the marks on the sheet: `measures` are those of the version shown (a lyric names
+ * the sounding note of part 0; a notes change the events that differ; a chord change its event).
+ */
+export function markKeys(measures: MeasureInfo[], changes: AnyChange[]): EventKey[] {
   const keys: EventKey[] = [];
   for (const c of changes) {
     if (c.span.staff !== 0) continue;
+    if (isScoreChange(c)) {
+      for (const i of c.kind === "chord" ? [c.event ?? 0] : c.marks ?? []) {
+        const ev = measures[c.measure]?.events[i];
+        if (ev) keys.push(ev.key);
+      }
+      continue;
+    }
     const sounding = measures[c.measure]?.events.filter((e) => !e.isRest && !e.isGrace && !e.inChord);
     const ev = sounding?.[c.onset];
     if (ev) keys.push(ev.key);
@@ -76,7 +89,13 @@ export function markKeys(measures: MeasureInfo[], changes: ModelChange[]): Event
 const quote = (s: Syllable) => `"${s.text}"`;
 
 /** One line of the change list: where, and what it was. */
-export function changeLine(c: Pick<ModelChange, "measure" | "verse" | "old" | "new">): string {
+export function changeLine(c: Pick<ModelChange, "measure" | "verse" | "old" | "new"> | Pick<ScoreChange, "kind" | "measure" | "old" | "new">): string {
+  if (!("verse" in c)) {
+    const at = `bar ${c.measure + 1}, ${c.kind === "chord" ? "chord" : "notes"}`;
+    if (c.kind === "notes") return `${at}: ${c.old.text} becomes ${c.new.text}`;
+    if (c.old.text && c.new.text) return `${at}: "${c.old.text}" becomes "${c.new.text}"`;
+    return c.old.text ? `${at}: "${c.old.text}" is taken away` : `${at}: new "${c.new.text}"`;
+  }
   const where = `bar ${c.measure + 1}, verse ${c.verse}`;
   if (c.old && c.new) return `${where}: ${quote(c.old)} becomes ${quote(c.new)}`;
   if (c.old) return `${where}: ${quote(c.old)} is taken away`;

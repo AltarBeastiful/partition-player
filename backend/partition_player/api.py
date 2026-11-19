@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from . import __version__, review
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
-from .model import lyrics_pass
+from .model import lyrics_pass, notes_pass
 from .model.route import image_refusal
 from .pipeline import musicxml, pdf
 from .pipeline.lyrics import edit as lyrics_edit
@@ -59,6 +59,7 @@ class SpanIn(BaseModel):
     to: int
     lyrics_source: str = Field(default="", max_length=lyrics_pass.MAX_SOURCE)
     lyrics_picture: str = Field(default="", max_length=lyrics_pass.MAX_PICTURE, repr=False)  # base64 PNG/JPEG/WebP of the words, instead of the text
+    note: str = Field(default="", max_length=notes_pass.MAX_NOTE)  # what is known about a span without words: the doubts, or the user's own sentence
     needs_image: bool = False        # the answer needs a crop or a picture: refused on a route without vision
 
     model_config = {"populate_by_name": True}
@@ -247,6 +248,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                                      "use fewer spans or your own key")
         d = store.dir(job_id)
         spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source,
+                  **({"note": s.note} if s.note.strip() else {}),
                   **({"lyrics_picture": s.lyrics_picture} if s.lyrics_picture else {}),
                   **({"needs_image": True} if s.needs_image or s.lyrics_picture else {})} for s in body.spans]
         if any(s.get("lyrics_picture") and s["lyrics_source"].strip() for s in spans):
@@ -306,14 +308,18 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         d = store.dir(job_id)
         score = d / "score.musicxml"
         now = datetime.now(timezone.utc).isoformat()
-        readings = [{"id": f"{draft['id']}-{c['id']}", "draft": draft["id"], "span": c["span"], "verse": c["verse"],
-                     "measure": c["measure"], "onset": c["onset"], "old": c["old"], "new": c["new"],
-                     "route": draft["route"]["kind"], "model": draft["route"]["model"], "time": now,
-                     "status": "accepted" if c["id"] in body.ticked else "proposed"}
-                    for c in draft["changes"] if c["old"] != c["new"]]
+        def reading(c: dict, status: str) -> dict:
+            where = {"measure": c["measure"], "onset": c["onset"], "verse": c["verse"]} if c.get("kind", "lyric") == "lyric" else \
+                {"kind": c["kind"], "measure": c["measure"], "ops": c["ops"]}
+            return {"id": f"{draft['id']}-{c['id']}", "draft": draft["id"], "span": c["span"], **where, "old": c["old"], "new": c["new"],
+                    "route": draft["route"]["kind"], "model": draft["route"]["model"], "time": now, "status": status}
+
         with store.lock:
             tree = ET.parse(score)
-            lyrics_pass.apply_changes_by_staff(tree.getroot(), [c for c in draft["changes"] if c["id"] in body.ticked])
+            held = set(lyrics_pass.apply_changes_by_staff(tree.getroot(), [c for c in draft["changes"] if c["id"] in body.ticked]))
+            # a notes or chord change that no longer holds on the score as it is stays a proposed reading
+            readings = [reading(c, "accepted" if c["id"] in body.ticked and (c.get("kind", "lyric") == "lyric" or c["id"] in held) else "proposed")
+                        for c in draft["changes"] if c["old"] != c["new"]]
             tree.write(score, encoding="UTF-8", xml_declaration=True)
             lyrics_file = d / "lyrics.json"
             old = json.loads(lyrics_file.read_text()) if lyrics_file.exists() else {}

@@ -167,7 +167,7 @@ export function ScoreView({ job, version = 0, onStats, onLyricsChanged, register
     const osmd = osmdRef.current;
     if (!osmd || !session) return;
     drawOverlay(osmd, session.places(), session.selected);
-    if (session.draft) markNotes(osmd, markKeys(session.measures, session.draft.draft.changes)); // plan 0016: every change of the draft
+    if (session.draft) markNotes(osmd, markKeys(session.shownMeasures, session.draft.draft.changes)); // plan 0016: every change of the draft
     if (verseRef.current !== null) dimVerses(osmd, verseRef.current); else clearVerses(osmd);
     // plan 0007: the sections over the measures they cover, while the panel that edits them is open
     if (showSections) drawSections(osmd, (session.form ?? formFromPasses(printed, measureCount)).sections);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getModelDraft, getModelRoutes } from "../api";
-import type { ModelEstimate } from "../api";
+import type { ModelEstimate, ModelSpanIn } from "../api";
 import { pictureToBase64 } from "../editor/picture";
 import { initialRoute, spanRefusal, type ModelRoute } from "../modelRoute";
 import { changeLine } from "../score/draft";
@@ -35,6 +35,11 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
   const flow = useRef<ModelFlow | null>(null);
   if (!flow.current) flow.current = new ModelFlow(session.jobId);
   const draft = session.draft;
+  const doubts = session.doubtSpans();
+  const spanKey = (d: { staff: number; from: number }) => `${d.staff}:${d.from}`;
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const chosen = picked ?? new Set(doubts.filter((d) => d.level === "wrong").map(spanKey));   // strong doubts are ticked until the user says otherwise
+  const togglePick = (k: string) => setPicked((p) => { const n = new Set(p ?? chosen); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
   useEffect(() => {
     let live = true;
@@ -51,28 +56,42 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
 
   useEffect(() => { setTo((t) => (t > measureCount || t < 1 ? measureCount || 1 : t)); }, [measureCount]);
 
-  async function start() {
+  async function ask(spans: ModelSpanIn[]) {
     setRunning(true); setError(null); setApplied(null);
     try {
       if (session.dirty) await session.save(); // the pass reads the score as the server holds it
       visitorKey.set(key);
-      const span = picture
-        ? { staff, from: from - 1, to: to - 1, lyrics_picture: await pictureToBase64(picture), needs_image: true }
-        : { staff, from: from - 1, to: to - 1, lyrics_source: text, needs_image: false };
-      const refused = spanRefusal(route, span);
-      if (refused) { setError(refused); return; }
+      for (const span of spans) {
+        const refused = spanRefusal(route, span);
+        if (refused) { setError(refused); return; }
+      }
       flow.current!.routeId = routeId;
-      await flow.current!.ask([span]);
+      await flow.current!.ask(spans);
       setEstimate(flow.current!.estimate); setError(flow.current!.error);
     } catch (e) { setError((e as Error).message); } finally { setRunning(false); }
   }
 
+  /** The words of the staff, typed or as a picture: the model places them under the notes. */
+  async function start() {
+    const range = { staff, from: from - 1, to: to - 1 };
+    try {
+      await ask([picture
+        ? { ...range, lyrics_picture: await pictureToBase64(picture), needs_image: true }
+        : { ...range, lyrics_source: text, needs_image: false }]);
+    } catch (e) { setError((e as Error).message); }
+  }
+
+  /** Ticket 10: no words; the model re-reads the notes and chords of the span, told what the engine doubted there. */
+  async function checkNotes(spans: { staff: number; from: number; to: number }[]) {
+    await ask(spans.map((sp) => ({ ...sp, needs_image: false, note: session.doubtNote(sp) })));
+  }
+
   /** Try harder (ticket 08): one span of the draft again, on the larger model; its draft replaces this one once confirmed. */
-  async function tryHarder(span: { staff: number; from: number; to: number; lyrics_source: string }) {
+  async function tryHarder(span: { staff: number; from: number; to: number; lyrics_source: string; note?: string }) {
     setRunning(true); setError(null);
     try {
       flow.current!.routeId = routeId; visitorKey.set(key);
-      await flow.current!.askHarder({ staff: span.staff, from: span.from, to: span.to, lyrics_source: span.lyrics_source });
+      await flow.current!.askHarder({ staff: span.staff, from: span.from, to: span.to, ...(span.lyrics_source ? { lyrics_source: span.lyrics_source } : { note: span.note ?? "" }) });
       setEstimate(flow.current!.estimate); setError(flow.current!.error);
     } catch (e) { setError((e as Error).message); } finally { setRunning(false); }
   }
@@ -99,7 +118,7 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
     <section className="card model-panel">
       <div className="controls">
         <strong>Check with a model</strong>
-        <span className="muted">Paste the words of a staff; a model places the syllables under the notes and you look at the draft here before anything is kept.</span>
+        <span className="muted">Paste the words of a staff and a model places the syllables under the notes, or have it re-read the notes and chords of doubtful measures. You look at the draft here before anything is kept.</span>
         {!draft && <button className="quiet" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Open"}</button>}
       </div>
       {open && !draft && (
@@ -112,15 +131,22 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
               {route && !route.vision && <span className="muted">No image reading on this route: typed words only.</span>}
             </div>
           )}
-          {session.doubtSpans().length > 0 && (
+          {doubts.length > 0 && (
             <div className="controls doubt-spans">
               <span className="muted">Doubtful in the recognition, strongest first:</span>
-              {session.doubtSpans().map((d) => (
-                <button key={`${d.staff}:${d.from}`} className="quiet" title={d.level === "wrong" ? "A measure that cannot be right" : "Worth a look"}
-                  onClick={() => { setStaff(d.staff); setFrom(d.from + 1); setTo(d.to + 1); }}>
-                  {d.level === "wrong" ? "Wrong" : "Check"}: {staves > 1 ? `staff ${d.staff + 1}, ` : ""}measure{d.from === d.to ? "" : "s"} {d.from + 1}{d.from === d.to ? "" : `-${d.to + 1}`}
-                </button>
+              {doubts.map((d) => (
+                <span key={spanKey(d)}>
+                  <input type="checkbox" aria-label={`Check the notes of measures ${d.from + 1} to ${d.to + 1}`} checked={chosen.has(spanKey(d))} onChange={() => togglePick(spanKey(d))} />
+                  <button className="quiet" title={d.level === "wrong" ? "A measure that cannot be right" : "Worth a look"}
+                    onClick={() => { setStaff(d.staff); setFrom(d.from + 1); setTo(d.to + 1); }}>
+                    {d.level === "wrong" ? "Wrong" : "Check"}: {staves > 1 ? `staff ${d.staff + 1}, ` : ""}measure{d.from === d.to ? "" : "s"} {d.from + 1}{d.from === d.to ? "" : `-${d.to + 1}`}
+                  </button>
+                </span>
               ))}
+              <button onClick={() => void checkNotes(doubts.filter((d) => chosen.has(spanKey(d))))} disabled={running || !!estimate || chosen.size === 0}
+                title="The model re-reads the notes and chords of the ticked spans; you look at the draft before anything is kept">
+                Check the notes of the {chosen.size} ticked
+              </button>
             </div>
           )}
           <div className="controls">
@@ -157,6 +183,8 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
           ) : (
             <div className="controls">
               <button className="primary" onClick={start} disabled={running || (!picture && !text.trim())}>{running ? "Estimating…" : "Place the words"}</button>
+              <button onClick={() => void checkNotes([{ staff, from: from - 1, to: to - 1 }])} disabled={running}
+                title="No words needed: the model re-reads the notes and chords of these measures">Check the notes and chords</button>
             </div>
           )}
           <p className="muted">{modelNotice(route?.label)}</p>
@@ -181,12 +209,12 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
             ))}
           </ul>
           {(draft.draft.escalated ?? []).length > 0 && (
-            <p className="muted">The first answer failed the check, so the larger model answered: {(draft.draft.escalated ?? []).map((e) => `verse ${e.verse} of measures ${e.span.from + 1}-${e.span.to + 1} (${e.model})`).join("; ")}.</p>
+            <p className="muted">The first answer failed the check, so the larger model answered: {(draft.draft.escalated ?? []).map((e) => `${e.verse === 0 ? "notes and chords" : `verse ${e.verse}`} of measures ${e.span.from + 1}-${e.span.to + 1} (${e.model})`).join("; ")}.</p>
           )}
           {draft.draft.dropped.length > 0 && (
-            <p className="muted">Not used: {draft.draft.dropped.map((d) => `verse ${d.verse} of measures ${d.span.from + 1}-${d.span.to + 1} (${d.reason})`).join("; ")}</p>
+            <p className="muted">Not used: {draft.draft.dropped.map((d) => `${d.kind === "notes" ? "notes and chords" : `verse ${d.verse}`} of measures ${d.span.from + 1}-${d.span.to + 1} (${d.reason})`).join("; ")}</p>
           )}
-          {draft.draft.spans.filter((sp) => sp.lyrics_source && draft.draft.dropped.some((d) => d.span.staff === sp.staff && d.span.from === sp.from && d.span.to === sp.to)).map((sp) => (
+          {draft.draft.spans.filter((sp) => draft.draft.dropped.some((d) => d.span.staff === sp.staff && d.span.from === sp.from && d.span.to === sp.to)).map((sp) => (
             <div className="controls" key={`${sp.staff}:${sp.from}:${sp.to}`}>
               <button onClick={() => tryHarder(sp)} disabled={running || applying}>Try harder: measures {sp.from + 1}-{sp.to + 1}</button>
             </div>

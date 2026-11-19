@@ -156,6 +156,16 @@ and a range of measures, paste the words, and a small model places the syllables
 Nothing runs until you have seen the number of calls and the estimated cost and pressed Confirm. The
 result is a draft you read in the sheet, untick, and apply as one revision (one undo).
 
+With no words, the same panel re-reads the **notes and chords** of a span (ticket 10): the engine's
+doubts are listed strongest first and each can be ticked (strong ones are ticked already), or you
+give a range. The model sees the notes as text, not the photo, and answers with the editor's own
+operations (change a pitch or a length, delete or insert a note, a rest, a tie, a chord symbol).
+Operations that do not apply are dropped one by one; the note operations of a measure stand or fall
+together, and a measure that added up must still add up, a wrong one may not get worse. Clef, key,
+time and the number of measures cannot change. Each measure's change shows the notes as they were
+and as they would be, marked on the sheet, and plays like the rest of the draft.
+Notes and chords are checked on the first part of the score only.
+
 Three ways to run it, and what leaves the server in each:
 
 - **Your own Claude Code session** (local, no API key): planned as a later addition. Crops would go
