@@ -102,3 +102,10 @@ memory-copy loop scale normally on the same cores. The laptop's "88 % idle" was 
 capacity for this workload. The cause is unknown; the next things to try are
 `intra_op_num_threads=1` set in the driver's onnxruntime sessions, and a second machine. Step 2's 25 %
 rule should be judged against 13 s a page, the sequential figure.
+
+### Follow-up: one onnxruntime thread per session (2026-11-19)
+
+Tried `PP_ORT_THREADS=1` (an option of the driver, off by default): no gain. 10 pages, wall clock:
+163 s with 1 worker, 137 s with 2, 132 s with 4, 163 s with 8; results equal the default run's. The
+thread count is not the cause. Stopping here as planned: use `--jobs 2` or 4 for a gain of 15 to 20 %,
+and treat a re-score as costing about 13 s a page. Step 2 (GPU) is judged against that figure.

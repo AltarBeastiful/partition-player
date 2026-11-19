@@ -631,3 +631,14 @@ run goes on. `bench/songs/check_jobs.py` runs a sample twice and compares.
   (1.35x slower with 8 at once, bandwidth unchanged), so it is not the clock, the heat or the memory
   bus in general. The cause inside homr's inference was not found (no `py-spy`; `strace` is not
   allowed here). On this laptop `--jobs 2` is the setting worth using and more does not help.
+
+### One onnxruntime thread per session (`PP_ORT_THREADS=1`), 2026-11-19: no gain
+
+The driver (`homr_driver.cap_ort_threads`) gives every onnxruntime session, homr's and ours, n
+intra-op threads when `PP_ORT_THREADS=n` is set; unset, nothing changes. Same 10 pages, wall clock,
+with `PP_ORT_THREADS=1` (load average 6 at the start, left over from my own earlier test, then
+rising to 54 during the 8-worker run): `--jobs 1` 163 s, `--jobs 2` 137 s, `--jobs 4` 132 s,
+`--jobs 8` 163 s. Four simultaneous pinned pages still took 48 s against 15 s for one. The results
+equal the default run's in every field but the seconds. So the thread count inside onnxruntime is not
+the cause, the option is not made a default of `--jobs`, and the best setting stays `--jobs 2` to 4
+(a 15 to 20 % gain at most). The cause was not pursued further.

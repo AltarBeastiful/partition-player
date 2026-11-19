@@ -52,3 +52,28 @@ def test_each_running_worker_is_pinned_to_its_own_cores(tmp_path):
     assert cpus[0] != cpus[1]
     for c in cpus:
         assert len(c.split(",")) == 2 or "-" in c  # two cores each
+
+
+def test_driver_caps_onnxruntime_threads_only_when_asked(monkeypatch):
+    from partition_player.pipeline.engines import homr_driver as d
+    seen = []
+
+    class FakeOpts:
+        intra_op_num_threads = 0
+        inter_op_num_threads = 0
+
+    class FakeOrt:
+        SessionOptions = FakeOpts
+
+        @staticmethod
+        def InferenceSession(path, sess_options=None, **kw):
+            seen.append(sess_options)
+
+    monkeypatch.delenv("PP_ORT_THREADS", raising=False)
+    d.cap_ort_threads(FakeOrt)
+    FakeOrt.InferenceSession("m")
+    assert seen[-1] is None  # production default untouched
+    monkeypatch.setenv("PP_ORT_THREADS", "1")
+    d.cap_ort_threads(FakeOrt)
+    FakeOrt.InferenceSession("m")
+    assert seen[-1].intra_op_num_threads == 1

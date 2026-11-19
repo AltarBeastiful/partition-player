@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -54,6 +55,27 @@ BAND_MARGIN_UNITS = 2.0
 LYRICS_TOP_UNITS = 1.5    # lyric band: from this far below the bottom staff line ...
 LYRICS_BOTTOM_UNITS = 12.0  # ... to this far below it, or one interline above the next staff
 LYRICS_GAP_UNITS = 1.0
+
+
+def cap_ort_threads(ort_module=ort) -> None:
+    """With PP_ORT_THREADS=n set (the benchmark's --jobs does), every onnxruntime session made from
+    here on, homr's and ours, gets n intra-op threads; unset, sessions are left as they are."""
+    n = os.environ.get("PP_ORT_THREADS")
+    if not n:
+        return
+    make = ort_module.InferenceSession
+
+    def capped(path, sess_options=None, *a, **kw):
+        if sess_options is None:
+            sess_options = ort_module.SessionOptions()
+            sess_options.intra_op_num_threads = int(n)
+            sess_options.inter_op_num_threads = 1
+        return make(path, sess_options, *a, **kw)
+
+    ort_module.InferenceSession = capped
+
+
+cap_ort_threads()
 
 
 def log(*a) -> None:
