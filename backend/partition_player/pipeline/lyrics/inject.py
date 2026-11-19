@@ -107,8 +107,11 @@ def read_placements(score: Path, part_index: int = 0) -> list[Placement]:
     """The placements a document holds, read back from its <lyric> elements: after the editor has
     changed the notes (ADR 0005) lyrics.json is rebuilt from this, so the lyrics panel keeps showing
     what the score has."""
-    tree = ET.parse(score)
-    parts = tree.getroot().findall("part")
+    return read_placements_of(ET.parse(score).getroot(), part_index)
+
+
+def read_placements_of(root: ET.Element, part_index: int = 0) -> list[Placement]:
+    parts = root.findall("part")
     if not parts:
         return []
     placed: list[Placement] = []

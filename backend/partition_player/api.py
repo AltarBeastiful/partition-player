@@ -4,7 +4,11 @@ Jobs double as the score library: a finished job is a saved score with a name, r
 """
 from __future__ import annotations
 
+import json
+import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request, UploadFile
@@ -15,6 +19,7 @@ from pydantic import BaseModel, Field
 from . import __version__, review
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
+from .model import lyrics_pass
 from .pipeline import musicxml, pdf
 from .pipeline.lyrics import edit as lyrics_edit
 from .pipeline.lyrics import inject as lyrics_inject
@@ -45,7 +50,28 @@ class Edited(BaseModel):
     unders: list[dict] | None = Field(default=None, max_length=review.MAX_UNDERS)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+class SpanIn(BaseModel):
+    """A span of the model pass (ADR 0010): one staff over measures `from` to `to` (0-based, inclusive),
+    here with a typed lyrics source; verses of the source are separated by a blank line."""
+    staff: int = 0
+    from_: int = Field(alias="from")
+    to: int
+    lyrics_source: str = Field(max_length=lyrics_pass.MAX_SOURCE)
+
+    model_config = {"populate_by_name": True}
+
+
+class ModelPass(BaseModel):
+    spans: list[SpanIn] = Field(min_length=1, max_length=20)
+    confirm: bool = False            # false: return the estimate and run nothing
+    api_key: str = Field(default="", max_length=300, repr=False)  # the visitor's key: used for this call only
+
+
+class Apply(BaseModel):
+    ticked: list[str] = Field(max_length=5000)
+
+
+def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
     settings = settings or load_settings()
     store = JobStore(settings)
     worker = Worker(store, settings)
@@ -191,6 +217,75 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return review.revert(store, job)
         except FileNotFoundError as e:
             raise HTTPException(404, str(e)) from e
+
+    # ---- the model pass (ADR 0010) -----------------------------------------------------------------
+
+    @app.post("/api/jobs/{job_id}/model-pass")
+    def model_pass(job_id: str, body: ModelPass) -> dict:
+        """Without `confirm`: the number of calls and an estimated cost, nothing runs. With it: the
+        model is asked, the answers are validated, and the draft is stored and returned. A key in the
+        body is used for this request only and is never written anywhere."""
+        done(job_id)
+        route = replace(settings.model_route, api_key=body.api_key) if body.api_key else settings.model_route
+        if not route.enabled:
+            raise HTTPException(409, "the model pass is off: no model route is configured and no key was given")
+        d = store.dir(job_id)
+        spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source} for s in body.spans]
+        try:
+            root = ET.parse(d / "score.musicxml").getroot()
+            estimate = lyrics_pass.estimate(root, spans)
+            if not body.confirm:
+                return {**estimate, "model": route.model, "confirm": False}
+            result = lyrics_pass.run(d / "score.musicxml", spans, route, client=model_client)
+        except lyrics_pass.SpanError as e:
+            raise HTTPException(422, str(e)) from e
+        with store.lock:
+            return lyrics_pass.save_draft(d, d / "score.musicxml", route, spans, result, review.load(d)["revision"])
+
+    def current_draft(job_id: str) -> dict:
+        done(job_id)
+        draft = lyrics_pass.load_draft(store.dir(job_id))
+        if draft is None:
+            raise HTTPException(404, "no model draft for this score")
+        return draft
+
+    @app.get("/api/jobs/{job_id}/model-draft")
+    def get_model_draft(job_id: str) -> dict:
+        draft = current_draft(job_id)
+        root = ET.parse(store.dir(job_id) / "score.musicxml").getroot()
+        return {**draft, "changes": lyrics_pass.flag_conflicts(root, draft["changes"])}
+
+    @app.get("/api/jobs/{job_id}/model-draft.musicxml")
+    def get_model_draft_score(job_id: str) -> FileResponse:
+        current_draft(job_id)
+        return FileResponse(store.dir(job_id) / lyrics_pass.DRAFT_SCORE, media_type="application/vnd.recordare.musicxml+xml",
+                            headers={"Cache-Control": "no-cache"})
+
+    @app.post("/api/jobs/{job_id}/model-draft/apply")
+    def apply_model_draft(job_id: str, body: Apply) -> dict:
+        """Apply the ticked changes as one revision; the others stay as stored readings."""
+        draft = current_draft(job_id)
+        known = {c["id"] for c in draft["changes"]}
+        if not set(body.ticked) <= known:
+            raise HTTPException(422, "a ticked change is not part of this draft")
+        d = store.dir(job_id)
+        score = d / "score.musicxml"
+        now = datetime.now(timezone.utc).isoformat()
+        readings = [{"id": f"{draft['id']}-{c['id']}", "draft": draft["id"], "span": c["span"], "verse": c["verse"],
+                     "measure": c["measure"], "onset": c["onset"], "old": c["old"], "new": c["new"],
+                     "route": draft["route"]["kind"], "model": draft["route"]["model"], "time": now,
+                     "status": "accepted" if c["id"] in body.ticked else "proposed"}
+                    for c in draft["changes"] if c["old"] != c["new"]]
+        with store.lock:
+            tree = ET.parse(score)
+            lyrics_pass.apply_changes(tree.getroot(), [c for c in draft["changes"] if c["id"] in body.ticked])
+            tree.write(score, encoding="UTF-8", xml_declaration=True)
+            lyrics_file = d / "lyrics.json"
+            old = json.loads(lyrics_file.read_text()) if lyrics_file.exists() else {}
+            lyrics_inject.save(lyrics_file, lyrics_inject.read_placements(score), old.get("warnings", []), old.get("seen", []))
+            review.bump(d, readings)
+            lyrics_pass.drop_draft(d)
+        return review.state(store, job_id)
 
     @app.get("/api/jobs/{job_id}/review.webp")
     def get_review_image(job_id: str) -> FileResponse:

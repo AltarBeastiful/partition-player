@@ -1,7 +1,7 @@
 """The editor's server side (ADR 0005): the review record, saving an edited document, reverting.
 
 review.json: {"doubts": [...], "checked": [measure indices], "revision": n, "form": null | {...},
-"lines": [...], "unders": [...]}. The
+"lines": [...], "unders": [...], "model_readings": [...]}. The
 form (plan 0004) is how the page is played: sections over measure ranges and passes through them,
 null when the automatic form (the repeat signs and the verses) is what plays. A pass may carry
 `times` and a section a `fromOnset` / `toOnset` beat inside its first and last measure (plan 0007);
@@ -41,13 +41,14 @@ class StaleRevision(ValueError):
 def load(d: Path) -> dict:
     p = d / "review.json"
     if not p.exists():  # a score recognized before the editor existed
-        return {"doubts": [], "checked": [], "revision": 0, "form": None, "lines": [], "unders": []}
+        return {"doubts": [], "checked": [], "revision": 0, "form": None, "lines": [], "unders": [], "model_readings": []}
     data = json.loads(p.read_text())
     # Every key is named here or it is dropped at the next save: that is how the form's times and
     # onsets were silently stripped once (plan 0008), and why `lines` and `unders` are listed the
     # same day they are first written.
     return {"doubts": data.get("doubts", []), "checked": data.get("checked", []), "revision": int(data.get("revision", 0)),
-            "form": data.get("form"), "lines": data.get("lines", []), "unders": data.get("unders", [])}
+            "form": data.get("form"), "lines": data.get("lines", []), "unders": data.get("unders", []),
+            "model_readings": data.get("model_readings", [])}  # ADR 0010: what the model proposed, kept with the job
 
 
 MAX_ONSET = 16.0   # whole notes from a measure start: far past any real measure, the browser clamps to its length
@@ -196,11 +197,12 @@ def validate_unders(unders: object, measure_count: int, sections: int = 0) -> li
     return out
 
 
-def bump(d: Path) -> int:
-    """A change to the document made outside the editor (the lyrics panel): the revision moves on.
-    Caller holds the store lock."""
+def bump(d: Path, model_readings: list[dict] | None = None) -> int:
+    """A change to the document made outside the editor (the lyrics panel, applying a model draft): the
+    revision moves on, and model readings, if given, are added to the stored ones. Caller holds the store lock."""
     current = load(d)
     current["revision"] += 1
+    current["model_readings"] = current["model_readings"] + (model_readings or [])
     (d / "review.json").write_text(json.dumps(current, indent=1))
     return current["revision"]
 
@@ -262,7 +264,8 @@ def save(store: JobStore, job: Job, musicxml: str, checked: list[int], revision:
         record = {"doubts": doubts if doubts is not None else current["doubts"],
                   "checked": sorted(set(int(c) for c in checked)), "revision": current["revision"] + 1, "form": form,
                   "lines": voicings if lines is not None else current["lines"],
-                  "unders": going_under if unders is not None else current["unders"]}
+                  "unders": going_under if unders is not None else current["unders"],
+                  "model_readings": current["model_readings"]}
         (d / "review.json").write_text(json.dumps(record, indent=1))
         placed = lyrics_inject.read_placements(score)
         lyrics_file = d / "lyrics.json"
