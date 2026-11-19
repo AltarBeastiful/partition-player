@@ -202,6 +202,24 @@ and applied the same way, and its readings are recorded with the route `claude-c
 unless the answers file names one (`"model"`). The job ids are those of the web app (`<data dir>/jobs/<id>`);
 run the commands with the same `PP_DATA_DIR` as the server.
 
+### Through Claude Code against a running site (a deployed one, or local)
+
+The easiest way: give your Claude Code session the address of a score and ask it to improve it.
+
+```bash
+# once: install the skill for your user (a symlink keeps it in step with the repository)
+ln -sfn "$PWD/skills/partition-player-fix" ~/.claude/skills/partition-player-fix
+# only when the site sets PP_API_TOKEN: export PP_API_TOKEN=<the token>
+```
+
+Then in Claude Code: *"fix the readings of https://your-site/s/<id>"*. The skill's helper (`pp.py`) asks the site
+for its questions (`POST /api/jobs/<id>/model-pass/export`: with no spans, the engine's doubts, the surest wrong
+first; or spans and a note you give it), the session answers them, and the answers go back
+(`POST .../model-pass/import`). The site validates them and stores a draft; you open the score, flip *as read* /
+*as corrected* in **Check with a model**, untick what you disagree with and apply once. The session never edits
+the score. A site that sets `PP_API_TOKEN` asks for it, as a bearer token, on these two endpoints only. What leaves
+the site is the score text and the page photo, to your own Claude Code session.
+
 ## MusicXML in
 
 Beside the camera there is a second door (plan 0010): a `.musicxml`, `.xml` or `.mxl` file is

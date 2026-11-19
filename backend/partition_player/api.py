@@ -5,6 +5,7 @@ Jobs double as the score library: a finished job is a saved score with a name, r
 from __future__ import annotations
 
 import copy
+import hmac
 import json
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
@@ -64,6 +65,10 @@ class SpanIn(BaseModel):
     needs_image: bool = False        # the answer needs a crop or a picture: refused on a route without vision
 
     model_config = {"populate_by_name": True}
+
+
+class ModelExport(BaseModel):
+    spans: list[SpanIn] = Field(default_factory=list, max_length=20)  # empty: the engine's doubts, surest first
 
 
 class ModelPass(BaseModel):
@@ -276,10 +281,35 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             except lyrics_pass.SpanError as e:
                 raise HTTPException(422, str(e)) from e
 
+    def guard(request: Request) -> None:
+        """The Claude Code route's two doors ask for PP_API_TOKEN when one is set (ADR 0010 decision 11)."""
+        if settings.api_token and not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {settings.api_token}"):
+            raise HTTPException(401, "this endpoint needs the server's token: send it as `Authorization: Bearer <token>`")
+
+    @app.post("/api/jobs/{job_id}/model-pass/export")
+    def export_model_tasks(job_id: str, request: Request, body: ModelExport) -> dict:
+        """The repair bundles of a pass for a Claude Code session to answer, as JSON: one task per model call with the
+        prompt an API route would send. Without spans, the engine's doubts are the spans. Nothing is written or called."""
+        guard(request)
+        done(job_id)
+        d = store.dir(job_id)
+        spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source, "note": s.note} for s in body.spans]
+        if not spans:
+            spans = claude_code.doubt_spans(review.load(d)["doubts"])[:settings.model_max_spans]
+            if not spans:
+                raise HTTPException(422, "the engine has no doubts about this score: give the spans to check")
+        try:
+            tasks = claude_code.build_tasks(d, spans)
+        except lyrics_pass.SpanError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"job": job_id, "tasks": tasks, "page": f"/api/jobs/{job_id}/review.webp" if (d / "review.webp").exists() else None,
+                "answers": 'POST /api/jobs/{job}/model-pass/import with {"model": "...", "answers": [{"span": <task span>, "verse": <task verse>, "reply": [...]}]}'}
+
     @app.post("/api/jobs/{job_id}/model-pass/import")
-    def import_model_answers(job_id: str, body: dict = Body(...)) -> dict:
+    def import_model_answers(job_id: str, request: Request, body: dict = Body(...)) -> dict:
         """Answers written by the user's own Claude Code session (the same JSON as the CLI's import): they pass the
         validators of any route and become a stored draft."""
+        guard(request)
         done(job_id)
         d = store.dir(job_id)
         with store.lock:

@@ -86,25 +86,73 @@ def _slice(root: ET.Element, first: int, last: int) -> ET.Element:
     return out
 
 
-def export_bundles(job_dir: Path, spans: list[dict], out: Path) -> dict:
-    """One folder per model call: task.json, prompt.txt, the score slice, and the page photo when the job has one."""
+def build_tasks(job_dir: Path, spans: list[dict]) -> list[dict]:
+    """In memory, one entry per model call: the span, the verse, the very prompt an API route would send, the answer
+    format and the score slice of the span. SpanError when a span is outside the score."""
     root = ET.parse(job_dir / "score.musicxml").getroot()
-    out.mkdir(parents=True, exist_ok=True)
     tasks = []
     for raw in spans:
         span = _span(raw)
         for verse, prompt, fmt in _tasks(root, span):
-            name = f"task-{len(tasks) + 1:02d}"
-            d = out / name
-            d.mkdir(exist_ok=True)
-            (d / "prompt.txt").write_text(prompt)
-            (d / "task.json").write_text(json.dumps({"span": span, "verse": verse, "answer_format": fmt,
-                                                     "note": "Put this span (and verse) and your reply in answers.json as one answer."},
-                                                    ensure_ascii=False, indent=1))
-            ET.ElementTree(_slice(root, span["from"], span["to"])).write(d / "score.musicxml", encoding="UTF-8", xml_declaration=True)
-            if (job_dir / "review.webp").exists():
-                shutil.copyfile(job_dir / "review.webp", d / "page.webp")
-            tasks.append({"dir": name, "span": span, "verse": verse})
+            sliced = ET.tostring(_slice(root, span["from"], span["to"]), encoding="unicode", xml_declaration=False)
+            tasks.append({"id": f"task-{len(tasks) + 1:02d}", "span": span, "verse": verse, "prompt": prompt,
+                          "answer_format": fmt, "score_musicxml": sliced})
+    return tasks
+
+
+def doubt_spans(doubts: list[dict]) -> list[dict]:
+    """Spans for the measures the engine doubts, as the panel offers them (EditorSession.doubtSpans): neighbouring
+    measures of a staff joined, informational doubts left out, the surest wrong first, each carrying what the engine said."""
+    rank = {"info": 0, "check": 1, "wrong": 2}
+    cells: dict[tuple, dict] = {}
+    for d in doubts:
+        level = level_of(d)
+        if level == "info":
+            continue
+        staff = d["part"] if isinstance(d.get("part"), int) else 0
+        cell = cells.setdefault((staff, int(d["measure"])), {"level": level, "said": []})
+        if rank[level] > rank[cell["level"]]:
+            cell["level"] = level
+        if d.get("text") and d["text"] not in cell["said"]:
+            cell["said"].append(d["text"])
+    spans: list[dict] = []
+    for (staff, measure), c in sorted(cells.items()):
+        last = spans[-1] if spans else None
+        if last and last["staff"] == staff and last["to"] + 1 == measure:
+            last["to"] = measure
+            if rank[c["level"]] > rank[last["level"]]:
+                last["level"] = c["level"]
+            last["said"] += [f"measure {measure}: {t}" for t in c["said"]]
+        else:
+            spans.append({"staff": staff, "from": measure, "to": measure, "level": c["level"],
+                          "said": [f"measure {measure}: {t}" for t in c["said"]]})
+    spans.sort(key=lambda s: (-rank[s["level"]], s["staff"], s["from"]))
+    return [{"staff": s["staff"], "from": s["from"], "to": s["to"], "note": "; ".join(s["said"][:6])[:500]} for s in spans]
+
+
+def level_of(doubt: dict) -> str:
+    """How sure the engine is that a doubt is wrong (plan 0008, as the editor reads it): the stored level, else `info` for
+    a doubt flagged informational, else `wrong`."""
+    if doubt.get("level") in ("wrong", "check", "info"):
+        return doubt["level"]
+    return "info" if doubt.get("info") else "wrong"
+
+
+def export_bundles(job_dir: Path, spans: list[dict], out: Path) -> dict:
+    """One folder per model call: task.json, prompt.txt, the score slice, and the page photo when the job has one."""
+    out.mkdir(parents=True, exist_ok=True)
+    tasks = []
+    for t in build_tasks(job_dir, spans):
+        d = out / t["id"]
+        d.mkdir(exist_ok=True)
+        (d / "prompt.txt").write_text(t["prompt"])
+        (d / "task.json").write_text(json.dumps({"span": t["span"], "verse": t["verse"], "answer_format": t["answer_format"],
+                                                 "note": "Put this span (and verse) and your reply in answers.json as one answer."},
+                                                ensure_ascii=False, indent=1))
+        (d / "score.musicxml").write_text(t["score_musicxml"])
+        if (job_dir / "review.webp").exists():
+            shutil.copyfile(job_dir / "review.webp", d / "page.webp")
+        tasks.append({"dir": t["id"], "span": t["span"], "verse": t["verse"]})
     index = {"job": job_dir.name, "tasks": tasks,
              "answers": "answers.json: {\"model\": \"...\", \"answers\": [{\"span\": <task span>, \"verse\": <task verse>, \"reply\": [...]}]}"}
     (out / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1))

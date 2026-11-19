@@ -42,6 +42,8 @@ class Settings:
 
     model_max_spans: int = field(default_factory=lambda: _env_int("PP_MODEL_MAX_SPANS", 10))  # spans per model pass on the server's key (ADR 0010); a visitor's own key is not capped
 
+    api_token: str = field(default_factory=lambda: os.environ.get("PP_API_TOKEN", ""))  # when set, the two doors of the Claude Code route (export, import) ask for it as a bearer token; the rest of the site stays open
+
     @property
     def model_route(self) -> Route:
         """The route used when a request names none (PP_MODEL_ROUTE, `anthropic` unless set)."""
