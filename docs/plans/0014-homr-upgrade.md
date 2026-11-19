@@ -148,6 +148,45 @@ over the benchmark pages, with 0.7.0 as the control:
   the time from measure lengths per voice. Our rule (plan 0013) is still the writer in the driver; the
   canon photo was not re-run in isolation.
 
+## Step 3: rapidocr 3.10 (ticket 09, 2026-11-19): cap stays at `<3.10`
+
+Cause of the 3.10.0 break: it loads its models on the first call, so `RapidOCR(...)` leaves `text_det` and
+`text_rec` as `None`, and only `chords/ocr.py` (`make_ocr`, `_detect`, `read_band`) reaches into them.
+Fix, kept whatever the verdict: `make_ocr()` calls `_load_det_model` and `_load_rec_model` when present
+(a no-op on 3.9); `test_make_ocr_has_its_detector_and_recognizer_loaded` fails on 3.10.0 without it and
+passes on both (backend tests: 151 passed on 3.9.2 and on 3.10.0, commit `a964894`). 3.10.0 is the only
+3.10 on PyPI today. Also changed in 3.10: `limit_type="max"` now works in detection (#740), which the
+lyrics stage uses.
+
+Re-score on the chord and lyrics benchmarks, homr 0.7.0 both times, only rapidocr differs (3.9.2 control
+against 3.10.0), same pages, run sequentially per set (no `--jobs`; those two scripts have none).
+
+| chords (36 pages) | 3.9.2 | 3.10.0 |
+|---|---|---|
+| found, clean / photo / real | 365 / 374 / 10 | 365 / 374 / 10 |
+| right | all found | all found |
+| false chords | 0 | 0 |
+| placed, clean / photo | 317 / 335 | 317 / 335 |
+
+Chords are identical page by page.
+
+| lyrics (39 pages) | 3.9.2 | 3.10.0 |
+|---|---|---|
+| syllables placed (real + clean + photo + paragraph) | 4530 | 4529 |
+| text right | 5154 | 5151 |
+| exact | 4404 | 4399 |
+| verses found | all | all, same |
+| false syllables | 3 (clean 2, photo 1) | 4 (clean 3, photo 1) |
+| false verses | 0 | 0 |
+
+Lyrics move on 28 of 39 pages, both ways (Gloria text 26 -> 28 and 27 -> 29, Au clair de la lune and
+the Anton photo cer 0.005 -> 0.000; Foster 119 -> 118 and 119 -> 116, Jigs 2 259 -> 256).
+Verdict: the chords pass; the lyrics pass the letter on false verses (0) but not on "no drop in aligned
+syllables" (4530 -> 4529, false syllables 3 -> 4, one more on `lyr_nott_ashover_9`) and the change is
+within noise of the detector rather than a gain. There is no reason to take the risk for nothing, so
+the pin `>=3.9,<3.10` stays. If the maintainer judges a one-syllable move in 4530 to be noise, lifting
+the cap is the single edit `rapidocr>=3.9,<4` in `backend/pyproject.toml`; the code already works on 3.10.
+
 ## Problem Statement
 
 We are on homr 0.7.0 and the driver that wraps it copies about twenty of homr's internals and a mirror
