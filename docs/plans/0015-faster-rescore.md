@@ -1,6 +1,6 @@
 # Plan 0015: A re-score that fits in a coffee break
 
-Status 2026-11-18: **not started.** Follows plan 0014, which is scored at today's speed.
+Status 2026-11-19: **step 1 built and measured, and it does not deliver the speed (see "Step 1 measured"); step 2 not started.** Follows plan 0014, which is scored at today's speed.
 
 ## Problem Statement
 
@@ -85,3 +85,20 @@ does not work or if it gains under 25 % per page on top of step 1.
 
 - Before this plan: leadsheets 20.6 s per page, voice_piano 22.2 s, scans 17.8 s.
 - Commits carry no `Co-Authored-By` line.
+
+## Step 1 measured (2026-11-19)
+
+`--jobs N` is in `bench/songs/run_bench.py` (pool in `bench/songs/pool.py`, equality check in
+`bench/songs/check_jobs.py`, the order, failure and core-pinning rules in
+`backend/tests/test_bench_pool.py`). The equality check passes: 10 lead-sheet pages, clean and photo,
+sequential against four workers, identical in every field but the seconds.
+
+The speed is the surprise. Wall clock for those 10 pages: 131 s sequential, 110 s with 2 workers, 115 s
+with 4, 124 s with 8. Setting `OMP_NUM_THREADS` alone did nothing (onnxruntime ignores it; four workers
+took about as long as sequential), so each worker is pinned to its own cores. A page alone runs as fast
+on 1 core as on 16 (12.8 s against 12.1 s), yet pages run side by side each slow down by the number of
+pages, in the homr stage only (8 s alone, 30 to 42 s with four at once), while a compute loop and a
+memory-copy loop scale normally on the same cores. The laptop's "88 % idle" was therefore not spare
+capacity for this workload. The cause is unknown; the next things to try are
+`intra_op_num_threads=1` set in the driver's onnxruntime sessions, and a second machine. Step 2's 25 %
+rule should be judged against 13 s a page, the sequential figure.
