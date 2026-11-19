@@ -14,6 +14,7 @@ import type { EditorSession } from "../editor/session";
 import type { Player } from "../player";
 import { previewNotes, readings, type PreviewNote, type Reading } from "../score/alternatives";
 import { find, nearest, parse, type EventKey } from "../score/xml";
+import { fitZoom, MIN_READING_ZOOM } from "../score/readingFit";
 import { Lightbox, PrintedStrip } from "./Editor";
 
 const SHOWN = 6; // the rest of the list waits behind "More"
@@ -30,6 +31,17 @@ function paddedGap(doubts: Doubt[], measure: number): number | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+/** The width, in px, the engraved measure wants at the current zoom (OSMD units are 10 px at zoom 1). */
+function naturalWidth(osmd: OpenSheetMusicDisplay, host: HTMLElement): number {
+  let units = 0;
+  try {
+    for (const page of osmd.GraphicSheet.MusicPages) for (const sys of page.MusicSystems) units = Math.max(units, sys.PositionAndShape.Size.width);
+  } catch { /* fall back to what the drawing says */ }
+  if (units > 0) return units * 10 * osmd.Zoom;
+  const svg = host.querySelector("svg");
+  return svg ? Math.max(svg.scrollWidth, svg.getBoundingClientRect().width) : 0;
+}
+
 export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, onClose }: {
   session: EditorSession; jobId: string; target: EventKey; bpm: number; player: Player;
   onApply: (r: Reading) => void; onClose: () => void;
@@ -38,6 +50,10 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
   const [more, setMore] = useState(false);
   const [playing, setPlaying] = useState<string | null>(null);
   const hosts = useRef<(HTMLDivElement | null)[]>([]);
+  const engraved = useRef(new Map<string, OpenSheetMusicDisplay>());
+  const [wide, setWide] = useState<Set<string>>(new Set());          // too wide to read in one column
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());  // tapped open: the dialog's width
+  const expandedNow = useRef(expanded);
 
   // The event the dialog is about, followed across the edits made from it: gone means the note was
   // replaced (the nearest one of its measure takes over), a measure gone means there is nothing left.
@@ -75,11 +91,38 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
 
   useEffect(() => () => player.stopPreview(), [player]);
 
+  // Engrave one card and fit it: shrunk so the whole measure shows, never below the readable zoom;
+  // a card that still does not fit is flagged wide (it takes the full row). An expanded card keeps the
+  // normal zoom and scrolls sideways when it is still wider than the dialog.
+  const engrave = useMemo(() => async function (osmd: OpenSheetMusicDisplay, host: HTMLElement, card: Card, open: boolean) {
+    const base = window.innerWidth < 600 ? 0.55 : 0.7;
+    const draw = () => { osmd.render(); if (card.key) markNotes(osmd, [{ ...card.key, measure: 0 }]); };
+    osmd.Zoom = base;
+    await loadScore(osmd, card.xml);
+    draw();
+    if (open) return;
+    const fit = (available: number) => fitZoom({ natural: naturalWidth(osmd, host), available, zoom: osmd.Zoom, minZoom: MIN_READING_ZOOM });
+    let r = fit(host.clientWidth);
+    if (r.zoom !== osmd.Zoom) { osmd.Zoom = r.zoom; draw(); }
+    if (!r.fits) {
+      setWide((w) => (w.has(card.id) ? w : new Set(w).add(card.id)));
+      const row = host.closest(".cards")?.clientWidth ?? 0;            // the full row it now takes
+      r = fit(row - 18);
+      if (r.zoom !== osmd.Zoom) { osmd.Zoom = r.zoom; draw(); }
+    }
+  }, []);
+
   // One OSMD per card, engraved one after another so the page stays responsive, and dropped together
-  // when the readings are generated again.
+  // when the readings are generated again (which also forgets the cards that are gone).
   useEffect(() => {
-    const made: OpenSheetMusicDisplay[] = [];
+    const made = engraved.current;
     let cancelled = false;
+    const ids = new Set(cards.map((c) => c.id));
+    setWide((w) => new Set([...w].filter((id) => ids.has(id))));
+    if ([...expandedNow.current].some((id) => !ids.has(id))) {
+      expandedNow.current = new Set([...expandedNow.current].filter((id) => ids.has(id)));
+      setExpanded(expandedNow.current);
+    }
     void (async () => {
       for (let i = 0; i < cards.length; i++) {
         const host = hosts.current[i];
@@ -89,14 +132,9 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
           autoResize: false, drawTitle: false, drawPartNames: false, drawingParameters: "compacttight",
           followCursor: false, drawMeasureNumbers: false,
         });
-        made.push(osmd);
-        osmd.Zoom = window.innerWidth < 600 ? 0.55 : 0.7;
+        made.set(cards[i].id, osmd);
         try {
-          await loadScore(osmd, cards[i].xml);
-          if (cancelled) return;
-          osmd.render();
-          const k = cards[i].key;
-          if (k) markNotes(osmd, [{ ...k, measure: 0 }]); // the excerpt holds that measure alone
+          await engrave(osmd, host, cards[i], expandedNow.current.has(cards[i].id));
         } catch {
           host.textContent = "This reading could not be engraved.";
         }
@@ -104,10 +142,24 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
     })();
     return () => {
       cancelled = true;
-      for (const osmd of made) { try { osmd.clear(); } catch { /* its card is already off the page */ } }
+      for (const osmd of made.values()) { try { osmd.clear(); } catch { /* its card is already off the page */ } }
+      made.clear();
       for (let i = 0; i < cards.length; i++) hosts.current[i]?.replaceChildren();
     };
-  }, [cards]);
+  }, [cards, engrave]);
+
+  // Tapping a card re-engraves that card alone, at the width its new state gives it.
+  const toggle = (card: Card, i: number) => {
+    const open = !expandedNow.current.has(card.id);
+    const next = new Set(expandedNow.current);
+    if (open) next.add(card.id); else next.delete(card.id);
+    expandedNow.current = next;
+    setExpanded(next);
+    const host = hosts.current[i];
+    const osmd = engraved.current.get(card.id);
+    if (!host || !osmd) return;
+    requestAnimationFrame(() => { void engrave(osmd, host, card, open).catch(() => { /* keeps what it had */ }); });
+  };
 
   if (!key || !data) return null;
   const measure = key.measure;
@@ -151,8 +203,10 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
         )}
         <div className="cards">
           {cards.map((card, i) => (
-            <div key={card.id + ":" + session.docVersion} className={"reading" + (card.reading ? "" : " current")}>
-              <div className="mini" ref={(el) => { hosts.current[i] = el; }} />
+            <div key={card.id + ":" + session.docVersion}
+              className={"reading" + (card.reading ? "" : " current") + (wide.has(card.id) || expanded.has(card.id) ? " wide" : "") + (expanded.has(card.id) ? " open" : "")}>
+              <div className="mini" ref={(el) => { hosts.current[i] = el; }} onClick={() => toggle(card, i)}
+                title={expanded.has(card.id) ? "Tap to shrink" : "Tap to enlarge"} />
               <div className="row"><strong>{card.label}</strong></div>
               {card.note && <div className="row"><span className={card.fixes ? "fixes" : "muted"}>{card.note}</span></div>}
               <div className="row">
