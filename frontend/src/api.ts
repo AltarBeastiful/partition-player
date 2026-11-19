@@ -145,7 +145,7 @@ export function reviewImageUrl(id: string): string {
 // ---- the model pass (ADR 0010, plan 0016) ----
 
 /** One staff over measures `from` to `to` (0-based, inclusive); `staff` is the part's index. */
-export interface ModelSpan { staff: number; from: number; to: number }
+export interface ModelSpan { staff: number; from: number; to: number; note?: string }
 export interface Syllable { text: string; syllabic: "single" | "begin" | "middle" | "end" }
 /**
  * One syllable the pass would write. `measure` and `onset` are 0-based, `onset` the rank among the

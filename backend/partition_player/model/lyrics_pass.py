@@ -121,10 +121,11 @@ def _pitch(note: ET.Element) -> str:
     return f"{p.findtext('step')}{alter}{p.findtext('octave')}"
 
 
-def prompt_for(root: ET.Element, staff: int, notes: list[tuple[int, int]], text: str) -> str:
+def prompt_for(root: ET.Element, staff: int, notes: list[tuple[int, int]], text: str, note: str = "") -> str:
     measures = _parts(root)[staff].findall("measure")
     lines = [f"{i}: bar {m + 1}, {_pitch(lyrics_inject.sounding_notes(measures[m])[o])}" for i, (m, o) in enumerate(notes)]
-    return PROMPT.format(text=text, notes="\n".join(lines))
+    known = (note or "").strip()[:notes_pass.MAX_NOTE]   # the user's own sentence about the span (ticket 11)
+    return PROMPT.format(text=text, notes="\n".join(lines)) + (f"\n\nWhat is known: {known}" if known else "")
 
 
 def estimate(root: ET.Element, spans: list[dict]) -> dict:
@@ -212,7 +213,7 @@ def run(score: Path, spans: list[dict], route: Route, client=None) -> dict:
             changes += got["changes"]; dropped += got["dropped"]; escalated += got["escalated"]
             continue
         for verse_no, text in enumerate(verses_of(span["lyrics_source"]), start=1):
-            prompt = prompt_for(root, span["staff"], notes, text)
+            prompt = prompt_for(root, span["staff"], notes, text, span.get("note", ""))
             try:
                 syls = ask(route, prompt, text, len(notes), client)
             except SpanError as e:
