@@ -287,13 +287,13 @@ def flag_conflicts(root: ET.Element, changes: list[dict]) -> list[dict]:
     return out
 
 
-def save_draft(d: Path, score: Path, route: Route, spans: list[dict], result: dict, revision: int) -> dict:
+def save_draft(d: Path, score: Path, route: Route, spans: list[dict], result: dict, revision: int, kind: str = "api") -> dict:
     root = ET.parse(score).getroot()
     result = {**result, "changes": flag_conflicts(root, result["changes"])}  # the score may have changed while the model answered
     apply_changes_by_staff(root, result["changes"])
     ET.ElementTree(root).write(d / DRAFT_SCORE, encoding="UTF-8", xml_declaration=True)
     draft = {"id": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"), "created": datetime.now(timezone.utc).isoformat(),
-             "route": {"kind": "api", "model": route.model}, "base_revision": revision, "spans": spans, **result}
+             "route": {"kind": kind, "model": route.model}, "base_revision": revision, "spans": spans, **result}
     (d / DRAFT).write_text(json.dumps(draft, ensure_ascii=False, indent=1))
     return draft
 

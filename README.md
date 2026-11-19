@@ -168,8 +168,10 @@ Notes and chords are checked on the first part of the score only.
 
 Three ways to run it, and what leaves the server in each:
 
-- **Your own Claude Code session** (local, no API key): planned as a later addition. Crops would go
-  to your Claude Code session, not through the server's key.
+- **Your own Claude Code session** (local, no API key, no server key). The app writes questions to a folder,
+  your Claude Code session answers them, the app checks the answers. Nothing leaves your machine except
+  what your own Claude Code session sends to Anthropic under your own account, as for any file you ask it to
+  read; the server makes no model call and holds no key. See below.
 - **Your own key on the hosted site.** Paste an Anthropic API key in the panel. It is held in the
   page's memory for the session, sent with the request, and never written to disk or logged by the
   server. Crops of the score and the words you pasted go to the provider; your key pays.
@@ -178,6 +180,27 @@ Three ways to run it, and what leaves the server in each:
   is refused with the reason). A visitor's own key is not capped.
 
 With no key set and none pasted the feature is off and nothing is sent anywhere.
+
+### Through Claude Code (no API key)
+
+```bash
+# once: install the skill that tells a Claude Code session how to answer
+mkdir -p ~/.claude/skills && cp -r skills/partition-player-model-pass ~/.claude/skills/
+# (or, to use it only in this repository: mkdir -p .claude/skills && cp -r skills/partition-player-model-pass .claude/skills/)
+
+# 1. write one bundle per span (measures counted from 0, inclusive; a words file places the words, no file checks notes and chords)
+partition-player model-pass export <job> --span 0:0:7:words.txt --span 0:8:11 -o bundles/
+# 2. in Claude Code: "answer the model-pass bundles in bundles/" -> it writes bundles/answers.json
+# 3. validate and store the answers as a draft
+partition-player model-pass import <job> bundles/answers.json
+```
+
+Each bundle holds the very prompt an API route would send, the slice of the score and, when the job has one,
+the page photo. The import runs the answers through the same validators as the API routes: what does not hold
+is dropped and printed with its reason. The draft appears in **Check with a model** like any other, is read
+and applied the same way, and its readings are recorded with the route `claude-code` and the model `unknown`
+unless the answers file names one (`"model"`). The job ids are those of the web app (`<data dir>/jobs/<id>`);
+run the commands with the same `PP_DATA_DIR` as the server.
 
 ## MusicXML in
 
