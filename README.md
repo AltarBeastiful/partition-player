@@ -63,6 +63,22 @@ All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_E
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
+### Model routes (Check with a model)
+
+A route is a base URL, a key, a model name and a `vision` flag (can it read images). Two presets exist, and the
+panel lets you choose between them; a route with no key is off, and a visitor can bring a key per request.
+
+| Preset | Settings | Default |
+|---|---|---|
+| `anthropic` | `PP_ANTHROPIC_API_KEY` | Haiku, vision on |
+| `deepseek` | `PP_DEEPSEEK_API_KEY`, `PP_DEEPSEEK_BASE_URL`, `PP_DEEPSEEK_MODEL`, `PP_DEEPSEEK_VISION` | `https://api.deepseek.com/anthropic`, `deepseek-flash`, vision off |
+
+`PP_MODEL_ROUTE` (`anthropic` or `deepseek`) picks the route used when a request names none. DeepSeek is reached
+through its Anthropic-compatible endpoint, so the same client serves both. On a route without vision, spans that
+need a crop or a picture are refused with a reason; typed lyrics placement works on any route. Set
+`PP_DEEPSEEK_VISION=true` only if the DeepSeek model you chose reads images (the larger `deepseek-v4-pro` does not).
+`GET /api/model-routes` lists the routes with their model, vision flag and whether the server holds a key.
+
 ## PDF in, and a score of several pages
 
 A PDF comes in at the same door as a photo and a MusicXML file, decided by its bytes (ADR 0009).

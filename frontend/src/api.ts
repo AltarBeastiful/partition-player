@@ -106,6 +106,7 @@ export interface Layout { width: number; height: number; systems: LayoutSystem[]
  */
 import type { Form, Under } from "./form";
 import type { Voicing } from "./voices";
+import type { ModelRoute } from "./modelRoute";
 export type { Form, FormPass, Section as FormSection } from "./form";
 export type { Under } from "./form";
 export type { Voicing } from "./voices";
@@ -157,7 +158,12 @@ export interface ModelDraft {
   spans: (ModelSpan & { lyrics_source: string })[]; changes: ModelChange[]; dropped: { span: ModelSpan; verse: number; reason: string }[];
 }
 export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; confirm: false }
-export interface ModelPassRequest { spans: (ModelSpan & { lyrics_source: string })[]; api_key?: string }
+export interface ModelPassRequest { spans: (ModelSpan & { lyrics_source: string; needs_image?: boolean })[]; api_key?: string; route?: string }
+
+/** The routes the server offers (Anthropic, DeepSeek), with whether each holds a key and can read images. */
+export async function getModelRoutes(): Promise<ModelRoute[]> {
+  return check<ModelRoute[]>(await fetch("/api/model-routes"));
+}
 
 /** Without `confirm` the server only says what the pass would cost; with it the draft comes back. */
 export async function estimateModelPass(id: string, body: ModelPassRequest): Promise<ModelEstimate> {

@@ -20,6 +20,7 @@ from . import __version__, review
 from .config import Settings, load_settings
 from .jobs import MAX_NAME, JobStore, Worker
 from .model import lyrics_pass
+from .model.route import image_refusal
 from .pipeline import musicxml, pdf
 from .pipeline.lyrics import edit as lyrics_edit
 from .pipeline.lyrics import inject as lyrics_inject
@@ -57,6 +58,7 @@ class SpanIn(BaseModel):
     from_: int = Field(alias="from")
     to: int
     lyrics_source: str = Field(max_length=lyrics_pass.MAX_SOURCE)
+    needs_image: bool = False        # the answer needs a crop or a picture: refused on a route without vision
 
     model_config = {"populate_by_name": True}
 
@@ -64,6 +66,7 @@ class SpanIn(BaseModel):
 class ModelPass(BaseModel):
     spans: list[SpanIn] = Field(min_length=1, max_length=20)
     confirm: bool = False            # false: return the estimate and run nothing
+    route: str = ""                  # a preset by name (`anthropic`, `deepseek`); empty is the configured default
     api_key: str = Field(default="", max_length=300, repr=False)  # the visitor's key: used for this call only
 
 
@@ -226,11 +229,18 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         model is asked, the answers are validated, and the draft is stored and returned. A key in the
         body is used for this request only and is never written anywhere."""
         done(job_id)
-        route = replace(settings.model_route, api_key=body.api_key) if body.api_key else settings.model_route
+        if body.route and body.route not in settings.model_routes:
+            raise HTTPException(422, f"unknown route {body.route!r}; choose one of {', '.join(settings.model_routes)}")
+        route = settings.model_routes[body.route] if body.route else settings.model_route
+        if body.api_key:
+            route = replace(route, api_key=body.api_key)
         if not route.enabled:
             raise HTTPException(409, "the model pass is off: no model route is configured and no key was given")
         d = store.dir(job_id)
-        spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source} for s in body.spans]
+        spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source,
+                  **({"needs_image": True} if s.needs_image else {})} for s in body.spans]
+        if (why := image_refusal(route, spans)):
+            raise HTTPException(422, why)
         try:
             root = ET.parse(d / "score.musicxml").getroot()
             estimate = lyrics_pass.estimate(root, spans)
@@ -241,6 +251,14 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(422, str(e)) from e
         with store.lock:
             return lyrics_pass.save_draft(d, d / "score.musicxml", route, spans, result, review.load(d)["revision"])
+
+    @app.get("/api/model-routes")
+    def model_routes() -> list[dict]:
+        """The routes the panel can offer: whether the server holds a key for each (a visitor can bring
+        their own) and whether it can read images."""
+        labels = {"anthropic": "Anthropic", "deepseek": "DeepSeek"}
+        return [{"id": k, "label": labels.get(k, k), "model": r.model, "vision": r.vision, "configured": r.enabled,
+                 "default": k == settings.default_route} for k, r in settings.model_routes.items()]
 
     def current_draft(job_id: str) -> dict:
         done(job_id)
