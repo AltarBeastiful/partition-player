@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
-import { getModelDraft, getModelRoutes, runModelPass } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { getModelDraft, getModelRoutes } from "../api";
+import type { ModelEstimate } from "../api";
 import { initialRoute, spanRefusal, type ModelRoute } from "../modelRoute";
 import { changeLine } from "../score/draft";
 import type { EditorSession } from "../editor/session";
+import { MODEL_NOTICE, ModelFlow, visitorKey } from "../editor/modelFlow";
 
 /**
  * Check with a model (ADR 0010, plan 0016 step 6): on a staff, paste the words, start the pass, then
@@ -25,6 +27,10 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
   const [routeId, setRouteId] = useState("");
   const route = routes.find((r) => r.id === routeId);
+  const [estimate, setEstimate] = useState<ModelEstimate | null>(null);
+  const [key, setKey] = useState(visitorKey.get());
+  const flow = useRef<ModelFlow | null>(null);
+  if (!flow.current) flow.current = new ModelFlow(session.jobId);
   const draft = session.draft;
 
   useEffect(() => {
@@ -46,13 +52,24 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
     setRunning(true); setError(null); setApplied(null);
     try {
       if (session.dirty) await session.save(); // the pass reads the score as the server holds it
+      visitorKey.set(key);
       const span = { staff, from: from - 1, to: to - 1, lyrics_source: text, needs_image: false };
       const refused = spanRefusal(route, span);
       if (refused) { setError(refused); return; }
-      const d = await runModelPass(session.jobId, { spans: [span], route: routeId || undefined });
-      session.openDraft(d);
+      flow.current!.routeId = routeId;
+      await flow.current!.ask([span]);
+      setEstimate(flow.current!.estimate); setError(flow.current!.error);
     } catch (e) { setError((e as Error).message); } finally { setRunning(false); }
   }
+
+  async function confirm() {
+    setRunning(true); setError(null);
+    const d = await flow.current!.confirm();
+    setEstimate(null); setRunning(false);
+    if (d) session.openDraft(d); else setError(flow.current!.error);
+  }
+
+  function cancel() { flow.current!.cancel(); setEstimate(null); }
 
   async function apply() {
     if (!draft) return;
@@ -93,9 +110,22 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
             <span className="muted">The words, as typed: a blank line between verses.</span>
             <textarea rows={5} value={text} spellCheck={false} onChange={(e) => setText(e.target.value)} />
           </label>
-          <div className="controls">
-            <button className="primary" onClick={start} disabled={running || !text.trim()}>{running ? "Asking the model…" : "Place the words"}</button>
-          </div>
+          <label className="verse">
+            <span className="muted">Your API key, if the site has none of its own. Kept in this page until you close it; never stored.</span>
+            <input type="password" autoComplete="off" value={key} placeholder="sk-ant-…" onChange={(e) => { setKey(e.target.value); visitorKey.set(e.target.value); }} />
+          </label>
+          {estimate ? (
+            <div className="controls">
+              <span>{estimate.calls} call{estimate.calls === 1 ? "" : "s"} to {estimate.model}, about {estimate.estimated_tokens} tokens, about ${estimate.estimated_cost_usd.toFixed(4)}.</span>
+              <button className="primary" onClick={confirm} disabled={running}>{running ? "Asking the model…" : "Confirm and run"}</button>
+              <button onClick={cancel} disabled={running}>Cancel</button>
+            </div>
+          ) : (
+            <div className="controls">
+              <button className="primary" onClick={start} disabled={running || !text.trim()}>{running ? "Estimating…" : "Place the words"}</button>
+            </div>
+          )}
+          <p className="muted">{MODEL_NOTICE}</p>
         </>
       )}
       {draft && (

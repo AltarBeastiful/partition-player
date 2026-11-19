@@ -236,6 +236,9 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             route = replace(route, api_key=body.api_key)
         if not route.enabled:
             raise HTTPException(409, "the model pass is off: no model route is configured and no key was given")
+        if not body.api_key and len(body.spans) > settings.model_max_spans:
+            raise HTTPException(422, f"over the cap of {settings.model_max_spans} spans per pass on the server's key (PP_MODEL_MAX_SPANS): "
+                                     "use fewer spans or your own key")
         d = store.dir(job_id)
         spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source,
                   **({"needs_image": True} if s.needs_image else {})} for s in body.spans]

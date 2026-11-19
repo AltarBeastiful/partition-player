@@ -38,6 +38,8 @@ class Settings:
         return {"anthropic": Route.anthropic(self.anthropic_api_key),
                 "deepseek": Route.deepseek(self.deepseek_api_key, self.deepseek_model, self.deepseek_base_url, self.deepseek_vision)}
 
+    model_max_spans: int = field(default_factory=lambda: _env_int("PP_MODEL_MAX_SPANS", 10))  # spans per model pass on the server's key (ADR 0010); a visitor's own key is not capped
+
     @property
     def model_route(self) -> Route:
         """The route used when a request names none (PP_MODEL_ROUTE, `anthropic` unless set)."""

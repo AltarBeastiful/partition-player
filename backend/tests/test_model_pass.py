@@ -196,3 +196,38 @@ def test_a_span_that_needs_the_picture_is_refused_with_a_reason_on_a_route_witho
 def test_unknown_route_is_refused(settings):
     client, jid = start(settings, FakeModel(GOOD))
     assert client.post(f"/api/jobs/{jid}/model-pass", json={**body(), "route": "nope"}).status_code == 422
+
+def test_the_visitors_key_is_never_logged_even_when_the_model_fails(settings, caplog):
+    import logging
+
+    class Broken:
+        def post(self, url, **k):
+            raise RuntimeError(f"boom {k['headers']}")
+
+    caplog.set_level(logging.DEBUG)
+    for model in (FakeModel(GOOD), Broken()):
+        client, jid = start(settings, model)
+        try:
+            client.post(f"/api/jobs/{jid}/model-pass", json=body())
+            client.post(f"/api/jobs/{jid}/model-pass", json=body(confirm=True))
+        except RuntimeError:
+            pass
+    assert "sk-visitor" not in caplog.text
+
+
+def test_a_job_over_the_server_key_cap_is_refused_with_a_reason(settings, monkeypatch):
+    monkeypatch.setenv("PP_ANTHROPIC_API_KEY", "sk-server")
+    monkeypatch.setenv("PP_MODEL_MAX_SPANS", "2")
+    from partition_player.config import load_settings
+
+    model = FakeModel(GOOD)
+    client, jid = start(load_settings(), model)
+    payload = body(confirm=True)
+    del payload["api_key"]
+    payload["spans"] = payload["spans"] * 3
+    for confirm in (False, True):
+        r = client.post(f"/api/jobs/{jid}/model-pass", json={**payload, "confirm": confirm})
+        assert r.status_code == 422 and "cap" in r.json()["error"] and "2" in r.json()["error"]
+    assert model.calls == 0
+    # the visitor's own key pays for itself: the cap does not apply
+    assert client.post(f"/api/jobs/{jid}/model-pass", json={**payload, "api_key": "sk-visitor", "confirm": False}).status_code == 200
