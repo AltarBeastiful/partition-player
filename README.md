@@ -142,8 +142,8 @@ result is a draft you read in the sheet, untick, and apply as one revision (one 
 
 Three ways to run it, and what leaves the server in each:
 
-- **Off (default).** No key is set and none is pasted: the panel's request is refused and nothing is
-  sent anywhere.
+- **Your own Claude Code session** (local, no API key): planned as a later addition. Crops would go
+  to your Claude Code session, not through the server's key.
 - **Your own key on the hosted site.** Paste an Anthropic API key in the panel. It is held in the
   page's memory for the session, sent with the request, and never written to disk or logged by the
   server. Crops of the score and the words you pasted go to the provider; your key pays.
@@ -151,7 +151,7 @@ Three ways to run it, and what leaves the server in each:
   data goes to the provider, and `PP_MODEL_MAX_SPANS` caps the spans of one pass (a pass over the cap
   is refused with the reason). A visitor's own key is not capped.
 
-A run through your own Claude Code session (no API key) is planned as a later addition.
+With no key set and none pasted the feature is off and nothing is sent anywhere.
 
 ## MusicXML in
 
