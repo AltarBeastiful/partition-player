@@ -56,7 +56,8 @@ class SpanIn(BaseModel):
     staff: int = 0
     from_: int = Field(alias="from")
     to: int
-    lyrics_source: str = Field(max_length=lyrics_pass.MAX_SOURCE)
+    lyrics_source: str = Field(default="", max_length=lyrics_pass.MAX_SOURCE)
+    lyrics_picture: str = Field(default="", max_length=lyrics_pass.MAX_PICTURE, repr=False)  # base64 PNG/JPEG/WebP of the words, instead of the text
 
     model_config = {"populate_by_name": True}
 
@@ -220,6 +221,12 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
 
     # ---- the model pass (ADR 0010) -----------------------------------------------------------------
 
+    @app.get("/api/model-route")
+    def model_route() -> dict:
+        """What the server's own model route offers (never the key): the panel enables its options from this."""
+        route = settings.model_route
+        return {"enabled": route.enabled, "model": route.model, "vision": route.vision}
+
     @app.post("/api/jobs/{job_id}/model-pass")
     def model_pass(job_id: str, body: ModelPass) -> dict:
         """Without `confirm`: the number of calls and an estimated cost, nothing runs. With it: the
@@ -230,13 +237,22 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         if not route.enabled:
             raise HTTPException(409, "the model pass is off: no model route is configured and no key was given")
         d = store.dir(job_id)
-        spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source} for s in body.spans]
+        spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source, **({"lyrics_picture": s.lyrics_picture} if s.lyrics_picture else {})} for s in body.spans]
+        if any(s.get("lyrics_picture") and s["lyrics_source"].strip() for s in spans):
+            raise HTTPException(422, "a span has either typed words or a picture of them, not both")
+        if any(s.get("lyrics_picture") for s in spans) and not route.vision:
+            raise HTTPException(409, "this model route cannot read images: type the words instead")
         try:
+            for s in spans:
+                if s.get("lyrics_picture"):
+                    lyrics_pass.picture_bytes(s["lyrics_picture"])
             root = ET.parse(d / "score.musicxml").getroot()
             estimate = lyrics_pass.estimate(root, spans)
             if not body.confirm:
-                return {**estimate, "model": route.model, "confirm": False}
+                return {**estimate, "model": route.model, "vision": route.vision, "confirm": False}
+            spans, unread = lyrics_pass.read_pictures(spans, route, client=model_client)
             result = lyrics_pass.run(d / "score.musicxml", spans, route, client=model_client)
+            result["dropped"] = unread + result["dropped"]
         except lyrics_pass.SpanError as e:
             raise HTTPException(422, str(e)) from e
         with store.lock:

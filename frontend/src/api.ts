@@ -156,8 +156,16 @@ export interface ModelDraft {
   id: string; created: string; base_revision: number; route: { kind: string; model: string };
   spans: (ModelSpan & { lyrics_source: string })[]; changes: ModelChange[]; dropped: { span: ModelSpan; verse: number; reason: string }[];
 }
-export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; confirm: false }
-export interface ModelPassRequest { spans: (ModelSpan & { lyrics_source: string })[]; api_key?: string }
+export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; vision: boolean; confirm: false }
+/** A span's words are typed (`lyrics_source`) or a picture of them (`lyrics_picture`, bare base64 PNG/JPEG/WebP), not both. */
+export interface ModelSpanIn extends ModelSpan { lyrics_source?: string; lyrics_picture?: string }
+export interface ModelPassRequest { spans: ModelSpanIn[]; api_key?: string }
+/** What the server's model route offers; `vision` false means a picture cannot be used. */
+export interface ModelRoute { enabled: boolean; model: string; vision: boolean }
+
+export async function getModelRoute(): Promise<ModelRoute> {
+  return check<ModelRoute>(await fetch("/api/model-route"));
+}
 
 /** Without `confirm` the server only says what the pass would cost; with it the draft comes back. */
 export async function estimateModelPass(id: string, body: ModelPassRequest): Promise<ModelEstimate> {

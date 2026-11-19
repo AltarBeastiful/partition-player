@@ -12,6 +12,17 @@ ANTHROPIC_URL = "https://api.anthropic.com"
 HAIKU = "claude-haiku-4-5-20251001"
 
 
+def image_type(data: bytes) -> str | None:
+    """The media type of a PNG, JPEG or WebP picture by its first bytes, or None."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 @dataclass(frozen=True)
 class Route:
     base_url: str
@@ -28,7 +39,7 @@ class Route:
         return bool(self.api_key)
 
     def complete(self, text: str, image_png: bytes | None = None, max_tokens: int = 400, client=None) -> str:
-        """Send one user message (an optional PNG, then text) and return the reply text."""
+        """Send one user message (an optional picture, then text) and return the reply text."""
         if image_png is not None and not self.vision:
             raise ValueError("this route cannot read images")
         if client is None:
@@ -37,7 +48,7 @@ class Route:
             client = httpx.Client()
         content: list[dict] = []
         if image_png is not None:
-            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(image_png).decode()}})
+            content.append({"type": "image", "source": {"type": "base64", "media_type": image_type(image_png) or "image/png", "data": base64.b64encode(image_png).decode()}})
         content.append({"type": "text", "text": text})
         r = client.post(
             self.base_url.rstrip("/") + "/v1/messages",

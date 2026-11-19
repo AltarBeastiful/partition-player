@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { getModelDraft, runModelPass } from "../api";
+import { getModelDraft, getModelRoute, runModelPass } from "../api";
+import { pictureToBase64 } from "../editor/picture";
 import { changeLine } from "../score/draft";
 import type { EditorSession } from "../editor/session";
 
@@ -21,7 +22,15 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState<number | null>(null);
+  const [picture, setPicture] = useState<File | null>(null);
+  const [vision, setVision] = useState(true); // what the server's route reads; a visitor's own key is assumed the same
   const draft = session.draft;
+
+  useEffect(() => {
+    let live = true;
+    getModelRoute().then((r) => { if (live) setVision(r.vision); }).catch(() => { /* unknown: leave the option on, the server refuses if it cannot */ });
+    return () => { live = false; };
+  }, []);
 
   // A draft left from an earlier visit comes back in the sheet.
   useEffect(() => {
@@ -36,7 +45,8 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
     setRunning(true); setError(null); setApplied(null);
     try {
       if (session.dirty) await session.save(); // the pass reads the score as the server holds it
-      const d = await runModelPass(session.jobId, { spans: [{ staff, from: from - 1, to: to - 1, lyrics_source: text }] });
+      const words = picture ? { lyrics_picture: await pictureToBase64(picture) } : { lyrics_source: text };
+      const d = await runModelPass(session.jobId, { spans: [{ staff, from: from - 1, to: to - 1, ...words }] });
       session.openDraft(d);
     } catch (e) { setError((e as Error).message); } finally { setRunning(false); }
   }
@@ -70,10 +80,18 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
           </div>
           <label className="verse">
             <span className="muted">The words, as typed: a blank line between verses.</span>
-            <textarea rows={5} value={text} spellCheck={false} onChange={(e) => setText(e.target.value)} />
+            <textarea rows={5} value={text} spellCheck={false} disabled={!!picture} onChange={(e) => setText(e.target.value)} />
           </label>
+          <div className="controls lyrics-picture">
+            <label>Or a picture of the words{" "}
+              <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!vision} title={vision ? undefined : "This model cannot read pictures: type the words instead."}
+                onChange={(e) => setPicture(e.target.files?.[0] ?? null)} />
+            </label>
+            {!vision && <span className="muted">This model cannot read pictures: type the words instead.</span>}
+            {picture && <button className="quiet" onClick={() => setPicture(null)}>Remove the picture</button>}
+          </div>
           <div className="controls">
-            <button className="primary" onClick={start} disabled={running || !text.trim()}>{running ? "Asking the model…" : "Place the words"}</button>
+            <button className="primary" onClick={start} disabled={running || (!picture && !text.trim())}>{running ? "Asking the model…" : "Place the words"}</button>
           </div>
         </>
       )}
