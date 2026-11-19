@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .model.route import Route
+
 
 def _env_int(name: str, default: int) -> int:
     return int(os.environ.get(name, default))
@@ -23,6 +25,11 @@ class Settings:
     max_side_px: int = field(default_factory=lambda: _env_int("PP_MAX_SIDE_PX", 2500))
     frontend_dir: Path = field(default_factory=lambda: Path(os.environ.get("PP_FRONTEND_DIR", "../frontend/dist")))
     anthropic_api_key: str = field(default_factory=lambda: os.environ.get("PP_ANTHROPIC_API_KEY", ""))  # lyrics text polish (ADR 0004), off when empty
+
+    @property
+    def model_route(self) -> Route:
+        """The model route (ADR 0010): Anthropic preset keyed by PP_ANTHROPIC_API_KEY; no key means off."""
+        return Route.anthropic(self.anthropic_api_key)
 
     @property
     def jobs_dir(self) -> Path:

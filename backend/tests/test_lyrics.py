@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from partition_player.model.route import Route
 from partition_player.pipeline.lyrics import inject as inj
 from partition_player.pipeline.lyrics.align import Onset, Placement, align_row, place_lyrics
 from partition_player.pipeline.lyrics.grammar import Row, Syllable, link_systems, rows, syllables
@@ -193,10 +194,57 @@ def test_polish_keeps_structure_and_rejects_changed_counts(tmp_path):
         def __init__(self, text): self.text, self.calls = text, 0
         def post(self, *a, **k): self.calls += 1; return Reply(self.text)
 
-    changed, warnings = polish(placed, {0: band}, "key", client=Client("Lors-que Jo-han-na"))
+    route = Route.anthropic("key")
+    changed, warnings = polish(placed, {0: band}, route, client=Client("Lors-que Jo-han-na"))
     assert changed == 1 and placed[2].text == "Jo" and not warnings
-    changed, warnings = polish(placed, {0: band}, "key", client=Client("Lorsque Johanna et moi"))
+    changed, warnings = polish(placed, {0: band}, route, client=Client("Lorsque Johanna et moi"))
     assert changed == 0 and placed[2].text == "Jo" and "structure" in warnings[0]
+
+    # a route with no key turns the feature off: no call, no change
+    off = Client("Lors-que Zo-han-na")
+    assert polish(placed, {0: band}, Route.anthropic(""), client=off) == (0, []) and off.calls == 0
+    # a route that cannot read images is not asked to polish from a band
+    blind = Client("Lors-que Zo-han-na")
+    assert polish(placed, {0: band}, Route(base_url="https://x", api_key="k", model="m", vision=False), client=blind) == (0, []) and blind.calls == 0
+
+
+def test_route_sends_an_anthropic_messages_request_to_its_own_base_url():
+    seen = {}
+
+    class Reply:
+        def raise_for_status(self): pass
+        def json(self): return {"content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]}
+
+    class Client:
+        def post(self, url, **k): seen.update(url=url, **k); return Reply()
+
+    route = Route(base_url="https://api.example.test/anthropic/", api_key="sk-1", model="small", vision=True)
+    assert route.enabled
+    assert route.complete("hello", image_png=b"png", client=Client()) == "ab"
+    assert seen["url"] == "https://api.example.test/anthropic/v1/messages"
+    assert seen["headers"]["x-api-key"] == "sk-1" and seen["json"]["model"] == "small"
+    kinds = [b["type"] for b in seen["json"]["messages"][0]["content"]]
+    assert kinds == ["image", "text"]
+    assert Route.anthropic("k").base_url == "https://api.anthropic.com" and Route.anthropic("k").vision
+
+
+def test_default_route_comes_from_the_environment(monkeypatch):
+    from partition_player.config import Settings
+
+    monkeypatch.delenv("PP_ANTHROPIC_API_KEY", raising=False)
+    assert not Settings().model_route.enabled
+    monkeypatch.setenv("PP_ANTHROPIC_API_KEY", "sk-env")
+    assert Settings().model_route.enabled and Settings().model_route.api_key == "sk-env"
+
+
+def test_structure_validator_accepts_only_same_syllable_structure():
+    from partition_player.pipeline.lyrics.validator import same_structure
+
+    syls = [Placement(1, 0, 0, "Lors", "begin", False, 1.0, 0), Placement(1, 0, 1, "que", "end", False, 1.0, 0),
+            Placement(1, 0, 2, "To", "single", False, 1.0, 0)]
+    assert same_structure(syls, "Lors-que Jo") is not None
+    assert same_structure(syls, "Lorsque Jo") is None
+    assert same_structure(syls, "Lors-que Jo han") is None
 
 
 def test_rows_reject_the_next_systems_chord_line():

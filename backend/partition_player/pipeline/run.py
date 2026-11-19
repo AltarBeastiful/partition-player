@@ -11,6 +11,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from ..config import Settings
+from ..model.route import Route
 from .chords.place import inject, place
 from .lyrics import inject as lyrics_inject
 from .lyrics.align import place_lyrics
@@ -101,7 +102,7 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
         stats.chords_seen = chord_info["seen"]
 
     notify("postprocessing", "Placing lyrics")
-    lyrics_info = add_lyrics(final, out_dir / info["engine"] / "geometry.json", out_dir / "lyrics.json", settings.anthropic_api_key)
+    lyrics_info = add_lyrics(final, out_dir / info["engine"] / "geometry.json", out_dir / "lyrics.json", settings.model_route)
     if lyrics_info is not None:
         stats.lyrics_verses = lyrics_info["verses"]
         stats.lyrics_syllables = lyrics_info["syllables"]
@@ -177,9 +178,9 @@ def add_chords(engine_xml: Path, geometry_file: Path, dst: Path) -> dict | None:
     return {"chords": written, "warnings": result.warnings, "seen": result.seen}
 
 
-def add_lyrics(score: Path, geometry_file: Path, lyrics_file: Path, api_key: str = "") -> dict | None:
+def add_lyrics(score: Path, geometry_file: Path, lyrics_file: Path, route: Route | None = None) -> dict | None:
     """Lyrics stage (ADR 0004): geometry.json (staves with words) + the final score -> <lyric> elements
-    written into the score in place, and lyrics.json for the editor. With an API key, the texts are
+    written into the score in place, and lyrics.json for the editor. With an enabled model route, the texts are
     polished by a language model first (positions never move)."""
     if not geometry_file.exists():
         return None
@@ -188,9 +189,9 @@ def add_lyrics(score: Path, geometry_file: Path, lyrics_file: Path, api_key: str
         return None
     tree = ET.parse(score)
     result = place_lyrics(tree, geometry)
-    if api_key and result.placed:
+    if route is not None and route.enabled and result.placed:
         bands = {st["index"]: geometry_file.parent / st["band"] for st in geometry["staves"]}
-        changed, warnings = polish(result.placed, bands, api_key)
+        changed, warnings = polish(result.placed, bands, route)
         result.warnings.extend(warnings)
         if changed:
             result.warnings.append(f"{changed} syllable(s) corrected by the language model")
