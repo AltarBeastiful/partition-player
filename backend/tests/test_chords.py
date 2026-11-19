@@ -168,3 +168,13 @@ def test_recognize_end_to_end_keeps_chords(settings, tmp_path):
     from partition_player.pipeline.run import add_chords
 
     assert add_chords(tmp_path / "x.musicxml", tmp_path / "geometry.json", tmp_path / "y.musicxml") is None
+
+
+def test_make_ocr_has_its_detector_and_recognizer_loaded():
+    """rapidocr 3.10 loads models lazily; the chord reader reaches into text_det and text_rec directly."""
+    from partition_player.pipeline.chords.ocr import make_ocr
+
+    ocr = make_ocr()
+    assert ocr.text_det is not None and ocr.text_rec is not None
+    assert ocr.text_rec.postprocess_op.character  # the recognizer's character list is what the decoder reads
+    assert callable(ocr.text_det) and callable(ocr.text_rec.resize_norm_img)

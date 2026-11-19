@@ -34,7 +34,12 @@ class Token:
 def make_ocr():
     from rapidocr import RapidOCR
 
-    return RapidOCR(params={"Det.limit_side_len": DET_SIDE_PX, "Det.limit_type": "min", "Global.use_cls": False})
+    ocr = RapidOCR(params={"Det.limit_side_len": DET_SIDE_PX, "Det.limit_type": "min", "Global.use_cls": False})
+    # rapidocr 3.10 loads its models on the first call and leaves text_det / text_rec None until then;
+    # this module uses them directly, so load them now (the methods do not exist on 3.9, where it is a no-op)
+    for load in ("_load_det_model", "_load_rec_model"):
+        getattr(ocr, load, lambda: None)()
+    return ocr
 
 
 def _greedy(probs: np.ndarray, chars: list[str]) -> str:
