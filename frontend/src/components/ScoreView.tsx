@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
+import { chooseBeams } from "../score/beaming";
 import { createJob, getReview, getScoreText, scoreUrl, type Form, type Job, type Stats } from "../api";
 import { defaultPasses, expandForm, formFromPasses, passNames, resolveUnders, samePasses, versesByMeasure, type Pass } from "../form";
 import { clearVerses, dimVerses } from "../verses";
@@ -105,6 +106,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         if (cancelled) return;
         const s = new EditorSession(job.id, xml, review);
         s.onStats = (st) => { setStats(st); onStats?.(st); };
+        chooseBeams(osmd, s.xml);
         await osmd.load(s.xml);
         if (cancelled) return;
         reserveNoteNamesSpace(osmd, noteNamesRef.current); // before the first render, so nothing jumps
@@ -178,6 +180,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     let cancelled = false;
     (async () => {
       try {
+        chooseBeams(osmd, session.xml);
         await osmd.load(session.xml);
         if (cancelled) return;
         osmd.render();

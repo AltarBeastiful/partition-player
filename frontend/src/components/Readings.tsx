@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
+import { chooseBeams } from "../score/beaming";
 import type { Doubt } from "../api";
 import { markNotes } from "../editor/sheet";
 import type { EditorSession } from "../editor/session";
@@ -90,6 +91,7 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
         made.push(osmd);
         osmd.Zoom = window.innerWidth < 600 ? 0.55 : 0.7;
         try {
+          chooseBeams(osmd, cards[i].xml);
           await osmd.load(cards[i].xml);
           if (cancelled) return;
           osmd.render();
