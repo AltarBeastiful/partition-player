@@ -140,3 +140,48 @@ export async function revertScore(id: string): Promise<SaveResult> {
 export function reviewImageUrl(id: string): string {
   return `/api/jobs/${id}/review.webp`;
 }
+
+// ---- the model pass (ADR 0010, plan 0016) ----
+
+/** One staff over measures `from` to `to` (0-based, inclusive); `staff` is the part's index. */
+export interface ModelSpan { staff: number; from: number; to: number }
+export interface Syllable { text: string; syllabic: "single" | "begin" | "middle" | "end" }
+/**
+ * One syllable the pass would write. `measure` and `onset` are 0-based, `onset` the rank among the
+ * measure's sounding notes (the convention of lyrics.json); `verse` is 1-based. `old` null is a new
+ * syllable, `new` null one that goes. `conflict` is a place edited by hand since the pass.
+ */
+export interface ModelChange { id: string; span: ModelSpan; verse: number; measure: number; onset: number; old: Syllable | null; new: Syllable | null; ticked: boolean; conflict: boolean }
+export interface ModelDraft {
+  id: string; created: string; base_revision: number; route: { kind: string; model: string };
+  spans: (ModelSpan & { lyrics_source: string })[]; changes: ModelChange[]; dropped: { span: ModelSpan; verse: number; reason: string }[];
+}
+export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; confirm: false }
+export interface ModelPassRequest { spans: (ModelSpan & { lyrics_source: string })[]; api_key?: string }
+
+/** Without `confirm` the server only says what the pass would cost; with it the draft comes back. */
+export async function estimateModelPass(id: string, body: ModelPassRequest): Promise<ModelEstimate> {
+  return check<ModelEstimate>(await fetch(`/api/jobs/${id}/model-pass`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, confirm: false }),
+  }));
+}
+
+export async function runModelPass(id: string, body: ModelPassRequest): Promise<ModelDraft> {
+  return check<ModelDraft>(await fetch(`/api/jobs/${id}/model-pass`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, confirm: true }),
+  }));
+}
+
+/** The stored draft, or null when there is none. */
+export async function getModelDraft(id: string): Promise<ModelDraft | null> {
+  const r = await fetch(`/api/jobs/${id}/model-draft`);
+  if (r.status === 404) return null;
+  return check<ModelDraft>(r);
+}
+
+/** Apply the ticked changes as one revision; the others stay as stored readings. */
+export async function applyModelDraft(id: string, ticked: string[]): Promise<ReviewState> {
+  return check<ReviewState>(await fetch(`/api/jobs/${id}/model-draft/apply`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticked }),
+  }));
+}

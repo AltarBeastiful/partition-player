@@ -6,7 +6,8 @@ import { defaultPasses, expandForm, formFromPasses, passNames, resolveUnders, sa
 import { clearVerses, dimVerses } from "../verses";
 import { commands, shortcut } from "../editor/commands";
 import { EditorSession } from "../editor/session";
-import { clearSections, drawOverlay, drawSections, hitTest, keepOverlay, rectOf } from "../editor/sheet";
+import { clearSections, drawOverlay, drawSections, hitTest, keepOverlay, markNotes, rectOf } from "../editor/sheet";
+import { markKeys } from "../score/draft";
 import { clearNoteNames, drawNoteNames, keepNoteNames, reserveNoteNamesSpace } from "../noteNames";
 import { Player, type PlaybackState } from "../player";
 import type { Line } from "../lines";
@@ -15,6 +16,7 @@ import { expandScore, slicesOf } from "../score/expand";
 import type { EventKey } from "../score/xml";
 import { FormPanel, Lightbox, PrintedStrip, ReviewBar, Toolbar } from "./Editor";
 import { ReadingsDialog } from "./Readings";
+import { ModelPanel } from "./ModelPanel";
 import { navigate, scorePath } from "../router";
 
 const NOTE_NAMES_PREF = "pp.noteNames"; // a practice preference, not a property of the score
@@ -34,8 +36,8 @@ function inTextField(target: EventTarget | null): boolean {
   return ["TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable;
 }
 
-export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }: {
-  job: Job; version?: number; onStats?: (s: Stats) => void; registerFlush?: (flush: (() => Promise<void>) | null) => void; onReload: () => void;
+export function ScoreView({ job, version = 0, onStats, onLyricsChanged, registerFlush, onReload }: {
+  job: Job; version?: number; onStats?: (s: Stats) => void; onLyricsChanged?: () => void; registerFlush?: (flush: (() => Promise<void>) | null) => void; onReload: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
@@ -165,6 +167,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     const osmd = osmdRef.current;
     if (!osmd || !session) return;
     drawOverlay(osmd, session.places(), session.selected);
+    if (session.draft) markNotes(osmd, markKeys(session.measures, session.draft.draft.changes)); // plan 0016: every change of the draft
     if (verseRef.current !== null) dimVerses(osmd, verseRef.current); else clearVerses(osmd);
     // plan 0007: the sections over the measures they cover, while the panel that edits them is open
     if (showSections) drawSections(osmd, (session.form ?? formFromPasses(printed, measureCount)).sections);
@@ -179,7 +182,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     let cancelled = false;
     (async () => {
       try {
-        await loadScore(osmd, session.xml);
+        await loadScore(osmd, session.shownXml);
         if (cancelled) return;
         osmd.render();
         osmd.cursor.show();
@@ -342,13 +345,14 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
     if (!osmd || !session) return;
     const key = hitTest(osmd, e.clientX, e.clientY);
     if (!key) return;
+    if (session.draft) return; // the draft is looked at on the sheet, not edited
     session.select(key);
     playerRef.current?.stop();
     setEditing(true);
     setReadingsFor(key);
   }, [session]);
 
-  const enterEdit = useCallback(() => { playerRef.current?.stop(); setEditing(true); }, []);
+  const enterEdit = useCallback(() => { if (session?.draft) return; playerRef.current?.stop(); setEditing(true); }, [session]);
   const leaveEdit = useCallback(() => {
     session?.select(null);
     if (session?.dirty) void session.save();
@@ -529,11 +533,14 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
         <div className="review toast" role="status">
           <strong>{session.open().length} place{session.open().length > 1 ? "s" : ""} to check</strong>
           <span>The recognition was unsure there: they are tinted on the sheet with a "?".</span>
-          <button className="primary edit" onClick={enterEdit}>Edit the score</button>
+          <button className="primary edit" onClick={enterEdit} disabled={!!session.draft}>Edit the score</button>
         </div>
       )}
       {soundNote && <div className="review toast" role="status"><span>{soundNote}</span>
         <button className="quiet" onClick={() => setSoundNote(null)}>Dismiss</button></div>}
+      {session && !loading && !editing && (
+        <ModelPanel session={session} measureCount={measureCount} staves={staves} onApplied={onLyricsChanged} />
+      )}
       {session && !loading && (
         <LinesPanel lines={lines} voicings={session.lines} unders={session.unders} measureCount={measureCount} form={session.form}
           rangeOf={(line) => playerRef.current?.lineRange(line) ?? null}
@@ -575,7 +582,7 @@ export function ScoreView({ job, version = 0, onStats, registerFlush, onReload }
       )}
       {session && !editing && (
         <div className="edit-row">
-          <button className="edit" onClick={enterEdit}>Edit the score</button>
+          <button className="edit" onClick={enterEdit} disabled={!!session.draft} title={session.draft ? "Close the model draft first" : undefined}>Edit the score</button>
           <span className="muted">
             {session.open().length > 0 ? `${session.open().length} place${session.open().length > 1 ? "s" : ""} to check. ` : ""}
             Correct notes, rests, measures, chords, time and key. Outside edit mode, clicking a note plays from there.

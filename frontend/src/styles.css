@@ -233,3 +233,7 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
   .readings .panel { padding: 12px; }
   .readings .cards { grid-template-columns: 1fr; }
 }
+
+.model-panel .draft-changes { list-style: none; margin: 8px 0; padding: 0; max-height: 14em; overflow: auto; }
+.model-panel .draft-changes li { padding: 2px 0; }
+.model-panel .draft-changes li.conflict label { font-style: italic; }

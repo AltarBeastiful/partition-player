@@ -3,11 +3,15 @@
  * undo and redo as serializations, the doubts and the checked measures, and the autosave that sends
  * the whole document with the revision it was edited from. React reads it through subscribe().
  */
-import { revertScore, saveScore, type Doubt, type Form, type Layout, type ReviewState, type Stats, type Under, type Voicing } from "../api";
+import { applyModelDraft, getScoreText, revertScore, saveScore, type Doubt, type Form, type Layout, type ModelDraft, type ReviewState, type Stats, type Under, type Voicing } from "../api";
 import { remapForm } from "../form";
 import { checkMeasures, checkText, type MeasureCheck } from "../score/check";
+import { correctedXml } from "../score/draft";
 import { EditError } from "../score/edit";
 import { find, nearest, parse, part, serialize, walk, type EventKey, type MeasureInfo } from "../score/xml";
+
+/** A model draft under review (plan 0016): which version the sheet shows and which changes are ticked. */
+export interface DraftReview { draft: ModelDraft; view: "read" | "corrected"; ticked: Set<string> }
 
 export type SaveStatus = "saved" | "unsaved" | "saving" | "error" | "stale";
 
@@ -50,6 +54,12 @@ export class EditorSession {
   readonly hasImage: boolean;
   readonly hasOriginal: boolean;
   selected: EventKey | null = null;
+  /**
+   * The model draft being reviewed, if any. It is not part of the document: the sheet and the player
+   * show `shownXml`, the document itself, the undo stack and the autosave never see the draft until
+   * `applyDraft` has the server write it as one revision.
+   */
+  draft: DraftReview | null = null;
   status: SaveStatus = "saved";
   message: string | null = null;   // the last thing to tell the user (an operation refused, a save error)
   version = 0;       // bumped on every change React should see
@@ -176,6 +186,75 @@ export class EditorSession {
     this.unders = unders;
     this.message = null;
     this.touch();
+  }
+
+  // ---- the model draft (plan 0016) ----------------------------------------------------------------
+
+  /** What the sheet and the player show: the document, or the document with the ticked changes written in. */
+  get shownXml(): string {
+    const d = this.draft;
+    return d && d.view === "corrected" ? correctedXml(this.xml, d.draft.changes, d.ticked) : this.xml;
+  }
+
+  /** Review a draft: the corrected version first, every change ticked unless the server says it conflicts. */
+  openDraft(draft: ModelDraft): void {
+    this.draft = { draft, view: "corrected", ticked: new Set(draft.changes.filter((c) => c.ticked && !c.conflict).map((c) => c.id)) };
+    this.selected = null;
+    this.message = null;
+    this.docVersion++;
+    this.emit();
+  }
+
+  closeDraft(): void {
+    if (!this.draft) return;
+    const wasCorrected = this.draft.view === "corrected" && this.draft.ticked.size > 0;
+    this.draft = null;
+    if (wasCorrected) this.docVersion++;
+    this.emit();
+  }
+
+  setView(view: "read" | "corrected"): void {
+    if (!this.draft || this.draft.view === view) return;
+    this.draft.view = view;
+    this.docVersion++;
+    this.emit();
+  }
+
+  tick(id: string, on: boolean): void {
+    if (!this.draft || this.draft.ticked.has(id) === on) return;
+    if (on) this.draft.ticked.add(id); else this.draft.ticked.delete(id);
+    if (this.draft.view === "corrected") this.docVersion++;
+    this.emit();
+  }
+
+  /**
+   * Apply the ticked changes: the server writes them as one revision, the document becomes what it
+   * wrote, and the step before is one entry of the undo stack. What the server holds is what is on
+   * the screen, so a pending edit is sent first and nothing is saved after.
+   */
+  async applyDraft(): Promise<void> {
+    const d = this.draft;
+    if (!d) return;
+    try {
+      if (this.dirty) await this.save();
+      if (this.status === "error" || this.status === "stale") return;
+      const result = await applyModelDraft(this.jobId, [...d.ticked]);
+      const xml = await getScoreText(this.jobId);
+      const before = this.snapshot();
+      this.doc = parse(xml);
+      this.refresh();
+      this.revision = result.revision;
+      this.doubts = result.doubts ?? this.doubts;
+      this.draft = null;
+      this.selected = before.selected ? nearest(this.measures, before.selected)?.key ?? null : null;
+      this.push(before);
+      this.message = null;
+      this.docVersion++;
+      this.status = "saved";
+    } catch (e) {
+      this.message = "The draft could not be applied: " + (e as Error).message;
+    }
+    this.emit();
   }
 
   // ---- selection ----------------------------------------------------------------------------------

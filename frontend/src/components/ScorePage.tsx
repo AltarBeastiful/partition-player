@@ -84,7 +84,7 @@ export function ScorePage({ id }: { id: string }) {
       {job && job.status !== "done" && <Progress jobId={id} onDone={onDone} />}
       {job && job.status === "done" && (
         <ScoreView job={job} version={version} onReload={() => setVersion((v) => v + 1)}
-          onStats={() => setLyricsVersion((v) => v + 1)} registerFlush={(f) => { flush.current = f; }} />
+          onStats={() => setLyricsVersion((v) => v + 1)} onLyricsChanged={() => setLyricsVersion((v) => v + 1)} registerFlush={(f) => { flush.current = f; }} />
       )}
       {job && job.status === "done" && (
         <LyricsPanel jobId={id} version={lyricsVersion} beforeSave={() => flush.current?.() ?? Promise.resolve()} onSaved={() => setVersion((v) => v + 1)} />
