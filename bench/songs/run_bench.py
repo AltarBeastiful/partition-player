@@ -7,7 +7,10 @@ syllables against the words printed under it. Results go to <out>/run/<name>/ an
 which bench/songs/review.py turns into the side-by-side review page.
 
 Usage: .venv-oemer/bin/python bench/songs/run_bench.py [--set leadsheets|voice_piano]
-                                 [--only NAME] [--clean-only] [--scans] [--skip-run]
+                                 [--only NAME] [--clean-only] [--scans] [--skip-run] [--jobs N]
+--jobs N recognizes N pages at once, each in its own process with its threads capped to cores // N
+(bench/songs/pool.py); results are scored and printed in page order and are the same as a sequential
+run's in every field but the seconds (bench/songs/check_jobs.py). A failed page is reported, not fatal.
 --scans runs the voice_piano set's second tier instead: the real IMSLP prints in <out>/scans/, whose
 ground truth bench/songs/pin_scan.py cuts from the same transcriptions.
 """
@@ -23,6 +26,7 @@ from make_pages import out_dir, which_set  # noqa: E402
 from score import align, tokens  # noqa: E402
 from score_chords import score as score_chords  # noqa: E402
 from score_lyrics import score as score_lyrics  # noqa: E402
+from pool import recognize_all  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = out_dir(which_set(sys.argv))
@@ -61,17 +65,17 @@ def main() -> None:
     head = (f"{'page':46} {'kind':6} {'meas':>7} {'notes':>5} {'p+d':>6} {'syl':>4} {'placed':>6} "
             f"{'text':>5} {'verses':>6} {'false':>5} {'cer':>5} {'chrd':>5} {'right':>5} {'cfls':>4} {'s':>4}")
     print(head)
-    for name, img, gt, kind in pages(clean_only, scans):
-        if only and only not in name:
-            continue
+    jobs = int(sys.argv[sys.argv.index("--jobs") + 1]) if "--jobs" in sys.argv else 1
+    todo = [(n, i, g, k) for n, i, g, k in pages(clean_only, scans) if not only or only in n]
+    need = [(n, i, RUN / n) for n, i, g, k in todo if not skip or not (RUN / n / "score.musicxml").exists()]
+    done = {r["name"]: r for r in recognize_all(need, CLI, jobs)}
+    for name, img, gt, kind in todo:
         out = RUN / name
-        t0 = time.time()
-        if not skip or not (out / "score.musicxml").exists():
-            r = subprocess.run([str(CLI), "recognize", str(img), "-o", str(out)], capture_output=True, text=True)
-            if r.returncode != 0:
-                print(f"{name:46} {kind:6} FAILED: {(r.stderr or '').strip().splitlines()[-1:] }")
-                continue
-        secs = round(time.time() - t0, 1)
+        r = done.get(name)
+        if r and not r["ok"]:
+            print(f"{name:46} {kind:6} FAILED: {r['error']}")
+            continue
+        secs = r["seconds"] if r else 0.0
         cand = out / "score.musicxml"
         notes = score_notes(gt, cand)
         lyr = score_lyrics(str(gt), str(cand))

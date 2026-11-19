@@ -608,3 +608,26 @@ form as one line of words, and puts a section's edge on the note the user clicks
 when the chorus starts on an upbeat. Building Anton's fourteen passes went from about 27 interactions
 to 8, checked in the browser. The automatic form itself — the first summary line — is unchanged by
 that work.
+
+## Parallel pages: `--jobs N` (plan 0015, step 1), 2026-11-19
+
+`bench/songs/run_bench.py --jobs N` recognizes N pages at once, each `recognize` in its own process
+with its own `16 // N` cores (a CPU affinity mask: onnxruntime ignores `OMP_NUM_THREADS`, which the
+first attempt relied on, and the workers then fought over all 16 cores) and the OMP-style variables
+set to match. Results are scored and printed in page order; a failed page is printed as FAILED and the
+run goes on. `bench/songs/check_jobs.py` runs a sample twice and compares.
+
+- Equality: `check_jobs.py --only de_ --jobs 4` (10 pages, lead sheets, clean and photo): the
+  sequential and the parallel `results.json` are identical in every field but `seconds`.
+- Speed, the same 10 pages, wall clock of the whole run. Nobody else was using the machine, but the
+  load average read 25 to 45 at the start of the later runs, left over from my own earlier runs.
+  `--jobs 1` 131 s (13 s a page), `--jobs 2` 110 s, `--jobs 4` 115 s, `--jobs 8` 124 s: a gain of 12
+  to 16 %, **not the fraction of the time the plan hoped for**.
+- Why: one page alone takes the same 12 to 13 s on 1 core as on 16 (`taskset -c 0`), so cores are not
+  what it is short of. But N pages at once, each pinned to its own core(s), take N times as long
+  (1 page 12 s, 2 pages 19 to 23 s, 4 pages 41 s, 8 pages 85 s): the throughput stays at about one
+  page in 10 s. The time is lost in the homr stage (8 s alone, 30 to 42 s with four at once); the
+  OCR and our own stages do not move. A compute loop and a memory-copy loop scale on the same cores
+  (1.35x slower with 8 at once, bandwidth unchanged), so it is not the clock, the heat or the memory
+  bus in general. The cause inside homr's inference was not found (no `py-spy`; `strace` is not
+  allowed here). On this laptop `--jobs 2` is the setting worth using and more does not help.
