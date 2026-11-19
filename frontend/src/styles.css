@@ -222,8 +222,9 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .readings .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .reading { display: grid; gap: 6px; align-content: start; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
 .reading.current { border-color: var(--accent); }
-.reading .mini { background: #fff; border-radius: 4px; overflow: hidden; min-height: 90px; color: #1a1e28; }
-.reading .mini svg { max-width: 100%; height: auto; }
+.reading .mini { background: #fff; border-radius: 4px; overflow-x: auto; overflow-y: hidden; min-height: 90px; color: #1a1e28; cursor: zoom-in; }
+.reading.open .mini { cursor: zoom-out; }
+.reading.wide { grid-column: 1 / -1; }   /* too wide for a column, or tapped open: the full row */
 .reading .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 .reading .row .fixes { color: var(--ok); }
 .reading .row button { padding: 5px 10px; }
