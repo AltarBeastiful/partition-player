@@ -188,21 +188,39 @@ def current_lyrics(root: ET.Element, staff: int = 0) -> dict[tuple[int, int, int
     return out
 
 
+def ask(route: Route, prompt: str, source: str, note_count: int, client=None) -> list[tuple[str, str, int]]:
+    """One call and its validation; SpanError when the answer breaks a rule."""
+    return parse_answer(route.complete(prompt, max_tokens=1500, client=client), source, note_count)
+
+
 def run(score: Path, spans: list[dict], route: Route, client=None) -> dict:
     """Ask the model once per span and verse; returns {"changes": [...], "dropped": [...]}."""
     root = ET.parse(score).getroot()
-    changes, dropped = [], []
+    changes, dropped, escalated = [], [], []
     for span in spans:
         now = current_lyrics(root, span["staff"])
         notes = span_notes(root, span["staff"], span["from"], span["to"])
         where = {"staff": span["staff"], "from": span["from"], "to": span["to"]}
         for verse_no, text in enumerate(verses_of(span["lyrics_source"]), start=1):
+            prompt = prompt_for(root, span["staff"], notes, text)
             try:
-                reply = route.complete(prompt_for(root, span["staff"], notes, text), max_tokens=1500, client=client)
-                syls = parse_answer(reply, text, len(notes))
+                syls = ask(route, prompt, text, len(notes), client)
             except SpanError as e:
-                dropped.append({"span": where, "verse": verse_no, "reason": str(e)})
-                continue
+                # A failed validation goes once to the larger model (ticket 08); its answer is checked the same way.
+                bigger = route.larger()
+                if bigger is None:
+                    dropped.append({"span": where, "verse": verse_no, "reason": str(e)})
+                    continue
+                try:
+                    syls = ask(bigger, prompt, text, len(notes), client)
+                except SpanError as e2:
+                    dropped.append({"span": where, "verse": verse_no,
+                                    "reason": f"{e}; the larger model ({bigger.model}) failed too: {e2}"})
+                    continue
+                except Exception as e2:  # noqa: BLE001
+                    dropped.append({"span": where, "verse": verse_no, "reason": f"{e}; the larger model could not be asked: {e2.__class__.__name__}"})
+                    continue
+                escalated.append({"span": where, "verse": verse_no, "model": bigger.model})
             except Exception as e:  # noqa: BLE001  (a failed call is recorded, never raised past the pass)
                 dropped.append({"span": where, "verse": verse_no, "reason": f"the model could not be asked: {e.__class__.__name__}"})
                 continue
@@ -215,7 +233,7 @@ def run(score: Path, spans: list[dict], route: Route, client=None) -> dict:
                     changes.append({"span": where, "verse": verse_no, "measure": m, "onset": o, "old": now[(verse_no, m, o)], "new": None})
     for k, c in enumerate(changes, start=1):
         c.update(id=f"c{k}", ticked=True, conflict=False)
-    return {"changes": changes, "dropped": dropped}
+    return {"changes": changes, "dropped": dropped, "escalated": escalated}
 
 
 def apply_changes(root: ET.Element, changes: list[dict], staff: int = 0) -> None:

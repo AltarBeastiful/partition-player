@@ -59,7 +59,7 @@ The image builds for amd64 and arm64. Recognition data lives in the `pp-data` vo
 
 All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_ENGINE` (`homr`),
 `PP_FALLBACK_ENGINE` (`none` or `audiveris`, which also needs `PP_AUDIVERIS_BIN`),
-`PP_ANTHROPIC_API_KEY` (optional lyrics spelling pass and server key for Check with a model, off when unset),
+`PP_ANTHROPIC_API_KEY` (server key for Check with a model, off when unset; nothing is sent to a model unless a pass is asked for and confirmed), `PP_ANTHROPIC_LARGER_MODEL` (Sonnet by default: where a failed answer is retried once, and "Try harder"),
 `PP_MODEL_MAX_SPANS` (spans per model pass on the server key, default 10),
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
@@ -145,9 +145,9 @@ sheet as "seen but not used", never written.
 Text mistakes are fixed in the **Lyrics** panel under the sheet: one text field per verse in the
 convention every notation program uses (`Lors-que nous é-tions`; `_` holds a syllable over the next
 note, `*` skips a note). Saving rewrites only the lyric elements of the score, keeps the chords, and
-re-renders the sheet. With `PP_ANTHROPIC_API_KEY` set, the recognized text of each line is also sent
-with its band image to Claude Haiku for a spelling pass; the answer is used only when it keeps the
-same syllables in the same places. The benchmark is `bench/lyrics/` (see `bench/RESULTS.md`).
+re-renders the sheet. No model reads lyrics on its own: a key set on the server changes nothing until a pass is
+asked for and confirmed in **Check with a model**, where the engine's doubtful stretches can be picked as spans.
+The benchmark is `bench/lyrics/` (see `bench/RESULTS.md`).
 
 ## Check with a model
 

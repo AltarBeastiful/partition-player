@@ -151,6 +151,33 @@ export class EditorSession {
     return [...by.values()].sort((a, b) => a.measure - b.measure);
   }
 
+  /**
+   * The stretches the engine doubted, as spans for a model pass (ticket 08): one per run of
+   * neighbouring doubtful measures on a staff, the strongest first. A doubt that is only information
+   * is not offered. The words themselves still come from the user.
+   */
+  doubtSpans(): { staff: number; from: number; to: number; level: Level }[] {
+    const cells = new Map<string, { staff: number; measure: number; level: Level }>();
+    for (const d of this.doubts) {
+      const level = levelOf(d);
+      if (level === "info") continue;
+      const staff = typeof d.part === "number" ? d.part : 0;
+      const key = `${staff}:${d.measure}`;
+      const have = cells.get(key);
+      if (!have || RANK[level] > RANK[have.level]) cells.set(key, { staff, measure: d.measure, level });
+    }
+    const sorted = [...cells.values()].sort((a, b) => a.staff - b.staff || a.measure - b.measure);
+    const spans: { staff: number; from: number; to: number; level: Level }[] = [];
+    for (const c of sorted) {
+      const last = spans[spans.length - 1];
+      if (last && last.staff === c.staff && last.to + 1 === c.measure) {
+        last.to = c.measure;
+        if (RANK[c.level] > RANK[last.level]) last.level = c.level;
+      } else spans.push({ staff: c.staff, from: c.measure, to: c.measure, level: c.level });
+    }
+    return spans.sort((a, b) => RANK[b.level] - RANK[a.level] || a.staff - b.staff || a.from - b.from);
+  }
+
   /** The places still to look at: not checked, or the live check still complains. */
   open(): Place[] {
     return this.places().filter((p) => !p.info && (!p.checked || p.live));

@@ -251,3 +251,64 @@ def test_a_job_over_the_server_key_cap_is_refused_with_a_reason(settings, monkey
     assert model.calls == 0
     # the visitor's own key pays for itself: the cap does not apply
     assert client.post(f"/api/jobs/{jid}/model-pass", json={**payload, "api_key": "sk-visitor", "confirm": False}).status_code == 200
+
+
+# ---- ticket 08: the larger model, Try harder, and no silent polish ---------------------------------
+
+class TwoModels(FakeModel):
+    """Answers well only when asked as `good_model`; remembers which model each call named."""
+    def __init__(self, good_model, answer=GOOD):
+        super().__init__(answer)
+        self.good_model, self.models = good_model, []
+
+    def post(self, url, **k):
+        self.models.append(k["json"]["model"])
+        if k["json"]["model"] != self.good_model:
+            self.calls += 1
+            return Reply(json.dumps([{"text": "Xxx", "note": 0}]))
+        return super().post(url, **k)
+
+
+def test_a_failed_validation_retries_once_with_the_larger_model_and_says_so(settings):
+    from partition_player.model.route import HAIKU, SONNET
+
+    model = TwoModels(SONNET)
+    client, jid = start(settings, model)
+    d = client.post(f"/api/jobs/{jid}/model-pass", json=body(confirm=True)).json()
+    assert model.models == [HAIKU, SONNET] and d["changes"] and not d["dropped"]
+    assert d["escalated"] == [{"span": {"staff": 0, "from": 0, "to": 1}, "verse": 1, "model": SONNET}]
+
+
+def test_when_the_larger_model_fails_too_the_reason_names_both_and_nothing_is_retried_again(settings):
+    model = TwoModels("neither")
+    client, jid = start(settings, model)
+    d = client.post(f"/api/jobs/{jid}/model-pass", json=body(confirm=True)).json()
+    assert len(model.models) == 2 and d["changes"] == []
+    assert "larger model" in d["dropped"][0]["reason"] and "differ" in d["dropped"][0]["reason"]
+
+
+def test_try_harder_asks_the_larger_model_directly_for_the_span_sent(settings):
+    from partition_player.model.route import SONNET
+
+    model = TwoModels(SONNET)
+    client, jid = start(settings, model)
+    d = client.post(f"/api/jobs/{jid}/model-pass", json=body(confirm=True, larger=True)).json()
+    assert model.models == [SONNET] and d["changes"] and d["route"]["model"] == SONNET
+
+
+def test_a_job_with_a_server_key_and_no_pass_requested_sends_nothing_to_a_model(settings, monkeypatch):
+    from partition_player.model.route import Route
+
+    monkeypatch.setenv("PP_ANTHROPIC_API_KEY", "sk-server")
+    sent = []
+
+    def complete(self, *a, **k):
+        sent.append(self.model)
+        raise RuntimeError("no network")
+
+    monkeypatch.setattr(Route, "complete", complete)
+    from partition_player.config import load_settings
+
+    model = FakeModel(GOOD)
+    client, jid = start(load_settings(), model)
+    assert sent == [] and model.calls == 0

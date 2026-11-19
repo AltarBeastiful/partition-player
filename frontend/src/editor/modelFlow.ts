@@ -21,16 +21,29 @@ export class ModelFlow {
   /** The route the visitor picked (a preset name); empty is the server's default. */
   routeId = "";
   private spans: ModelPassRequest["spans"] = [];
+  private larger = false;
 
   constructor(private readonly jobId: string) {}
 
   private request(): ModelPassRequest {
     const k = visitorKey.get();
     const route = this.routeId ? { route: this.routeId } : {};
-    return k ? { spans: this.spans, api_key: k, ...route } : { spans: this.spans, ...route };
+    const more = this.larger ? { larger: true } : {};
+    return k ? { spans: this.spans, api_key: k, ...route, ...more } : { spans: this.spans, ...route, ...more };
   }
 
   async ask(spans: ModelPassRequest["spans"]): Promise<void> {
+    this.larger = false;
+    await this.estimateFor(spans);
+  }
+
+  /** Try harder (ticket 08): this one span again, straight to the route's larger model. */
+  async askHarder(span: ModelPassRequest["spans"][number]): Promise<void> {
+    this.larger = true;
+    await this.estimateFor([span]);
+  }
+
+  private async estimateFor(spans: ModelPassRequest["spans"]): Promise<void> {
     this.spans = spans; this.estimate = null; this.error = null;
     try { this.estimate = await estimateModelPass(this.jobId, this.request()); }
     catch (e) { this.error = (e as Error).message; }

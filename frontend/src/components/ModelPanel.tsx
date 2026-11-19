@@ -67,6 +67,16 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
     } catch (e) { setError((e as Error).message); } finally { setRunning(false); }
   }
 
+  /** Try harder (ticket 08): one span of the draft again, on the larger model; its draft replaces this one once confirmed. */
+  async function tryHarder(span: { staff: number; from: number; to: number; lyrics_source: string }) {
+    setRunning(true); setError(null);
+    try {
+      flow.current!.routeId = routeId; visitorKey.set(key);
+      await flow.current!.askHarder({ staff: span.staff, from: span.from, to: span.to, lyrics_source: span.lyrics_source });
+      setEstimate(flow.current!.estimate); setError(flow.current!.error);
+    } catch (e) { setError((e as Error).message); } finally { setRunning(false); }
+  }
+
   async function confirm() {
     setRunning(true); setError(null);
     const d = await flow.current!.confirm();
@@ -100,6 +110,17 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
                 {routes.map((r) => <option key={r.id} value={r.id}>{r.label} ({r.model})</option>)}
               </select></label>
               {route && !route.vision && <span className="muted">No image reading on this route: typed words only.</span>}
+            </div>
+          )}
+          {session.doubtSpans().length > 0 && (
+            <div className="controls doubt-spans">
+              <span className="muted">Doubtful in the recognition, strongest first:</span>
+              {session.doubtSpans().map((d) => (
+                <button key={`${d.staff}:${d.from}`} className="quiet" title={d.level === "wrong" ? "A measure that cannot be right" : "Worth a look"}
+                  onClick={() => { setStaff(d.staff); setFrom(d.from + 1); setTo(d.to + 1); }}>
+                  {d.level === "wrong" ? "Wrong" : "Check"}: {staves > 1 ? `staff ${d.staff + 1}, ` : ""}measure{d.from === d.to ? "" : "s"} {d.from + 1}{d.from === d.to ? "" : `-${d.to + 1}`}
+                </button>
+              ))}
             </div>
           )}
           <div className="controls">
@@ -159,8 +180,23 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
               </li>
             ))}
           </ul>
+          {(draft.draft.escalated ?? []).length > 0 && (
+            <p className="muted">The first answer failed the check, so the larger model answered: {(draft.draft.escalated ?? []).map((e) => `verse ${e.verse} of measures ${e.span.from + 1}-${e.span.to + 1} (${e.model})`).join("; ")}.</p>
+          )}
           {draft.draft.dropped.length > 0 && (
-            <p className="muted">Not used: {draft.draft.dropped.map((d) => `verse ${d.verse} (${d.reason})`).join("; ")}</p>
+            <p className="muted">Not used: {draft.draft.dropped.map((d) => `verse ${d.verse} of measures ${d.span.from + 1}-${d.span.to + 1} (${d.reason})`).join("; ")}</p>
+          )}
+          {draft.draft.spans.filter((sp) => sp.lyrics_source && draft.draft.dropped.some((d) => d.span.staff === sp.staff && d.span.from === sp.from && d.span.to === sp.to)).map((sp) => (
+            <div className="controls" key={`${sp.staff}:${sp.from}:${sp.to}`}>
+              <button onClick={() => tryHarder(sp)} disabled={running || applying}>Try harder: measures {sp.from + 1}-{sp.to + 1}</button>
+            </div>
+          ))}
+          {estimate && (
+            <div className="controls">
+              <span>{estimate.calls} call{estimate.calls === 1 ? "" : "s"} to {estimate.model}, about ${estimate.estimated_cost_usd.toFixed(4)}. The draft shown is replaced by this span's new one.</span>
+              <button className="primary" onClick={confirm} disabled={running}>{running ? "Asking the model…" : "Confirm and run"}</button>
+              <button onClick={cancel} disabled={running}>Cancel</button>
+            </div>
           )}
           <div className="controls">
             <button className="primary" onClick={apply} disabled={applying || draft.ticked.size === 0}>{applying ? "Applying…" : `Apply ${draft.ticked.size} change${draft.ticked.size === 1 ? "" : "s"}`}</button>

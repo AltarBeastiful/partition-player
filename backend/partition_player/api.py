@@ -68,6 +68,7 @@ class ModelPass(BaseModel):
     spans: list[SpanIn] = Field(min_length=1, max_length=20)
     confirm: bool = False            # false: return the estimate and run nothing
     route: str = ""                  # a preset by name (`anthropic`, `deepseek`); empty is the configured default
+    larger: bool = False             # "Try harder": ask the route's larger model straight away, for the spans sent
     api_key: str = Field(default="", max_length=300, repr=False)  # the visitor's key: used for this call only
 
 
@@ -235,6 +236,10 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
         route = settings.model_routes[body.route] if body.route else settings.model_route
         if body.api_key:
             route = replace(route, api_key=body.api_key)
+        if body.larger:
+            if route.larger() is None:
+                raise HTTPException(422, "this route has no larger model to try")
+            route = route.larger()
         if not route.enabled:
             raise HTTPException(409, "the model pass is off: no model route is configured and no key was given")
         if not body.api_key and len(body.spans) > settings.model_max_spans:

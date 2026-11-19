@@ -6,12 +6,14 @@ A route with no key is disabled: every feature that needs a model stays off.
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 ANTHROPIC_URL = "https://api.anthropic.com"
 HAIKU = "claude-haiku-4-5-20251001"
+SONNET = "claude-sonnet-4-5-20250929"  # the larger model a failed answer escalates to (ticket 08)
 DEEPSEEK_URL = "https://api.deepseek.com/anthropic"  # DeepSeek's Anthropic-compatible endpoint
 DEEPSEEK_MODEL = "deepseek-flash"
+DEEPSEEK_LARGER = "deepseek-v4-pro"
 NO_VISION = "this route cannot read images"
 
 
@@ -32,16 +34,23 @@ class Route:
     api_key: str
     model: str
     vision: bool = True
+    larger_model: str = ""   # the model a failed validation and "Try harder" go to; empty means there is none
 
     @classmethod
-    def anthropic(cls, api_key: str, model: str = HAIKU) -> "Route":
-        return cls(ANTHROPIC_URL, api_key, model, vision=True)
+    def anthropic(cls, api_key: str, model: str = HAIKU, larger_model: str = SONNET) -> "Route":
+        return cls(ANTHROPIC_URL, api_key, model, vision=True, larger_model=larger_model)
+
+    def larger(self) -> "Route | None":
+        """The same route asking its larger model, or None when it has none (or is already on it)."""
+        if not self.larger_model or self.larger_model == self.model:
+            return None
+        return replace(self, model=self.larger_model)
 
     @classmethod
-    def deepseek(cls, api_key: str, model: str = DEEPSEEK_MODEL, base_url: str = DEEPSEEK_URL, vision: bool = False) -> "Route":
+    def deepseek(cls, api_key: str, model: str = DEEPSEEK_MODEL, base_url: str = DEEPSEEK_URL, vision: bool = False, larger_model: str = DEEPSEEK_LARGER) -> "Route":
         """DeepSeek through its Anthropic-compatible API. No vision by default: its larger model replaces
         images with a placeholder, so image spans stay off unless the operator says the model can see."""
-        return cls(base_url, api_key, model, vision=vision)
+        return cls(base_url, api_key, model, vision=vision, larger_model=larger_model)
 
     @property
     def enabled(self) -> bool:

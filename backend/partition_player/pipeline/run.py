@@ -11,11 +11,9 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from ..config import Settings
-from ..model.route import Route
 from .chords.place import inject, place
 from .lyrics import inject as lyrics_inject
 from .lyrics.align import place_lyrics
-from .lyrics.polish import polish
 from .engines import EngineError, get_engine
 from .evidence import collect, compare, emitted_by_measure, rate
 from .layout import make_layout
@@ -102,7 +100,7 @@ def recognize(image: Path, out_dir: Path, settings: Settings, progress: Progress
         stats.chords_seen = chord_info["seen"]
 
     notify("postprocessing", "Placing lyrics")
-    lyrics_info = add_lyrics(final, out_dir / info["engine"] / "geometry.json", out_dir / "lyrics.json", settings.model_route)
+    lyrics_info = add_lyrics(final, out_dir / info["engine"] / "geometry.json", out_dir / "lyrics.json")
     if lyrics_info is not None:
         stats.lyrics_verses = lyrics_info["verses"]
         stats.lyrics_syllables = lyrics_info["syllables"]
@@ -178,10 +176,10 @@ def add_chords(engine_xml: Path, geometry_file: Path, dst: Path) -> dict | None:
     return {"chords": written, "warnings": result.warnings, "seen": result.seen}
 
 
-def add_lyrics(score: Path, geometry_file: Path, lyrics_file: Path, route: Route | None = None) -> dict | None:
+def add_lyrics(score: Path, geometry_file: Path, lyrics_file: Path) -> dict | None:
     """Lyrics stage (ADR 0004): geometry.json (staves with words) + the final score -> <lyric> elements
-    written into the score in place, and lyrics.json for the editor. With an enabled model route, the texts are
-    polished by a language model first (positions never move)."""
+    written into the score in place, and lyrics.json for the editor. No model is asked here: a model reads
+    lyrics only in a pass the user asks for and confirms (ADR 0010)."""
     if not geometry_file.exists():
         return None
     geometry = json.loads(geometry_file.read_text())
@@ -189,12 +187,6 @@ def add_lyrics(score: Path, geometry_file: Path, lyrics_file: Path, route: Route
         return None
     tree = ET.parse(score)
     result = place_lyrics(tree, geometry)
-    if route is not None and route.enabled and result.placed:
-        bands = {st["index"]: geometry_file.parent / st["band"] for st in geometry["staves"]}
-        changed, warnings = polish(result.placed, bands, route)
-        result.warnings.extend(warnings)
-        if changed:
-            result.warnings.append(f"{changed} syllable(s) corrected by the language model")
     written = lyrics_inject.rewrite(score, result.placed)
     lyrics_inject.save(lyrics_file, result.placed, result.warnings, result.seen)
     return {"verses": result.verses, "syllables": written, "read": result.read, "warnings": result.warnings, "seen": result.seen}
