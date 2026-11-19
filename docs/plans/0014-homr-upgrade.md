@@ -58,12 +58,14 @@ Cause of the extra measures, read in homr's generator (`music_xml_generator.buil
 since the barline before it, and a volta stop does the same. A repeat that opens a page or a system
 therefore leaves a measure with attributes, a print mark or a barline and no note (Camptown: measure 1
 holds only the clef, key and time; La marche des rois: three empty measures between the voltas).
-`drop_empty_measures` (`postprocess.py`, test in `test_postprocess.py`) removes a measure that no part
-plays in (a rest counts as played) and hands what it carried to its neighbour: attributes, directions
-and the new-system mark forward, a left barline forward, a right barline back, merged in schema order.
-Because the chord, lyrics, layout and time-mark stages index measures through `geometry.json`, the
-driver calls it on homr's XML and renumbers the per-system counts and the time marks with it
-(driver patch plus this wiring: commit `a8d9df3`). Counts came back (Camptown 17, La marche des rois
+`drop_empty_measures` (`postprocess.py`, test in `test_postprocess.py`) removed a measure that no part
+plays in (a rest counts as played) and handed what it carried to its neighbour. Because the chord,
+lyrics, layout and time-mark stages index measures through `geometry.json`, the driver called it on
+homr's XML and renumbered the per-system counts and the time marks with it (driver patch plus this
+wiring: commit `a8d9df3`). It is not on the integration branch: nothing calls it at the pinned homr
+0.7.0. **Retry path: `git cherry-pick a8d9df3`**, with two reviewed bugs to fix first: when several
+empty measures share one forward target they are inserted in reverse order, and a trailing empty
+measure (no forward target) misplaces or duplicates its `<print>` and attributes. Counts came back (Camptown 17, La marche des rois
 20, La nave del olvido 29) and the Anton photo is **0.00** (55 of 55, 19 of 19). Backend tests: 146 passed.
 rapidocr is pinned `>=3.9,<3.10` (3.10.0 leaves `ocr.text_rec` None and breaks the chord reader);
 this pin stays whatever the verdict.
@@ -107,7 +109,7 @@ integration branch carries no git dependency; `git cherry-pick f235dbb` brings i
 numpy 2.5.5, onnxruntime 1.32.0. Models are downloaded on first run: a new staff-relation model
 (`staff_relations_pdmx2`, `staff_pieces_h1`) joins the segnet and the transformer.
 
-Driver changes on top of the 0.7.1 driver and `drop_empty_measures`: homr `main` groups staffs into
+Driver changes on top of the 0.7.1 driver and `drop_empty_measures` (a8d9df3, see above): homr `main` groups staffs into
 systems with a model (`homr.main.group_staffs`) and no longer has the brace/dot detection or
 `Staff.y_distance_to`; the driver calls `group_staffs` and keeps a local `y_distance`. Wrapping
 `parse_staff_image` and `StaffRegions` still works (`StaffRegions` moved to `homr.staff_regions`, the
