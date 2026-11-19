@@ -138,9 +138,9 @@ def current_lyrics(root: ET.Element, staff: int = 0) -> dict[tuple[int, int, int
 def run(score: Path, spans: list[dict], route: Route, client=None) -> dict:
     """Ask the model once per span and verse; returns {"changes": [...], "dropped": [...]}."""
     root = ET.parse(score).getroot()
-    now = current_lyrics(root)
     changes, dropped = [], []
     for span in spans:
+        now = current_lyrics(root, span["staff"])
         notes = span_notes(root, span["staff"], span["from"], span["to"])
         where = {"staff": span["staff"], "from": span["from"], "to": span["to"]}
         for verse_no, text in enumerate(verses_of(span["lyrics_source"]), start=1):
@@ -179,19 +179,29 @@ def apply_changes(root: ET.Element, changes: list[dict], staff: int = 0) -> None
     lyrics_inject.inject(part, list(placed.values()))
 
 
+def apply_changes_by_staff(root: ET.Element, changes: list[dict]) -> None:
+    """apply_changes for changes that span several staves: each goes to the staff of its span."""
+    for staff in sorted({c["span"]["staff"] for c in changes}):
+        apply_changes(root, [c for c in changes if c["span"]["staff"] == staff], staff)
+
+
 def flag_conflicts(root: ET.Element, changes: list[dict]) -> list[dict]:
     """Changes with `conflict` set where the score no longer holds the old value the pass saw (decision 6)."""
-    now = current_lyrics(root)
+    seen: dict[int, dict] = {}
     out = []
     for c in changes:
-        conflict = now.get((c["verse"], c["measure"], c["onset"])) != c["old"]
+        staff = c["span"]["staff"]
+        if staff not in seen:
+            seen[staff] = current_lyrics(root, staff)
+        conflict = seen[staff].get((c["verse"], c["measure"], c["onset"])) != c["old"]
         out.append({**c, "conflict": conflict, "ticked": c["ticked"] and not conflict})
     return out
 
 
 def save_draft(d: Path, score: Path, route: Route, spans: list[dict], result: dict, revision: int) -> dict:
     root = ET.parse(score).getroot()
-    apply_changes(root, result["changes"])
+    result = {**result, "changes": flag_conflicts(root, result["changes"])}  # the score may have changed while the model answered
+    apply_changes_by_staff(root, result["changes"])
     ET.ElementTree(root).write(d / DRAFT_SCORE, encoding="UTF-8", xml_declaration=True)
     draft = {"id": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"), "created": datetime.now(timezone.utc).isoformat(),
              "route": {"kind": "api", "model": route.model}, "base_revision": revision, "spans": spans, **result}

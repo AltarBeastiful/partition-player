@@ -278,7 +278,7 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                     for c in draft["changes"] if c["old"] != c["new"]]
         with store.lock:
             tree = ET.parse(score)
-            lyrics_pass.apply_changes(tree.getroot(), [c for c in draft["changes"] if c["id"] in body.ticked])
+            lyrics_pass.apply_changes_by_staff(tree.getroot(), [c for c in draft["changes"] if c["id"] in body.ticked])
             tree.write(score, encoding="UTF-8", xml_declaration=True)
             lyrics_file = d / "lyrics.json"
             old = json.loads(lyrics_file.read_text()) if lyrics_file.exists() else {}

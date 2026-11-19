@@ -6,12 +6,12 @@
 import { applyModelDraft, getScoreText, revertScore, saveScore, type Doubt, type Form, type Layout, type ModelDraft, type ReviewState, type Stats, type Under, type Voicing } from "../api";
 import { remapForm } from "../form";
 import { checkMeasures, checkText, type MeasureCheck } from "../score/check";
-import { correctedXml } from "../score/draft";
+import { correctedXml, lyricAt } from "../score/draft";
 import { EditError } from "../score/edit";
 import { find, nearest, parse, part, serialize, walk, type EventKey, type MeasureInfo } from "../score/xml";
 
 /** A model draft under review (plan 0016): which version the sheet shows and which changes are ticked. */
-export interface DraftReview { draft: ModelDraft; view: "read" | "corrected"; ticked: Set<string> }
+export interface DraftReview { draft: ModelDraft; view: "read" | "corrected"; ticked: Set<string>; fromServer: Set<string> }
 
 export type SaveStatus = "saved" | "unsaved" | "saving" | "error" | "stale";
 
@@ -76,6 +76,7 @@ export class EditorSession {
   private timer = 0;
   private saving = false;
   private pending = false;
+  private inflight: Promise<void> | null = null;
 
   constructor(readonly jobId: string, xml: string, review: ReviewState) {
     this.doc = parse(xml);
@@ -198,11 +199,38 @@ export class EditorSession {
 
   /** Review a draft: the corrected version first, every change ticked unless the server says it conflicts. */
   openDraft(draft: ModelDraft): void {
-    this.draft = { draft, view: "corrected", ticked: new Set(draft.changes.filter((c) => c.ticked && !c.conflict).map((c) => c.id)) };
+    // our own copy of the changes: their conflict flags follow the document while the draft is open
+    const changes = draft.changes.map((c) => ({ ...c }));
+    this.draft = {
+      draft: { ...draft, changes }, view: "corrected",
+      ticked: new Set(changes.filter((c) => c.ticked && !c.conflict).map((c) => c.id)),
+      fromServer: new Set(changes.filter((c) => c.conflict).map((c) => c.id)),
+    };
+    this.syncConflicts();
     this.selected = null;
     this.message = null;
     this.docVersion++;
     this.emit();
+  }
+
+  /**
+   * Your edits win: a change whose place no longer holds the syllable the pass saw (a hand edit,
+   * before the draft or while it is open) is a conflict and comes unticked. Only the moment it
+   * becomes a conflict unticks it, so a tick made on purpose stays; undoing the edit ticks it again.
+   */
+  private syncConflicts(): void {
+    const d = this.draft;
+    if (!d) return;
+    let moved = false;
+    for (const c of d.draft.changes) {
+      const now = lyricAt(this.doc, c.span.staff, c.measure, c.onset, c.verse);
+      const conflict = d.fromServer.has(c.id) || now?.text !== c.old?.text || now?.syllabic !== c.old?.syllabic;
+      if (conflict === c.conflict) continue;
+      c.conflict = conflict;
+      if (conflict) d.ticked.delete(c.id); else d.ticked.add(c.id);
+      moved = true;
+    }
+    if (moved && d.view === "corrected") this.docVersion++;
   }
 
   closeDraft(): void {
@@ -236,8 +264,10 @@ export class EditorSession {
     const d = this.draft;
     if (!d) return;
     try {
-      if (this.dirty) await this.save();
-      if (this.status === "error" || this.status === "stale") return;
+      while (this.saving || this.dirty) {   // an autosave in flight is awaited, never raced
+        if (this.saving) await this.inflight; else await this.save();
+        if (this.status === "error" || this.status === "stale") return;
+      }
       const result = await applyModelDraft(this.jobId, [...d.ticked]);
       const xml = await getScoreText(this.jobId);
       const before = this.snapshot();
@@ -377,6 +407,7 @@ export class EditorSession {
       window.clearTimeout(this.timer);
       this.timer = window.setTimeout(() => { void this.save(); }, SAVE_DELAY_MS);
     }
+    this.syncConflicts();
     this.emit();
   }
 
@@ -385,6 +416,12 @@ export class EditorSession {
     window.clearTimeout(this.timer);
     if (this.status === "stale" || this.status === "saved") return;
     if (this.saving) { this.pending = true; return; }
+    const run = this.send();
+    this.inflight = run;
+    await run;
+  }
+
+  private async send(): Promise<void> {
     this.saving = true;
     this.status = "saving";
     this.emit();
