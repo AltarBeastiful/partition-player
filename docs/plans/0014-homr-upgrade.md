@@ -1,7 +1,7 @@
 # Plan 0014: Move to homr 0.7.1, then to homr `main`
 
 Status 2026-11-19: **step 1 tried twice, NO-GO both times, pinned back to homr 0.7.0** (`homr==0.7.0` in `backend/pyproject.toml`).
-Step 2 (`main`) is not started and is blocked on a fix of the same kind in homr (see below).
+Step 2 (`main`, commit `83130ba7`) was trialled the same day: NO-GO, same result (see "Step 2" below).
 The driver patch for 0.7.1 works and is kept in git as commit `d1a2b61` (reverted right after, so
 it can be cherry-picked when homr moves again). No ADR yet: if the trial of `main` ships, the
 decision to pin an engine by commit is one and gets written then (ADR 0002 already names homr as the
@@ -96,6 +96,57 @@ placed (for example false per syllable placed, 1.6 % against 1.5 % on voice and 
 ready: cherry-pick `a8d9df3`, set `homr[cpu]>=0.7.1,<0.8`. One writer of time changes per measure
 still holds (`_set_time` removes any `<time>` before writing ours), and the marks are renumbered with
 the dropped measures.
+
+## Step 2: homr `main` trial (2026-11-19): NO-GO, stay on 0.7.0
+
+Installed from git at `83130ba7a190aa83c3ca32b6638199652eb0d778` ("filter 4 invalid samples from pdmx",
+67 commits after v0.7.1; reports itself as `0.7.1.post67`), in a venv of its own, with
+`homr[cpu] @ git+https://github.com/liebharc/homr.git@83130ba7...` and `allow-direct-references`
+in pyproject. The trial is the commit `f235dbb` and is reverted right after (`77a163f`), so the
+integration branch carries no git dependency; `git cherry-pick f235dbb` brings it back. Rapidocr 3.9.2,
+numpy 2.5.5, onnxruntime 1.32.0. Models are downloaded on first run: a new staff-relation model
+(`staff_relations_pdmx2`, `staff_pieces_h1`) joins the segnet and the transformer.
+
+Driver changes on top of the 0.7.1 driver and `drop_empty_measures`: homr `main` groups staffs into
+systems with a model (`homr.main.group_staffs`) and no longer has the brace/dot detection or
+`Staff.y_distance_to`; the driver calls `group_staffs` and keeps a local `y_distance`. Wrapping
+`parse_staff_image` and `StaffRegions` still works (`StaffRegions` moved to `homr.staff_regions`, the
+name in `staff_parsing` is the one to patch). Backend tests: 146 passed. Anton photo: event error rate
+**0.00** (55 of 55, 19 of 19). A page takes about the same time as on 0.7.1.
+
+Same criteria as ticket 02, same pages, control = the fresh 0.7.0 run above:
+
+| criterion | lead sheets (60) | voice and piano (60) | IMSLP scans (10) |
+|---|---|---|---|
+| right measure counts | 57 -> **56** (fail) | 58 -> 60 | 10 -> 10 |
+| pitch + duration | 6456 -> 6465 of 6480 | 4143 -> 4467 of 4526 | 466 -> 512 of 596 |
+| syllables placed | 9946 -> 9831 | 1138 -> 4286 | 10 -> 576 |
+| false syllables | 157 -> 151 | 17 -> **64** (rise) | 7 -> 2 |
+| false chords | 61 -> 61 | 19 -> **33** (rise) | 1 -> **4** (rise) |
+| Anton photo | 0.00 | | |
+
+Verdict **stay on 0.7.0**: the gate fails exactly as it did for 0.7.1, and for the same reasons (the
+one lead-sheet page that drops a measure is `it_mattinata_photo`, 29 -> 28, the same page as under
+0.7.1; false syllables and chords rise on voice and piano with the four-fold rise in syllables placed).
+`main` brings nothing the gate can see over 0.7.1: the numbers are within a few notes of the second
+0.7.1 attempt. The reading of voice and piano is clearly better (+324 notes right, 60 of 60 measure
+counts, Elgar and Beethoven now right), which is the same trade as before; if the maintainer
+changes the gate to weigh false against placed, step 2 and step 1 become the same decision, and
+`main` is then not worth a git dependency over 0.7.1.
+
+For ticket 05 (what `main` writes natively; our code is untouched), counted in homr's `engine.musicxml`
+over the benchmark pages, with 0.7.0 as the control:
+
+- **Beams**: `main` writes `<beam>` elements, 3933 on 56 of the 60 lead-sheet pages (0.7.0: none).
+  They come from the model's beam tokens (`convert_beams`), not from a pixel rule. Not scored against
+  our beam rule yet: that comparison is ticket 05's work.
+- **Octave shifts**: `<octave-shift>` on 7 voice-and-piano pages (19 elements in all), none on the
+  lead sheets (0.7.0: none). Pitches are written as sounding pitch (`ConversionState.sounding_pitch`).
+  Whether they are right was not checked against the printed 8va marks.
+- **Time changes**: on the lead sheets 2 pages carry a second `<time>` (0.7.0: none). `main` takes the
+  previous page's time as an input (`inherited_times`, used by multi-page runs) and otherwise infers
+  the time from measure lengths per voice. Our rule (plan 0013) is still the writer in the driver; the
+  canon photo was not re-run in isolation.
 
 ## Problem Statement
 
