@@ -8,6 +8,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { it } from "vitest";
 import { defaultPasses, type Pass } from "./form";
+import { loadScore } from "./score/beaming";
 
 const BENCH = resolve(process.cwd(), "../bench");
 
@@ -81,7 +82,7 @@ it("scores the automatic form of every song run against the hand truth", async (
     const osmd = new OpenSheetMusicDisplay(host, { autoResize: false, drawingParameters: "compacttight" });
     let got: Pass[] = [];
     try {
-      await osmd.load(withRepeats(readFileSync(scorePath, "utf8"), readFileSync(enginePath, "utf8")));
+      await loadScore(osmd, new XMLSerializer().serializeToString(withRepeats(readFileSync(scorePath, "utf8"), readFileSync(enginePath, "utf8"))));
       got = defaultPasses(osmd);
     } catch (e) {
       lines.push(`${name}: OSMD could not load the score: ${(e as Error).message}`);

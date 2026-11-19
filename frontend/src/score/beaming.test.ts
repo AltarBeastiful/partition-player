@@ -47,10 +47,11 @@ describe("beams", () => {
   it("knows a score with beam markup from one without", () => {
     expect(hasBeamMarkup(PLAIN)).toBe(false);
     expect(hasBeamMarkup(OWN)).toBe(true);
+    expect(hasBeamMarkup(PLAIN.replace("<measure", "<!-- <beam number=\"1\">begin</beam> --><measure"))).toBe(false);
   });
 
   it("beams a score that has no beam markup", async () => {
-    expect(await beamsDrawn(PLAIN)).toBeGreaterThan(0);
+    expect(await beamsDrawn(PLAIN)).toBe(4); // eight eighths in 4/4: four pairs
   }, 30_000);
 
   it("draws the beams a score carries, as written and no others", async () => {

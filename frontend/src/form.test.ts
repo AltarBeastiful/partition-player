@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import JSZip from "jszip";
 import { beforeAll, describe, expect, it } from "vitest";
 import { UNDER_PASS, defaultPasses, resolveUnders, describePasses, expandForm, formFromPasses, parseForm, preset, remapForm, sliceRanges, underSlices, type Form, type Pass, type Section, type Under } from "./form";
+import { loadScore } from "./score/beaming";
 
 let OpenSheetMusicDisplay: typeof import("opensheetmusicdisplay").OpenSheetMusicDisplay;
 
@@ -33,7 +34,7 @@ async function passesOf(xml: string): Promise<{ passes: Pass[]; measures: number
   const host = document.createElement("div");
   document.body.appendChild(host);
   const osmd = new OpenSheetMusicDisplay(host, { autoResize: false, drawingParameters: "compacttight" });
-  await osmd.load(xml);
+  await loadScore(osmd, xml);
   const passes = defaultPasses(osmd);
   return { passes, measures: osmd.Sheet.SourceMeasures.length };
 }

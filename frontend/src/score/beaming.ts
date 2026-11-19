@@ -6,12 +6,18 @@
  */
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 
-/** True when the score has at least one `<beam>` element. */
+/** True when the score has at least one `<beam>` element (a commented-out one does not count). */
 export function hasBeamMarkup(xml: string): boolean {
-  return /<beam[\s>]/.test(xml);
+  return /<beam[\s>]/.test(xml.replace(/<!--[\s\S]*?-->/g, ""));
 }
 
 /** Set the beam rule of `osmd` for the score it is about to load. Call before `load`. */
 export function chooseBeams(osmd: OpenSheetMusicDisplay, xml: string): void {
   osmd.setOptions({ autoBeam: !hasBeamMarkup(xml) });
+}
+
+/** Load `xml` into `osmd` with the beam rule chosen for it: the one way every view loads a score. */
+export async function loadScore(osmd: OpenSheetMusicDisplay, xml: string): Promise<void> {
+  chooseBeams(osmd, xml);
+  await osmd.load(xml);
 }
