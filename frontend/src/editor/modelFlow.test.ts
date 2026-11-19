@@ -8,10 +8,10 @@ import type { ModelDraft, ModelEstimate } from "../api";
 
 vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), estimateModelPass: vi.fn(), runModelPass: vi.fn() }));
 import * as api from "../api";
-import { ModelFlow, MODEL_NOTICE, visitorKey } from "./modelFlow";
+import { ModelFlow, MODEL_NOTICE, modelNotice, visitorKey } from "./modelFlow";
 
 const spans = [{ staff: 0, from: 0, to: 3, lyrics_source: "Lors-que" }];
-const estimate: ModelEstimate = { calls: 2, estimated_tokens: 3000, estimated_cost_usd: 0.0123, model: "m", confirm: false };
+const estimate: ModelEstimate = { calls: 2, estimated_tokens: 3000, estimated_cost_usd: 0.0123, model: "m", vision: true, confirm: false };
 const draft = { id: "d1" } as ModelDraft;
 
 beforeEach(() => {
@@ -72,5 +72,7 @@ describe("ModelFlow", () => {
 
   it("the notice says that crops leave the server for the provider", () => {
     expect(MODEL_NOTICE).toMatch(/sent to/i);
+    expect(modelNotice("DeepSeek")).toMatch(/DeepSeek/);
+    expect(MODEL_NOTICE).toMatch(/picture of words/);
   });
 });

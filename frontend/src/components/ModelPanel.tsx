@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { getModelDraft, getModelRoutes } from "../api";
 import type { ModelEstimate } from "../api";
+import { pictureToBase64 } from "../editor/picture";
 import { initialRoute, spanRefusal, type ModelRoute } from "../modelRoute";
 import { changeLine } from "../score/draft";
 import type { EditorSession } from "../editor/session";
-import { MODEL_NOTICE, ModelFlow, visitorKey } from "../editor/modelFlow";
+import { modelNotice, ModelFlow, visitorKey } from "../editor/modelFlow";
 
 /**
  * Check with a model (ADR 0010, plan 0016 step 6): on a staff, paste the words, start the pass, then
@@ -27,6 +28,8 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
   const [routeId, setRouteId] = useState("");
   const route = routes.find((r) => r.id === routeId);
+  const [picture, setPicture] = useState<File | null>(null);
+  const vision = route?.vision ?? true; // unknown until the routes arrive: the server refuses if it cannot
   const [estimate, setEstimate] = useState<ModelEstimate | null>(null);
   const [key, setKey] = useState(visitorKey.get());
   const flow = useRef<ModelFlow | null>(null);
@@ -53,7 +56,9 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
     try {
       if (session.dirty) await session.save(); // the pass reads the score as the server holds it
       visitorKey.set(key);
-      const span = { staff, from: from - 1, to: to - 1, lyrics_source: text, needs_image: false };
+      const span = picture
+        ? { staff, from: from - 1, to: to - 1, lyrics_picture: await pictureToBase64(picture), needs_image: true }
+        : { staff, from: from - 1, to: to - 1, lyrics_source: text, needs_image: false };
       const refused = spanRefusal(route, span);
       if (refused) { setError(refused); return; }
       flow.current!.routeId = routeId;
@@ -108,8 +113,16 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
           </div>
           <label className="verse">
             <span className="muted">The words, as typed: a blank line between verses.</span>
-            <textarea rows={5} value={text} spellCheck={false} onChange={(e) => setText(e.target.value)} />
+            <textarea rows={5} value={text} spellCheck={false} disabled={!!picture} onChange={(e) => setText(e.target.value)} />
           </label>
+          <div className="controls lyrics-picture">
+            <label>Or a picture of the words{" "}
+              <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!vision} title={vision ? undefined : `${route?.label ?? "This model"} cannot read pictures: type the words instead.`}
+                onChange={(e) => setPicture(e.target.files?.[0] ?? null)} />
+            </label>
+            {!vision && <span className="muted">{route ? route.label : "This model"} cannot read pictures: type the words instead.</span>}
+            {picture && <button className="quiet" onClick={() => setPicture(null)}>Remove the picture</button>}
+          </div>
           <label className="verse">
             <span className="muted">Your API key, if the site has none of its own. Kept in this page until you close it; never stored.</span>
             <input type="password" autoComplete="off" value={key} placeholder="sk-ant-…" onChange={(e) => { setKey(e.target.value); visitorKey.set(e.target.value); }} />
@@ -122,10 +135,10 @@ export function ModelPanel({ session, measureCount, staves, onApplied }: {
             </div>
           ) : (
             <div className="controls">
-              <button className="primary" onClick={start} disabled={running || !text.trim()}>{running ? "Estimating…" : "Place the words"}</button>
+              <button className="primary" onClick={start} disabled={running || (!picture && !text.trim())}>{running ? "Estimating…" : "Place the words"}</button>
             </div>
           )}
-          <p className="muted">{MODEL_NOTICE}</p>
+          <p className="muted">{modelNotice(route?.label)}</p>
         </>
       )}
       {draft && (

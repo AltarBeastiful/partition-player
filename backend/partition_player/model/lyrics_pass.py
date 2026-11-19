@@ -13,11 +13,13 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+import base64
+import binascii
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ..pipeline.lyrics import inject as lyrics_inject
-from .route import Route
+from .route import Route, image_type
 
 DRAFT = "model-draft.json"
 DRAFT_SCORE = "model-draft.musicxml"
@@ -35,9 +37,54 @@ PROMPT = (
     "strictly increasing."
 )
 
+MAX_PICTURE = 7_000_000    # characters of base64 picture per span
+UNREADABLE = "UNREADABLE"
+
+READ_PROMPT = (
+    "The picture shows the lyrics of a song, printed or written. Copy the words exactly as they are written, "
+    "letter for letter, keeping the hyphens that cut words into syllables and a blank line between verses. "
+    f"Reply with the text only. If the picture holds no lyrics you can read, reply {UNREADABLE}."
+)
+
 
 class SpanError(ValueError):
     pass
+
+
+def picture_bytes(encoded: str) -> bytes:
+    """The picture of a span, decoded; SpanError unless it is a PNG, JPEG or WebP."""
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise SpanError("the lyrics picture is not valid base64") from e
+    if image_type(data) is None:
+        raise SpanError("the lyrics picture is not a PNG, JPEG or WebP image")
+    return data
+
+
+def read_pictures(spans: list[dict], route: Route, client=None) -> tuple[list[dict], list[dict]]:
+    """Spans with a `lyrics_picture` get its text as `lyrics_source`, read by the route; a picture that cannot
+    be read leaves an empty source and a dropped entry, never a guess. Returns (spans, dropped)."""
+    out, dropped = [], []
+    for span in spans:
+        picture = span.get("lyrics_picture")
+        if not picture:
+            out.append(span)
+            continue
+        where = {"staff": span["staff"], "from": span["from"], "to": span["to"]}
+        try:
+            text = route.complete(READ_PROMPT, image_png=picture_bytes(picture), max_tokens=1500, client=client).strip()
+        except Exception as e:  # noqa: BLE001
+            text, why = "", f"the picture could not be read: the model could not be asked ({e.__class__.__name__})"
+        else:
+            why = "the picture could not be read: no lyrics found in it"
+            if len(text) > MAX_SOURCE:
+                text, why = "", "the picture could not be read: its text is too long"
+        if not text or UNREADABLE in text:
+            text = ""
+            dropped.append({"span": where, "verse": 1, "reason": why})
+        out.append({k: v for k, v in span.items() if k != "lyrics_picture"} | {"lyrics_source": text})
+    return out, dropped
 
 
 def normalise(text: str) -> str:
@@ -83,7 +130,13 @@ def estimate(root: ET.Element, spans: list[dict]) -> dict:
     calls, tokens_in, tokens_out = 0, 0, 0
     for span in spans:
         notes = span_notes(root, span["staff"], span["from"], span["to"])
-        for verse in verses_of(span["lyrics_source"]):
+        source = span["lyrics_source"]
+        if span.get("lyrics_picture"):  # one call to read it, then an average verse is placed
+            calls += 1
+            tokens_in += 1600
+            tokens_out += 200
+            source = "x " * 100
+        for verse in verses_of(source):
             calls += 1
             tokens_in += len(prompt_for(root, span["staff"], notes, verse)) // 3
             tokens_out += 40 + 6 * len(verse.split())

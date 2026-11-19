@@ -57,7 +57,8 @@ class SpanIn(BaseModel):
     staff: int = 0
     from_: int = Field(alias="from")
     to: int
-    lyrics_source: str = Field(max_length=lyrics_pass.MAX_SOURCE)
+    lyrics_source: str = Field(default="", max_length=lyrics_pass.MAX_SOURCE)
+    lyrics_picture: str = Field(default="", max_length=lyrics_pass.MAX_PICTURE, repr=False)  # base64 PNG/JPEG/WebP of the words, instead of the text
     needs_image: bool = False        # the answer needs a crop or a picture: refused on a route without vision
 
     model_config = {"populate_by_name": True}
@@ -241,15 +242,23 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
                                      "use fewer spans or your own key")
         d = store.dir(job_id)
         spans = [{"staff": s.staff, "from": s.from_, "to": s.to, "lyrics_source": s.lyrics_source,
-                  **({"needs_image": True} if s.needs_image else {})} for s in body.spans]
-        if (why := image_refusal(route, spans)):
+                  **({"lyrics_picture": s.lyrics_picture} if s.lyrics_picture else {}),
+                  **({"needs_image": True} if s.needs_image or s.lyrics_picture else {})} for s in body.spans]
+        if any(s.get("lyrics_picture") and s["lyrics_source"].strip() for s in spans):
+            raise HTTPException(422, "a span has either typed words or a picture of them, not both")
+        if (why := image_refusal(route, spans)):  # the chosen route's vision, whatever key pays for it
             raise HTTPException(422, why)
         try:
+            for s in spans:
+                if s.get("lyrics_picture"):
+                    lyrics_pass.picture_bytes(s["lyrics_picture"])
             root = ET.parse(d / "score.musicxml").getroot()
             estimate = lyrics_pass.estimate(root, spans)
             if not body.confirm:
-                return {**estimate, "model": route.model, "confirm": False}
+                return {**estimate, "model": route.model, "vision": route.vision, "confirm": False}
+            spans, unread = lyrics_pass.read_pictures(spans, route, client=model_client)
             result = lyrics_pass.run(d / "score.musicxml", spans, route, client=model_client)
+            result["dropped"] = unread + result["dropped"]
         except lyrics_pass.SpanError as e:
             raise HTTPException(422, str(e)) from e
         with store.lock:

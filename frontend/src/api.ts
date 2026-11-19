@@ -162,8 +162,11 @@ export interface ModelDraft {
   id: string; created: string; base_revision: number; route: { kind: string; model: string };
   spans: (ModelSpan & { lyrics_source: string })[]; changes: ModelChange[]; dropped: { span: ModelSpan; verse: number; reason: string }[];
 }
-export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; confirm: false }
-export interface ModelPassRequest { spans: (ModelSpan & { lyrics_source: string; needs_image?: boolean })[]; api_key?: string; route?: string }
+export interface ModelEstimate { calls: number; estimated_tokens: number; estimated_cost_usd: number; model: string; vision?: boolean; confirm: false }
+/** A span's words are typed (`lyrics_source`) or a picture of them (`lyrics_picture`, bare base64 PNG/JPEG/WebP), not both.
+ *  `needs_image` is set on a picture span so a route without vision refuses it before any call. */
+export interface ModelSpanIn extends ModelSpan { lyrics_source?: string; lyrics_picture?: string; needs_image?: boolean }
+export interface ModelPassRequest { spans: ModelSpanIn[]; api_key?: string; route?: string }
 
 /** The routes the server offers (Anthropic, DeepSeek), with whether each holds a key and can read images. */
 export async function getModelRoutes(): Promise<ModelRoute[]> {

@@ -2,7 +2,10 @@ import { estimateModelPass, runModelPass } from "../api";
 import type { ModelDraft, ModelEstimate, ModelPassRequest } from "../api";
 
 /** Shown with the button (ADR 0010): what leaves the server. */
-export const MODEL_NOTICE = "Crops of your score and the words you pasted are sent to the model's provider (Anthropic by default).";
+export function modelNotice(provider = "Anthropic"): string {
+  return `Crops of your score, the words you pasted and any picture of words you add are sent to the model's provider (${provider}).`;
+}
+export const MODEL_NOTICE = modelNotice();
 
 let key = "";
 /** The visitor's own API key: held in this page's memory for the session, never written to any storage. */
