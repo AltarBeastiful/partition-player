@@ -59,7 +59,8 @@ The image builds for amd64 and arm64. Recognition data lives in the `pp-data` vo
 
 All settings are environment variables with a `PP_` prefix: `PP_DATA_DIR`, `PP_ENGINE` (`homr`),
 `PP_FALLBACK_ENGINE` (`none` or `audiveris`, which also needs `PP_AUDIVERIS_BIN`),
-`PP_ANTHROPIC_API_KEY` (optional lyrics spelling pass, off when unset),
+`PP_ANTHROPIC_API_KEY` (optional lyrics spelling pass and server key for Check with a model, off when unset),
+`PP_MODEL_MAX_SPANS` (spans per model pass on the server key, default 10),
 `PP_JOB_TIMEOUT_S`, `PP_JOB_TTL_DAYS` (failed jobs only, default 7), `PP_MAX_SCORES` (default 500, oldest
 scores beyond it are deleted), `PP_MAX_UPLOAD_MB`, `PP_MAX_SIDE_PX`, `PP_FRONTEND_DIR`.
 
@@ -131,6 +132,26 @@ note, `*` skips a note). Saving rewrites only the lyric elements of the score, k
 re-renders the sheet. With `PP_ANTHROPIC_API_KEY` set, the recognized text of each line is also sent
 with its band image to Claude Haiku for a spelling pass; the answer is used only when it keeps the
 same syllables in the same places. The benchmark is `bench/lyrics/` (see `bench/RESULTS.md`).
+
+## Check with a model
+
+An optional step after recognition (ADR 0010): in the **Check with a model** panel you pick a staff
+and a range of measures, paste the words, and a small model places the syllables under the notes.
+Nothing runs until you have seen the number of calls and the estimated cost and pressed Confirm. The
+result is a draft you read in the sheet, untick, and apply as one revision (one undo).
+
+Three ways to run it, and what leaves the server in each:
+
+- **Off (default).** No key is set and none is pasted: the panel's request is refused and nothing is
+  sent anywhere.
+- **Your own key on the hosted site.** Paste an Anthropic API key in the panel. It is held in the
+  page's memory for the session, sent with the request, and never written to disk or logged by the
+  server. Crops of the score and the words you pasted go to the provider; your key pays.
+- **A key on the server.** The operator sets `PP_ANTHROPIC_API_KEY`; visitors need no key. The same
+  data goes to the provider, and `PP_MODEL_MAX_SPANS` caps the spans of one pass (a pass over the cap
+  is refused with the reason). A visitor's own key is not capped.
+
+A run through your own Claude Code session (no API key) is planned as a later addition.
 
 ## MusicXML in
 

@@ -26,6 +26,8 @@ class Settings:
     frontend_dir: Path = field(default_factory=lambda: Path(os.environ.get("PP_FRONTEND_DIR", "../frontend/dist")))
     anthropic_api_key: str = field(default_factory=lambda: os.environ.get("PP_ANTHROPIC_API_KEY", ""))  # lyrics text polish (ADR 0004), off when empty
 
+    model_max_spans: int = field(default_factory=lambda: _env_int("PP_MODEL_MAX_SPANS", 10))  # spans per model pass on the server's key (ADR 0010); a visitor's own key is not capped
+
     @property
     def model_route(self) -> Route:
         """The model route (ADR 0010): Anthropic preset keyed by PP_ANTHROPIC_API_KEY; no key means off."""
