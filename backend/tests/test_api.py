@@ -335,3 +335,43 @@ def test_editor_save_revert_and_revision(settings):
         # reverting puts the page back on the piano, as it puts the form back to the automatic one
         r = client.post(f"/api/jobs/{jid}/revert")
         assert r.status_code == 200 and r.json()["lines"] == [] and r.json()["unders"] == []
+
+
+def test_tempo_is_remembered_per_score(settings):
+    """Player controls: the tempo is saved with the job, validated, cleared by null, absent on old jobs,
+    and a tempo change is not an edit of the score."""
+    import json
+
+    from partition_player.api import create_app
+
+    with TestClient(create_app(settings)) as client:
+        r = client.post("/api/jobs", files={"file": ("photo.jpg", PHOTO.read_bytes(), "image/jpeg")})
+        jid = wait_done(client, r.json()["id"])["id"]
+        before = client.get(f"/api/jobs/{jid}/review").json()
+        assert before["tempo"] is None  # a score nobody set a tempo for
+
+        r = client.put(f"/api/jobs/{jid}/playback", json={"tempo": 132})
+        assert r.status_code == 200, r.text
+        after = client.get(f"/api/jobs/{jid}/review").json()
+        assert after["tempo"] == 132
+        assert after["revision"] == before["revision"]  # not an edit: no revision, no dirty score
+
+        # an edit of the score keeps the tempo
+        xml = client.get(f"/api/jobs/{jid}/score.musicxml").text
+        r = client.put(f"/api/jobs/{jid}/score", json={"musicxml": xml, "checked": [], "revision": after["revision"]})
+        assert r.status_code == 200, r.text
+        assert client.get(f"/api/jobs/{jid}/review").json()["tempo"] == 132
+
+        for bad in (10, 401, 90.5, "fast", True):
+            assert client.put(f"/api/jobs/{jid}/playback", json={"tempo": bad}).status_code == 422, bad
+        assert client.get(f"/api/jobs/{jid}/review").json()["tempo"] == 132
+
+        assert client.put(f"/api/jobs/{jid}/playback", json={"tempo": None}).status_code == 200
+        assert client.get(f"/api/jobs/{jid}/review").json()["tempo"] is None
+
+        # an old job whose review.json has no tempo reads as unset
+        path = settings.jobs_dir / jid / "review.json"
+        old = json.loads(path.read_text())
+        old.pop("tempo", None)
+        path.write_text(json.dumps(old))
+        assert client.get(f"/api/jobs/{jid}/review").json()["tempo"] is None

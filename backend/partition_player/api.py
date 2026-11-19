@@ -8,6 +8,7 @@ import copy
 import hmac
 import json
 import xml.etree.ElementTree as ET
+from typing import Any
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -51,6 +52,12 @@ class Edited(BaseModel):
     # plan 0011: how the page sounds. None means "leave what is stored", [] means "nothing set".
     lines: list[dict] | None = Field(default=None, max_length=review.MAX_VOICINGS)
     unders: list[dict] | None = Field(default=None, max_length=review.MAX_UNDERS)
+
+
+class Playback(BaseModel):
+    """How the page is played that is not an edit of the score: for now the tempo (player controls).
+    Kept loose here so that review.set_tempo gives the one refusal; null forgets the saved tempo."""
+    tempo: Any = None
 
 
 class SpanIn(BaseModel):
@@ -222,6 +229,17 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             raise HTTPException(422, f"the score could not be saved: {e}") from e
         except review.StaleRevision as e:
             raise HTTPException(409, str(e)) from e
+
+    @app.put("/api/jobs/{job_id}/playback")
+    def save_playback(job_id: str, body: Playback) -> dict:
+        """The tempo, saved on its own: it is not an edit, so no revision and no dirty score."""
+        done(job_id)
+        try:
+            with store.lock:
+                review.set_tempo(store.dir(job_id), body.tempo)
+        except review.InvalidDocument as e:
+            raise HTTPException(422, str(e)) from e
+        return {"tempo": body.tempo}
 
     @app.post("/api/jobs/{job_id}/revert")
     def revert_score(job_id: str) -> dict:
