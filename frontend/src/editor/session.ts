@@ -3,10 +3,10 @@
  * undo and redo as serializations, the doubts and the checked measures, and the autosave that sends
  * the whole document with the revision it was edited from. React reads it through subscribe().
  */
-import { applyModelDraft, getScoreText, revertScore, saveScore, type Doubt, type Form, type Layout, type ModelDraft, type ReviewState, type Stats, type Under, type Voicing } from "../api";
+import { applyModelDraft, getScoreText, rejectModelReading, revertScore, saveScore, type Doubt, type Form, type Layout, type ModelDraft, type ModelReading, type ReviewState, type Stats, type Under, type Voicing } from "../api";
 import { remapForm } from "../form";
 import { checkMeasures, checkText, type MeasureCheck } from "../score/check";
-import { correctedXml } from "../score/draft";
+import { correctedXml, lyricAt, setLyric } from "../score/draft";
 import { EditError } from "../score/edit";
 import { find, nearest, parse, part, serialize, walk, type EventKey, type MeasureInfo } from "../score/xml";
 
@@ -50,6 +50,8 @@ export class EditorSession {
    */
   lines: Voicing[];
   unders: Under[];
+  /** What a model pass proposed and the user did not take (ADR 0010); kept by the server, shown in the readings dialog. */
+  modelReadings: ModelReading[];
   readonly layout: Layout | null;
   readonly hasImage: boolean;
   readonly hasOriginal: boolean;
@@ -85,6 +87,7 @@ export class EditorSession {
     this.form = review.form ?? null;
     this.lines = review.lines ?? [];
     this.unders = review.unders ?? [];
+    this.modelReadings = review.model_readings ?? [];
     this.layout = review.layout;
     this.hasImage = review.has_image;
     this.hasOriginal = review.has_original;
@@ -245,6 +248,7 @@ export class EditorSession {
       this.refresh();
       this.revision = result.revision;
       this.doubts = result.doubts ?? this.doubts;
+      this.modelReadings = result.model_readings ?? this.modelReadings;
       this.draft = null;
       this.selected = before.selected ? nearest(this.measures, before.selected)?.key ?? null : null;
       this.push(before);
@@ -253,6 +257,38 @@ export class EditorSession {
       this.status = "saved";
     } catch (e) {
       this.message = "The draft could not be applied: " + (e as Error).message;
+    }
+    this.emit();
+  }
+
+  // ---- model readings (ticket 06) ----------------------------------------------------------------
+
+  /** The readings the model proposed for a measure and the sheet does not already say; rejected and accepted ones are not offered. */
+  modelReadingsAt(measure: number): ModelReading[] {
+    return this.modelReadings.filter((r) => {
+      if (r.status !== "proposed" || r.measure !== measure) return false;
+      const now = lyricAt(this.doc, r.span.staff, r.measure, r.onset, r.verse);
+      return (now?.text ?? null) !== (r.new?.text ?? null) || (now?.syllabic ?? null) !== (r.new?.syllabic ?? null);
+    });
+  }
+
+  /** Take a reading: the syllable is written like any hand edit, so it is saved with the score and one undo takes it back. */
+  acceptModelReading(id: string): boolean {
+    const r = this.modelReadings.find((x) => x.id === id);
+    if (!r) return false;
+    return this.apply((doc) => {
+      if (!setLyric(doc, r.span.staff, r.measure, r.onset, r.verse, r.new)) throw new EditError("The note this reading is about is no longer there.");
+    });
+  }
+
+  /** Hide a reading; the server keeps the record with status rejected. */
+  async rejectModelReading(id: string): Promise<void> {
+    try {
+      const result = await rejectModelReading(this.jobId, id);
+      this.modelReadings = result.model_readings ?? this.modelReadings;
+      this.message = null;
+    } catch (e) {
+      this.message = "The reading could not be rejected: " + (e as Error).message;
     }
     this.emit();
   }
@@ -391,6 +427,7 @@ export class EditorSession {
     try {
       const result = await saveScore(this.jobId, { musicxml: this.xml, checked: [...this.checked], revision: this.revision, doubts: this.doubts, form: this.form, lines: this.lines, unders: this.unders });
       this.revision = result.revision;
+      this.modelReadings = result.model_readings ?? this.modelReadings;
       this.onStats?.(result.stats);
       this.status = this.pending ? "unsaved" : "saved";
     } catch (e) {

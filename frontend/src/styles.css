@@ -227,6 +227,9 @@ button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .reading .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 .reading .row .fixes { color: var(--ok); }
 .reading .row button { padding: 5px 10px; }
+.readings .model-readings { display: grid; gap: 8px; margin-top: 12px; }
+.readings .model-readings h3 { margin: 0; font-size: 14px; }
+.reading.model { border-style: dashed; }
 .editor-layer rect.changed-note { fill: rgba(220, 38, 38, 0.18); stroke: #dc2626; stroke-width: 1.5; }
 @media (max-width: 600px) {
   .readings { padding: 8px; }

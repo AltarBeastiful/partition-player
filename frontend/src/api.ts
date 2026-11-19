@@ -114,7 +114,7 @@ export type { Voicing } from "./voices";
  * `unders` the staves that go on playing underneath the form. Both are playback only and both are
  * empty for every score made before ADR 0008.
  */
-export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[] }
+export interface ReviewState { doubts: Doubt[]; checked: number[]; revision: number; layout: Layout | null; has_image: boolean; has_original: boolean; form: Form | null; lines: Voicing[]; unders: Under[]; model_readings?: ModelReading[] }
 export interface SaveResult extends ReviewState { check: Doubt[]; stats: Stats }
 
 export async function getReview(id: string): Promise<ReviewState> {
@@ -152,6 +152,11 @@ export interface Syllable { text: string; syllabic: "single" | "begin" | "middle
  * syllable, `new` null one that goes. `conflict` is a place edited by hand since the pass.
  */
 export interface ModelChange { id: string; span: ModelSpan; verse: number; measure: number; onset: number; old: Syllable | null; new: Syllable | null; ticked: boolean; conflict: boolean }
+/** A change the user did not take, stored with the job (ADR 0010); `rejected` hides it, nothing deletes it. */
+export interface ModelReading {
+  id: string; draft: string; span: ModelSpan; verse: number; measure: number; onset: number; old: Syllable | null; new: Syllable | null;
+  route: string; model: string; time: string; status: "proposed" | "accepted" | "rejected";
+}
 export interface ModelDraft {
   id: string; created: string; base_revision: number; route: { kind: string; model: string };
   spans: (ModelSpan & { lyrics_source: string })[]; changes: ModelChange[]; dropped: { span: ModelSpan; verse: number; reason: string }[];
@@ -177,6 +182,11 @@ export async function getModelDraft(id: string): Promise<ModelDraft | null> {
   const r = await fetch(`/api/jobs/${id}/model-draft`);
   if (r.status === 404) return null;
   return check<ModelDraft>(r);
+}
+
+/** Hide a stored model reading; the server keeps it with status rejected. */
+export async function rejectModelReading(id: string, readingId: string): Promise<ReviewState> {
+  return check<ReviewState>(await fetch(`/api/jobs/${id}/model-readings/${encodeURIComponent(readingId)}/reject`, { method: "POST" }));
 }
 
 /** Apply the ticked changes as one revision; the others stay as stored readings. */

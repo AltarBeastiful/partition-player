@@ -287,6 +287,15 @@ def create_app(settings: Settings | None = None, model_client=None) -> FastAPI:
             lyrics_pass.drop_draft(d)
         return review.state(store, job_id)
 
+    @app.post("/api/jobs/{job_id}/model-readings/{reading_id}/reject")
+    def reject_model_reading(job_id: str, reading_id: str) -> dict:
+        """Hide a model reading; the stored record keeps it with status rejected."""
+        done(job_id)
+        with store.lock:
+            if not review.reject_reading(store.dir(job_id), reading_id):
+                raise HTTPException(404, "no such reading")
+        return review.state(store, job_id)
+
     @app.get("/api/jobs/{job_id}/review.webp")
     def get_review_image(job_id: str) -> FileResponse:
         p = store.dir(job_id) / "review.webp"

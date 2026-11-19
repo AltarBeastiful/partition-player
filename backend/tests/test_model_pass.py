@@ -151,3 +151,22 @@ def test_a_server_key_turns_it_on_and_a_span_outside_the_score_is_refused(settin
     assert client.post(f"/api/jobs/{jid}/model-pass", json=payload).status_code == 200
     payload["spans"][0]["to"] = 40
     assert client.post(f"/api/jobs/{jid}/model-pass", json=payload).status_code == 422
+
+
+def test_rejecting_a_reading_keeps_it_with_status_rejected_and_survives_a_save(settings):
+    client, jid = start(settings, FakeModel(GOOD), seed="Lers-qui nos é-tions")
+    draft = client.post(f"/api/jobs/{jid}/model-pass", json=body(confirm=True)).json()
+    client.post(f"/api/jobs/{jid}/model-draft/apply", json={"ticked": [draft["changes"][0]["id"]]})
+    readings = client.get(f"/api/jobs/{jid}/review").json()["model_readings"]
+    target = next(r for r in readings if r["status"] == "proposed")
+    r = client.post(f"/api/jobs/{jid}/model-readings/{target['id']}/reject")
+    assert r.status_code == 200, r.text
+    after = {x["id"]: x for x in r.json()["model_readings"]}
+    assert after[target["id"]] == {**target, "status": "rejected"}
+    assert [x["status"] for x in after.values() if x["id"] != target["id"]] == [x["status"] for x in readings if x["id"] != target["id"]]
+    # a save of the score keeps the rejected reading
+    review = client.get(f"/api/jobs/{jid}/review").json()
+    score = client.get(f"/api/jobs/{jid}/score.musicxml").text
+    saved = client.put(f"/api/jobs/{jid}/score", json={"musicxml": score, "revision": review["revision"]})
+    assert {x["id"]: x["status"] for x in saved.json()["model_readings"]}[target["id"]] == "rejected"
+    assert client.post(f"/api/jobs/{jid}/model-readings/nope/reject").status_code == 404

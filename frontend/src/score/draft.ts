@@ -43,17 +43,21 @@ export function lyricAt(doc: XMLDocument, staff: number, measure: number, onset:
   return { text: texts.join(ELISION), syllabic: (syl[syl.length - 1] ?? "single") as Syllable["syllabic"] };
 }
 
+/** Write `syllable` (or take the verse away, when null) under a note; false when the note is not there. */
+export function setLyric(doc: XMLDocument, staff: number, measure: number, onset: number, verse: number, syllable: Syllable | null): boolean {
+  const note = noteAt(doc, staff, measure, onset);
+  if (!note) return false;
+  for (const old of children(note, "lyric")) if (Number(old.getAttribute("number") || 1) === verse) note.removeChild(old);
+  if (syllable) insertOrdered(note, lyricElement(doc, verse, syllable));
+  return true;
+}
+
 /** The read score with the ticked changes written in. With none ticked, the text comes back as it was. */
 export function correctedXml(xml: string, changes: ModelChange[], ticked: ReadonlySet<string>): string {
   const chosen = changes.filter((c) => ticked.has(c.id));
   if (chosen.length === 0) return xml;
   const doc = parse(xml);
-  for (const c of chosen) {
-    const note = noteAt(doc, c.span.staff, c.measure, c.onset);
-    if (!note) continue;
-    for (const old of children(note, "lyric")) if (Number(old.getAttribute("number") || 1) === c.verse) note.removeChild(old);
-    if (c.new) insertOrdered(note, lyricElement(doc, c.verse, c.new));
-  }
+  for (const c of chosen) setLyric(doc, c.span.staff, c.measure, c.onset, c.verse, c.new);
   return serialize(doc);
 }
 
@@ -72,7 +76,7 @@ export function markKeys(measures: MeasureInfo[], changes: ModelChange[]): Event
 const quote = (s: Syllable) => `"${s.text}"`;
 
 /** One line of the change list: where, and what it was. */
-export function changeLine(c: ModelChange): string {
+export function changeLine(c: Pick<ModelChange, "measure" | "verse" | "old" | "new">): string {
   const where = `bar ${c.measure + 1}, verse ${c.verse}`;
   if (c.old && c.new) return `${where}: ${quote(c.old)} becomes ${quote(c.new)}`;
   if (c.old) return `${where}: ${quote(c.old)} is taken away`;

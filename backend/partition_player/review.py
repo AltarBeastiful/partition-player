@@ -207,6 +207,19 @@ def bump(d: Path, model_readings: list[dict] | None = None) -> int:
     return current["revision"]
 
 
+def reject_reading(d: Path, reading_id: str) -> bool:
+    """Hide a model reading: its status becomes rejected, the record stays (ADR 0010). False when there
+    is no such reading. The revision does not move: the document is unchanged. Caller holds the store lock."""
+    current = load(d)
+    found = False
+    for r in current["model_readings"]:
+        if r.get("id") == reading_id:
+            r["status"], found = "rejected", True
+    if found:
+        (d / "review.json").write_text(json.dumps(current, indent=1))
+    return found
+
+
 def state(store: JobStore, job_id: str) -> dict:
     d = store.dir(job_id)
     s = load(d)

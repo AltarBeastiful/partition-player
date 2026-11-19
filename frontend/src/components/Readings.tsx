@@ -9,6 +9,7 @@ import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { loadScore } from "../score/beaming";
 import type { Doubt } from "../api";
 import { markNotes } from "../editor/sheet";
+import { changeLine } from "../score/draft";
 import type { EditorSession } from "../editor/session";
 import type { Player } from "../player";
 import { previewNotes, readings, type PreviewNote, type Reading } from "../score/alternatives";
@@ -110,6 +111,7 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
 
   if (!key || !data) return null;
   const measure = key.measure;
+  const fromModel = session.modelReadingsAt(measure);
 
   /** The previous measure as a run-up, then this reading of the measure, with the accompaniment. */
   async function play(card: Card): Promise<void> {
@@ -162,6 +164,21 @@ export function ReadingsDialog({ session, jobId, target, bpm, player, onApply, o
             </div>
           ))}
         </div>
+        {fromModel.length > 0 && (
+          <div className="model-readings">
+            <h3>From the model</h3>
+            {fromModel.map((r) => (
+              <div key={r.id} className="reading model">
+                <div className="row"><strong>model</strong> <span className="muted">{r.route === "api" ? r.model : r.route}</span></div>
+                <div className="row"><span>{changeLine(r)}</span></div>
+                <div className="row">
+                  <button className="primary" onClick={() => session.acceptModelReading(r.id)} title="Write this syllable under the note">Use</button>
+                  <button className="quiet" onClick={() => void session.rejectModelReading(r.id)} title="Hide this reading; it stays on file">Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {!more && data.list.length > SHOWN && (
           <button className="quiet" onClick={() => setMore(true)}>More ({data.list.length - SHOWN} other{data.list.length - SHOWN > 1 ? "s" : ""})</button>
         )}
